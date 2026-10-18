@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Secrets. `*.local` already covers .env.local, but a bare `.env` would
+# otherwise be committed, and it is the file most likely to hold a provider key.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
