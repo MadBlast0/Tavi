@@ -22,6 +22,35 @@ import {
 import { cn } from "@/lib/utils"
 
 /**
+ * How a family is written, which is not how it is named.
+ *
+ * The app's own face is registered by fontsource as "Geist Variable" - the
+ * suffix says the file holds a range of weights rather than one, which is true
+ * and is the thing that makes it worth bundling, and is also nothing a reader
+ * picking a typeface has any use for. Shown as-is, it reads like a word that
+ * leaked out of a filename, and it is the first thing in the list, so it is
+ * what the control appears to be named after.
+ *
+ * It is stripped rather than replaced with a hardcoded "Geist", which is the
+ * alternative and the one this deliberately is not: a literal goes stale the
+ * moment the app's typeface changes, and then the picker is offering a name
+ * that no longer matches anything. Removing a suffix is a rule, so a different
+ * variable face comes out right on its own.
+ *
+ * Only the label changes. The value is still the real family name, because that
+ * string is what has to reach CSS for the face to render - a label of "Geist"
+ * with a value of "Geist Variable" is the split that makes this work, and
+ * reversing it would silently fall back to a different font.
+ *
+ * Systems generally register variable fonts under their plain name, so this
+ * almost never fires for a discovered family. It is here for the bundled face,
+ * which is the one place the suffix is guaranteed to be there.
+ */
+function familyLabel(family: string): string {
+  return family.replace(/\s+Variable$/i, "")
+}
+
+/**
  * The family names on offer.
  *
  * The app's own face is always first and always selectable, whether or not the
@@ -129,6 +158,15 @@ export function FontPicker({ className }: { className?: string }) {
           if (value) onSelect(value)
         }}
         openOnInputClick
+        /* What the closed field reads. The value stays the real family name —
+           that is the string CSS needs to render the face — and only the text
+           in the input drops the suffix, so selecting the app's own font and
+           reading it back as "Geist" still stores "Geist Variable".
+
+           This also decides what the field matches a search against, so
+           typing "geist" finds it and "variable" does not, which is what
+           somebody looking for the typeface would expect either way. */
+        itemToStringLabel={familyLabel}
       >
       <ComboboxInput
           showTrigger
@@ -156,7 +194,7 @@ export function FontPicker({ className }: { className?: string }) {
                     that reading them does not settle — "Segoe UI" and "Selawik"
                     are indistinguishable until they are drawn. */}
                 <span style={{ fontFamily: JSON.stringify(family) }}>
-                  {family}
+                  {familyLabel(family)}
                 </span>
                 {/* Only once discovery has actually answered with a list.
                     Before that nothing is known about what is installed, and
