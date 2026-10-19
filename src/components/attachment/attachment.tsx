@@ -3,7 +3,7 @@
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconFile } from "@tabler/icons-react"
+import { FileIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -155,7 +155,7 @@ function AttachmentMedia({
     return (
       <AspectRatio
         ratio={1}
-        fallback={<IconFile />}
+        fallback={<FileIcon />}
         data-slot="attachment-media"
         data-variant="image"
         className={cn(attachmentMediaVariants({ variant }), className)}

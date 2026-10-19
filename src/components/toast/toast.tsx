@@ -3,12 +3,12 @@
 import * as React from "react"
 import { Toast as ToastPrimitive } from "@base-ui/react/toast"
 import {
-  IconAlertTriangleFilled,
-  IconCircleCheckFilled,
-  IconCircleXFilled,
-  IconInfoCircleFilled,
-  IconX,
-} from "@tabler/icons-react"
+  AlertTriangleIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  InfoIcon,
+  XIcon,
+} from "lucide-react"
 import { cn } from "cn"
 
 import { buttonVariants } from "@/components/button"
@@ -183,10 +183,10 @@ const toast = Object.assign(
 )
 
 const icons: Partial<Record<ToastType, React.ReactNode>> = {
-  success: <IconCircleCheckFilled className="text-success" />,
-  error: <IconCircleXFilled className="text-destructive" />,
-  warning: <IconAlertTriangleFilled className="text-warning" />,
-  info: <IconInfoCircleFilled className="text-info" />,
+  success: <CircleCheckIcon className="text-success" />,
+  error: <CircleXIcon className="text-destructive" />,
+  warning: <AlertTriangleIcon className="text-warning" />,
+  info: <InfoIcon className="text-info" />,
   loading: (
     <Spinner aria-hidden size={null} className="text-muted-foreground" />
   ),
@@ -271,7 +271,7 @@ function ToastItem({
           aria-label="Dismiss"
           className="relative -me-1.5 -mt-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity duration-150 outline-none group-hover/toast:opacity-100 after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-3 focus-visible:ring-focus-ring focus-visible:outline-hidden pointer-coarse:opacity-100 [&_svg]:size-3.5"
         >
-          <IconX />
+          <XIcon />
         </ToastPrimitive.Close>
       </ToastPrimitive.Content>
     </ToastPrimitive.Root>

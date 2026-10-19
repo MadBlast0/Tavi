@@ -3,7 +3,7 @@
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconX } from "@tabler/icons-react"
+import { XIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -369,7 +369,7 @@ function AlertClose({
       {...props}
       data-slot="alert-close"
     >
-      {children ?? <IconX />}
+      {children ?? <XIcon />}
     </Button>
   )
 }

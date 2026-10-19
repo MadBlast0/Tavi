@@ -4,7 +4,7 @@ import * as React from "react"
 import { flushSync } from "react-dom"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconPhotoOff } from "@tabler/icons-react"
+import { ImageOffIcon } from "lucide-react"
 import { cn } from "cn"
 
 import { Skeleton } from "@/components/skeleton"
@@ -146,7 +146,7 @@ function useMediaState(
 function AspectRatio({
   ratio,
   placeholder = true,
-  fallback = <IconPhotoOff />,
+  fallback = <ImageOffIcon />,
   className,
   style,
   render,

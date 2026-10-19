@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
-import { IconSelector } from "@tabler/icons-react"
+import { ChevronDownIcon } from "lucide-react"
 import { cn } from "cn"
 
 import { useComposedRef } from "@/hooks/use-composed-ref"
@@ -47,7 +47,7 @@ function NativeSelect({
         render={<select ref={setRef} size={htmlSize} />}
         {...(props as InputPrimitive.Props)}
       />
-      <IconSelector
+      <ChevronDownIcon
         aria-hidden="true"
         data-slot="native-select-icon"
         className="pointer-events-none absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-has-[select:focus-visible]/native-select:text-foreground motion-reduce:transition-none pointer-coarse:end-3 [@media(hover:hover)]:group-hover/native-select:not-group-has-[select:disabled]/native-select:text-foreground"

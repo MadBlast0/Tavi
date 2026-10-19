@@ -8,10 +8,10 @@ import {
   type TextDirection,
 } from "@base-ui/react/direction-provider"
 import {
-  IconCheck,
-  IconChevronRight,
-  IconCircleFilled,
-} from "@tabler/icons-react"
+  CheckIcon,
+  ChevronRightIcon,
+  CircleIcon,
+} from "lucide-react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -447,7 +447,7 @@ function ContextMenuCheckboxItem({
           data-slot="context-menu-checkbox-item-indicator"
           className={contextMenuIndicatorClassName}
         >
-          <IconCheck className="text-current" />
+          <CheckIcon className="text-current" />
         </ContextMenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
@@ -502,7 +502,7 @@ function ContextMenuRadioItem({
           data-slot="context-menu-radio-item-indicator"
           className={contextMenuIndicatorClassName}
         >
-          <IconCircleFilled className="size-2 text-current" />
+          <CircleIcon className="size-2 text-current" />
         </ContextMenuPrimitive.RadioItemIndicator>
       </span>
       {children}
@@ -573,7 +573,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <IconChevronRight
+      <ChevronRightIcon
         aria-hidden
         data-slot="context-menu-sub-trigger-icon"
         className="ms-auto rtl:-scale-x-100"

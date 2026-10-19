@@ -3,11 +3,10 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import {
-  IconCheck,
-  IconChevronDown,
-  IconChevronUp,
-  IconSelector,
-} from "@tabler/icons-react"
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -115,7 +114,7 @@ function SelectTrigger({
         data-slot="select-icon"
         className="flex text-muted-foreground transition-colors group-data-popup-open/select-trigger:text-foreground"
       >
-        <IconSelector />
+        <ChevronDownIcon />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -230,7 +229,7 @@ function SelectItem({
         data-slot="select-item-indicator"
         className="absolute end-2 flex size-4 items-center justify-center opacity-0 transition-[opacity,scale] duration-150 ease-out-quint data-[selected]:opacity-100 motion-safe:scale-50 motion-safe:data-[selected]:scale-100 motion-reduce:transition-none"
       >
-        <IconCheck className="text-foreground" />
+        <CheckIcon className="text-foreground" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   )
@@ -271,7 +270,7 @@ function SelectScrollUpButton({
       )}
       {...props}
     >
-      <IconChevronUp />
+      <ChevronUpIcon />
     </SelectPrimitive.ScrollUpArrow>
   )
 }
@@ -292,7 +291,7 @@ function SelectScrollDownButton({
       )}
       {...props}
     >
-      <IconChevronDown />
+      <ChevronDownIcon />
     </SelectPrimitive.ScrollDownArrow>
   )
 }

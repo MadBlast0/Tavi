@@ -4,7 +4,7 @@ import * as React from "react"
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconChevronDown } from "@tabler/icons-react"
+import { ChevronDownIcon } from "lucide-react"
 import { cn } from "cn"
 
 type ClassName<State> =
@@ -176,7 +176,7 @@ function CollapsibleTriggerIcon({
           className
         ),
         children: children ?? (
-          <IconChevronDown className="transition-[rotate] duration-200 ease-spring group-data-panel-open/collapsible-trigger:rotate-180 motion-reduce:transition-none" />
+          <ChevronDownIcon className="transition-[rotate] duration-200 ease-spring group-data-panel-open/collapsible-trigger:rotate-180 motion-reduce:transition-none" />
         ),
       },
       props,

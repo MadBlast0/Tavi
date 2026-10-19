@@ -3,19 +3,18 @@
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import {
-  IconAdjustmentsHorizontal,
-  IconArrowDown,
-  IconArrowUp,
-  IconCheck,
-  IconChevronDown,
-  IconChevronLeft,
-  IconChevronRight,
-  IconChevronsLeft,
-  IconChevronsRight,
-  IconSearch,
-  IconSelector,
-  IconX,
-} from "@tabler/icons-react"
+  SlidersHorizontalIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react"
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
@@ -239,7 +238,7 @@ function DataTableSearch({
         className
       )}
     >
-      <IconSearch
+      <SearchIcon
         aria-hidden
         className="pointer-events-none absolute start-2.5 size-4 text-muted-foreground"
       />
@@ -285,7 +284,7 @@ function DataTableSearch({
             : "opacity-100"
         )}
       >
-        <IconX />
+        <XIcon />
       </Button>
     </div>
   )
@@ -345,11 +344,11 @@ function DataTableColumnHeader<TData extends RowData, TValue>({
           >
             {title}
             {desc === undefined ? (
-              <IconSelector aria-hidden className="size-3.5 opacity-60" />
+              <ChevronDownIcon aria-hidden className="size-3.5 opacity-60" />
             ) : desc ? (
-              <IconArrowDown aria-hidden className="size-3.5" />
+              <ArrowDownIcon aria-hidden className="size-3.5" />
             ) : (
-              <IconArrowUp aria-hidden className="size-3.5" />
+              <ArrowUpIcon aria-hidden className="size-3.5" />
             )}
           </Button>
         </div>
@@ -809,9 +808,9 @@ function DataTableViewOptions({
           <Button variant="outline" size="sm" className="ms-auto shrink-0" />
         }
       >
-        <IconAdjustmentsHorizontal />
+        <SlidersHorizontalIcon />
         {label}
-        <IconChevronDown className="text-muted-foreground" />
+        <ChevronDownIcon className="text-muted-foreground" />
       </MenuPrimitive.Trigger>
       <MenuPrimitive.Portal>
         <MenuPrimitive.Positioner
@@ -839,7 +838,7 @@ function DataTableViewOptions({
                 >
                   <span className="pointer-events-none absolute start-2 flex size-4 items-center justify-center">
                     <MenuPrimitive.CheckboxItemIndicator className="flex items-center justify-center">
-                      <IconCheck className="size-4" />
+                      <CheckIcon className="size-4" />
                     </MenuPrimitive.CheckboxItemIndicator>
                   </span>
                   <span className="min-w-0 truncate">{getLabel(column)}</span>
@@ -941,7 +940,7 @@ function DataTablePagination({
                 </option>
               ))}
             </select>
-            <IconChevronDown
+            <ChevronDownIcon
               aria-hidden
               className="pointer-events-none absolute end-2 size-3.5 text-muted-foreground"
             />
@@ -962,7 +961,7 @@ function DataTablePagination({
             disabled={!table.getCanPreviousPage()}
             onClick={() => table.firstPage()}
           >
-            <IconChevronsLeft className="rtl:-scale-x-100" />
+            <ChevronsLeftIcon className="rtl:-scale-x-100" />
           </Button>
           <Button
             variant="outline"
@@ -971,7 +970,7 @@ function DataTablePagination({
             disabled={!table.getCanPreviousPage()}
             onClick={() => table.previousPage()}
           >
-            <IconChevronLeft className="rtl:-scale-x-100" />
+            <ChevronLeftIcon className="rtl:-scale-x-100" />
           </Button>
           <Button
             variant="outline"
@@ -980,7 +979,7 @@ function DataTablePagination({
             disabled={!table.getCanNextPage()}
             onClick={() => table.nextPage()}
           >
-            <IconChevronRight className="rtl:-scale-x-100" />
+            <ChevronRightIcon className="rtl:-scale-x-100" />
           </Button>
           <Button
             variant="outline"
@@ -990,7 +989,7 @@ function DataTablePagination({
             disabled={!table.getCanNextPage()}
             onClick={() => table.lastPage()}
           >
-            <IconChevronsRight className="rtl:-scale-x-100" />
+            <ChevronsRightIcon className="rtl:-scale-x-100" />
           </Button>
         </div>
       </div>

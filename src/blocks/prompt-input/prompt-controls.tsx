@@ -2,15 +2,16 @@
 
 import * as React from "react"
 import {
-  IconArrowUp,
-  IconCheck,
-  IconHelpCircle,
-  IconMicrophone,
-  IconPlayerStopFilled,
-  IconPaperclip,
-  IconPlus,
-  IconX,
-} from "@tabler/icons-react"
+  ArrowUpIcon,
+  CheckIcon,
+  CircleHelpIcon,
+  MicIcon,
+  SquareIcon,
+  PaperclipIcon,
+  PlusIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react"
 import { cn } from "cn"
 
 import { Button } from "@/components/button"
@@ -32,7 +33,7 @@ import {
 } from "@/components/popover"
 import { Kbd, KbdGroup } from "@/components/kbd"
 import { NumberFlow } from "@/components/number-flow"
-import { Switch } from "@/components/switch"
+
 import {
   Tooltip,
   TooltipContent,
@@ -45,7 +46,7 @@ import { easeOut, prefersReducedMotion, useSizeMorph } from "@/lib/motion"
 import { usePromptInput } from "./prompt-input"
 import { EffortFill } from "./effort-fill"
 import { haptic } from "./haptics"
-import { insertText } from "./text"
+import { insertText, replaceAll } from "./text"
 
 function refocus(field: HTMLTextAreaElement | null) {
   requestAnimationFrame(() => field?.focus())
@@ -81,7 +82,7 @@ function PromptInputAddMenu({
             />
           }
         >
-          <IconPlus />
+          <PlusIcon />
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
@@ -92,7 +93,7 @@ function PromptInputAddMenu({
         finalFocus={context.textareaRef}
       >
         <DropdownMenuItem onClick={context.openFileDialog}>
-          <IconPaperclip />
+          <PaperclipIcon />
           {fileLabel}
         </DropdownMenuItem>
         {children ? (
@@ -152,7 +153,7 @@ function PromptInputTool({
         <span className="flex group-hover/tool:invisible group-focus-visible/tool:invisible">
           {icon}
         </span>
-        <IconX
+        <XIcon
           aria-hidden="true"
           className="invisible group-hover/tool:visible group-focus-visible/tool:visible"
         />
@@ -506,13 +507,15 @@ function FlowText({
 }
 
 type EffortProps = {
+  /**
+   * Exactly the effort levels the selected model publishes. Empty means the
+   * model publishes none — or the catalogue has not been consulted yet — and the
+   * panel is omitted rather than asserting either as a limitation.
+   */
   levels: PromptEffort[]
   value: string
   onValueChange: (value: string) => void
   recommended?: string
-  thinking?: boolean
-  onThinkingChange?: (thinking: boolean) => void
-  thinkingLabel?: string
   description?: string
 }
 
@@ -529,60 +532,66 @@ function useEffortLevel(levels: PromptEffort[], value: string) {
   return { index, current: levels[index], direction }
 }
 
-function EffortWidth({ levels }: { levels: PromptEffort[] }) {
-  return levels.map((level) => (
-    <span key={level.value} aria-hidden="true" className="invisible">
-      {level.label}
-    </span>
-  ))
-}
-
 function EffortPanel({
   levels,
   value,
   onValueChange,
   recommended,
-  thinking,
-  onThinkingChange,
-  thinkingLabel = "Extended thinking",
   description = "How long the model thinks before it answers. Higher is smarter but slower.",
   sliderRef,
 }: EffortProps & { sliderRef?: React.Ref<HTMLDivElement> }) {
-  const switchId = React.useId()
   const { index, current, direction } = useEffortLevel(levels, value)
   const recommendedIndex = recommended
     ? levels.findIndex((level) => level.value === recommended)
     : -1
 
-  return (
-    <div className="flex flex-col gap-2.5 p-0.5">
-      <div className="flex items-center gap-1.5 text-sm">
-        <span className="text-muted-foreground">Effort</span>
+  const header = (
+    <div className="flex items-center gap-1.5 text-sm">
+      <span className="text-muted-foreground">Effort</span>
+      {levels.length === 1 ? (
+        /* One level is one level: there is nothing to slide between, so the
+           control is stated rather than drawn as a slider that cannot move. */
+        <span className="font-medium">{levels[0].label}</span>
+      ) : (
         <FlowText
           value={current?.label ?? ""}
           direction={direction}
           className={cn(
             "font-medium transition-colors duration-300",
-            index === levels.length - 1 && levels.length > 1 && "text-chart-4"
+            index === levels.length - 1 && levels.length > 1 && "text-chart-4",
           )}
         />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="About effort"
-                className="ms-auto"
-              />
-            }
-          >
-            <IconHelpCircle />
-          </TooltipTrigger>
-          <TooltipContent>{description}</TooltipContent>
-        </Tooltip>
+      )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost"
+              aria-label="About effort"
+              className="ms-auto"
+            />
+          }
+        >
+          <CircleHelpIcon />
+        </TooltipTrigger>
+        <TooltipContent>{description}</TooltipContent>
+      </Tooltip>
+    </div>
+  )
+
+  if (levels.length <= 1) {
+    return (
+      <div className="flex flex-col gap-2.5 p-0.5">
+        {header}
       </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5 p-0.5">
+      {header}
       <div className="-mb-1 flex justify-between text-xs text-muted-foreground">
         <span>Faster</span>
         <span>Smarter</span>
@@ -594,22 +603,6 @@ function EffortPanel({
         onIndexChange={(next) => onValueChange(levels[next].value)}
         sliderRef={sliderRef}
       />
-      {onThinkingChange ? (
-        <div className="flex items-center justify-between gap-3 border-t pt-2.5">
-          <label htmlFor={switchId} className="text-sm">
-            {thinkingLabel}
-          </label>
-          <Switch
-            id={switchId}
-            size="sm"
-            checked={Boolean(thinking)}
-            onCheckedChange={(next) => {
-              haptic("tick")
-              onThinkingChange(next)
-            }}
-          />
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -681,10 +674,12 @@ function PromptInputEffort(props: EffortProps) {
           />
         }
       >
-        <span className="grid justify-items-center *:col-start-1 *:row-start-1">
-          <EffortWidth levels={props.levels} />
-          <FlowText value={current?.label ?? ""} direction={direction} />
-        </span>
+        {/* Sized by the label shown; see the note on the model trigger. */}
+        <FlowText
+          className="basis-[max-content]"
+          value={current?.label ?? ""}
+          direction={direction}
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"
@@ -716,6 +711,9 @@ function PromptInputModel({
   const context = usePromptInput("PromptInputModel")
   const listRef = React.useRef<HTMLDivElement>(null)
   const selectedRef = React.useRef<HTMLButtonElement>(null)
+  const searchRef = React.useRef<HTMLInputElement>(null)
+  const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState("")
   const current = models.find((item) => item.value === model) ?? models[0]
   const { current: level, direction } = useEffortLevel(props.levels, effort)
   const choose = (next: string) => {
@@ -723,10 +721,38 @@ function PromptInputModel({
     onModelChange(next)
   }
 
+  /* LOCAL EDIT: the catalogue is several hundred entries, so the list is
+     searchable and capped at roughly eight rows. The numbered "press 1-9"
+     shortcuts that used to sit on the right of each row are gone — they were
+     invisible on touch and only ever addressed the first nine of hundreds. */
+  const needle = query.trim().toLowerCase()
+  const visible = needle
+    ? models.filter(
+        (item) =>
+          item.label.toLowerCase().includes(needle) ||
+          item.value.toLowerCase().includes(needle)
+      )
+    : models
+
+  /* The composer's textarea autofocuses too, and it wins the race against
+     `initialFocus` on the popover. Re-assert on the next tick so the search
+     field is what the user types into. */
+  React.useEffect(() => {
+    if (!open) return
+    searchRef.current?.focus()
+    const timer = setTimeout(() => searchRef.current?.focus(), 0)
+    return () => clearTimeout(timer)
+  }, [open])
+
   return (
     <Popover
-      onOpenChange={(open) => {
-        if (!open) refocus(context.textareaRef.current)
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          setQuery("")
+          refocus(context.textareaRef.current)
+        }
       }}
     >
       <PopoverTrigger
@@ -740,46 +766,72 @@ function PromptInputModel({
           />
         }
       >
-        {current?.label}
-        <span className="grid justify-items-start text-muted-foreground *:col-start-1 *:row-start-1">
-          <EffortWidth levels={props.levels} />
-          <FlowText value={level?.label ?? ""} direction={direction} />
-        </span>
+        {/* The model name yields space, the effort does not: this button is
+            flex-shrunk by the actions row, and without `min-w-0 truncate` the raw text
+            node kept its full width and spilled ~18px past the button edge. */}
+        <span className="min-w-0 truncate">{current?.label}</span>
+        {/* Sized by the label it is actually showing. This span used to hold an
+            invisible copy of every level overlaid in the same grid cell, which
+            sized the cell to the longest label in the set — so the button kept
+            the width of "Extra high" while displaying "Medium", leaving ~40px
+            of dead space between this text and the context dial. `levels` now
+            varies per model anyway, so a fixed reservation has nothing to
+            reserve against; FlowText's width morph keeps the swap smooth.
+
+            Rendered as the flex item itself, on a `max-content` basis. A default
+            basis fits to the space left over, which is zero once the model name
+            has filled the button — so flex saw a perfect fit, never shrank the
+            name, and FlowText's glyphs were clipped away by its own
+            `overflow-hidden` instead. */}
+        <FlowText
+          className="shrink-0 basis-[max-content] text-muted-foreground"
+          value={level?.label ?? ""}
+          direction={direction}
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"
         align="end"
         sideOffset={8}
-        initialFocus={selectedRef}
+        className="w-72"
+        initialFocus={searchRef}
         finalFocus={context.textareaRef}
-        onKeyDown={(event) => {
-          const position = Number(event.key)
-          if (
-            !Number.isInteger(position) ||
-            position < 1 ||
-            position > Math.min(9, models.length) ||
-            event.metaKey ||
-            event.ctrlKey ||
-            event.altKey
-          ) {
-            return
-          }
-          event.preventDefault()
-          choose(models[position - 1].value)
-        }}
       >
+        <div className="flex items-center gap-2 pb-2">
+          <SearchIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            /* First Escape clears the filter; a second one closes the popover,
+               which is what the user expects from a search field. */
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.stopPropagation()
+                setQuery("")
+              }
+            }}
+            placeholder="Search models…"
+            aria-label="Search models"
+            className="placeholder:text-muted-foreground/70 h-7 w-full min-w-0 rounded-md bg-transparent text-sm outline-none"
+          />
+        </div>
+
         <div
           ref={listRef}
           role="radiogroup"
           aria-label="Model"
-          className="-m-1 flex flex-col"
+          /* Capped at about six rows: the popover stays a predictable size and
+             scrolls once the list overflows. */
+          className="flex max-h-48 flex-col overflow-y-auto overscroll-contain py-0.5"
           onKeyDown={(event) => {
             const step =
               event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0
-            if (!step) return
+            if (!step || visible.length === 0) return
             event.preventDefault()
-            const index = models.findIndex((item) => item.value === current?.value)
-            const next = models[(index + step + models.length) % models.length]
+            const index = visible.findIndex((item) => item.value === current?.value)
+            const from = index < 0 ? 0 : index
+            const next = visible[(from + step + visible.length) % visible.length]
             choose(next.value)
             requestAnimationFrame(() =>
               listRef.current
@@ -788,32 +840,42 @@ function PromptInputModel({
             )
           }}
         >
-          {models.map((item, index) => {
-            const selected = item.value === current?.value
-            return (
-              <button
-                key={item.value}
-                ref={selected ? selectedRef : undefined}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => choose(item.value)}
-                className="flex min-h-8 items-center gap-2 rounded-md px-2 text-start text-sm outline-none select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground pointer-coarse:min-h-11 forced-colors:focus-visible:outline-2"
-              >
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {selected ? (
-                  <IconCheck aria-hidden="true" className="size-4 shrink-0" />
-                ) : index < 9 ? (
-                  <Kbd size="sm">{String(index + 1)}</Kbd>
-                ) : null}
-              </button>
-            )
-          })}
+          {visible.length > 0 ? (
+            visible.map((item) => {
+              const selected = item.value === current?.value
+              return (
+                <button
+                  key={item.value}
+                  ref={selected ? selectedRef : undefined}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => choose(item.value)}
+                  className="flex min-h-8 items-center gap-2 rounded-md px-2 text-start text-sm outline-none select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground pointer-coarse:min-h-11 forced-colors:focus-visible:outline-2"
+                >
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {selected ? (
+                    <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+                  ) : null}
+                </button>
+              )
+            })
+          ) : (
+            <p className="text-muted-foreground px-2 py-3 text-sm">
+              No models match “{query.trim()}”.
+            </p>
+          )}
         </div>
-        <div className="border-t pt-2.5">
-          <EffortPanel {...props} value={effort} onValueChange={onEffortChange} />
-        </div>
+        {/* Shown only when the model actually publishes effort levels. Nothing is
+            claimed otherwise — not while the catalogue is still loading, and not
+            for a model that publishes none — so the popover simply has no
+            effort section rather than asserting a limitation. */}
+        {props.levels.length > 0 ? (
+          <div className="border-t pt-2.5">
+            <EffortPanel {...props} value={effort} onValueChange={onEffortChange} />
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   )
@@ -1128,7 +1190,7 @@ function PromptInputContextUsage({
         side="top"
         align="end"
         sideOffset={8}
-        className="w-80"
+        className="w-64"
       >
         <div
           data-slot="prompt-input-context"
@@ -1637,7 +1699,7 @@ function PromptInputDictation({
             />
           }
         >
-          <IconMicrophone />
+          <MicIcon />
         </TooltipTrigger>
         <TooltipContent>
           Dictate {shortcut ? <KbdGroup keys={shortcut} size="sm" /> : null}
@@ -1663,7 +1725,7 @@ function PromptInputDictation({
                 />
               }
             >
-              <IconX />
+              <XIcon />
             </TooltipTrigger>
             <TooltipContent>
               Cancel <KbdGroup keys="escape" size="sm" />
@@ -1699,7 +1761,7 @@ function PromptInputDictation({
                   className="absolute -inset-1 rounded-full border border-foreground/15 motion-safe:animate-pulse"
                 />
               ) : null}
-              <IconPlayerStopFilled />
+              <SquareIcon />
             </TooltipTrigger>
             <TooltipContent>
               Stop <KbdGroup keys={shortcut || "ctrl+shift+d"} size="sm" />
@@ -1718,7 +1780,7 @@ function PromptInputDictation({
                 />
               }
             >
-              <IconArrowUp />
+              <ArrowUpIcon />
             </TooltipTrigger>
             <TooltipContent>Send</TooltipContent>
           </Tooltip>
@@ -1733,6 +1795,12 @@ type PromptOption = {
   label: string
   icon?: React.ReactNode
   description?: string
+  /**
+   * Shown greyed out and not selectable. Used for options that are planned but
+   * have no implementation behind them, so the menu can show where the feature
+   * is going without offering something that would silently do nothing.
+   */
+  disabled?: boolean
 }
 
 function PromptInputSelect({
@@ -1839,10 +1907,16 @@ function PromptInputSelect({
                   <DropdownMenuRadioItem
                     value={option.value}
                     indicator="end"
+                    disabled={option.disabled}
                     closeOnClick
                   >
                     {option.icon}
                     <span className="truncate">{option.label}</span>
+                    {option.disabled ? (
+                      <span className="ms-auto ps-2 text-xs text-muted-foreground/70">
+                        Soon
+                      </span>
+                    ) : null}
                   </DropdownMenuRadioItem>
                 }
               />
@@ -1854,11 +1928,16 @@ function PromptInputSelect({
             </Tooltip>
           ))}
         </DropdownMenuRadioGroup>
-        {children ? (
+        {/* The separator only makes sense when it divides two groups. With no
+            options above it — nothing picked yet — it is just a stray line at
+            the top of the menu. */}
+        {children && options.length > 0 ? (
           <>
             <DropdownMenuSeparator />
             {children}
           </>
+        ) : children ? (
+          children
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -1955,6 +2034,28 @@ type PromptSuggestion = {
   icon?: React.ReactNode
 }
 
+/**
+ * Starter prompts shown while the thread is empty.
+ *
+ * Clicking one fills the composer and deliberately does not send: the user
+ * reviews and edits before committing. That is the pattern every mainstream
+ * assistant uses, and the reason is that a starter is a draft, not an answer.
+ *
+ * The distinction that matters is *whose* draft it is. Clicking a starter leaves
+ * the box holding one of our prompts, so the row stays put and that starter is
+ * marked as filled - changing your mind is one more click. Only once the text is
+ * something the user typed does the row stand down, because at that point the
+ * starters are clutter on a prompt already in progress.
+ *
+ * This used to key off `text !== ""`, which hid the row the instant a starter was
+ * clicked. Since the draft is persisted and restored, merely reloading the page
+ * with a starter still in the box would present chips that ignored every click.
+ *
+ * Note the fade and `inert` are applied together: there is a 200ms window where
+ * the row is still fading but no longer clickable. That is the existing look
+ * everywhere in this file, and it is short enough not to be worth a layout jump
+ * to remove.
+ */
 function PromptInputSuggestions({
   suggestions,
   className,
@@ -1963,8 +2064,16 @@ function PromptInputSuggestions({
   className?: string
 }) {
   const context = usePromptInput("PromptInputSuggestions")
-  const hidden =
-    Boolean(context.text) || context.files.length > 0 || context.mentions.length > 0
+
+  const promptOf = (suggestion: PromptSuggestion) =>
+    suggestion.prompt ?? suggestion.label
+
+  /** A draft the user has not touched is still ours, not theirs. */
+  const active = suggestions.find(
+    (suggestion) => context.text === promptOf(suggestion),
+  )
+  const ownsDraft = context.text !== "" && active === undefined
+  const hidden = ownsDraft
 
   return (
     <div
@@ -1975,27 +2084,34 @@ function PromptInputSuggestions({
       data-slot="prompt-input-suggestions"
       data-hidden={hidden ? "" : undefined}
       className={cn(
-        "flex flex-wrap justify-center gap-2 transition-opacity duration-200 ease-out data-hidden:opacity-0 motion-reduce:transition-none",
-        className
+        "flex flex-wrap items-center justify-center gap-2 transition-opacity duration-200 ease-out data-hidden:opacity-0 motion-reduce:transition-none",
+        className,
       )}
     >
-      {suggestions.map((suggestion) => (
-        <Button
-          key={suggestion.label}
-          type="button"
-          size="sm"
-          variant="outline"
-          shape="pill"
-          onClick={() => {
-            const field = context.textareaRef.current
-            if (!field) return
-            insertText(field, suggestion.prompt ?? suggestion.label, 0, field.value.length)
-          }}
-        >
-          {suggestion.icon}
-          {suggestion.label}
-        </Button>
-      ))}
+      {suggestions.map((suggestion) => {
+        const filled = active?.label === suggestion.label
+        return (
+          <Button
+            key={suggestion.label}
+            type="button"
+            size="sm"
+            variant="outline"
+            shape="pill"
+            aria-pressed={filled}
+            className={cn(filled && "border-primary text-foreground")}
+            onClick={() => {
+              const field = context.textareaRef.current
+              if (!field) return
+              // Replace the whole draft, so clicking a different starter swaps
+              // rather than appends to what is already there.
+              replaceAll(field, promptOf(suggestion))
+            }}
+          >
+            {suggestion.icon}
+            {suggestion.label}
+          </Button>
+        )
+      })}
     </div>
   )
 }

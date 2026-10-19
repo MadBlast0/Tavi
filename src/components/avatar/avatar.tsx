@@ -4,7 +4,7 @@ import * as React from "react"
 import { Avatar as AvatarPrimitive } from "@base-ui/react/avatar"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconUser } from "@tabler/icons-react"
+import { UserIcon } from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -156,7 +156,7 @@ function AvatarFallback({
           "absolute inset-0 flex items-center justify-center overflow-hidden rounded-(--avatar-radius) bg-muted text-[max(0.5625rem,38cqmin)] leading-none font-medium whitespace-nowrap text-muted-foreground transition-[opacity,visibility] duration-200 ease-out-quint data-[ready=false]:invisible data-[ready=false]:opacity-0 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-[56cqmin] [[data-slot=avatar]:has(>[data-slot=avatar-image]:not([data-loading]):not([data-error]):not([data-ending-style]))>&]:invisible [[data-slot=avatar]:has(>[data-slot=avatar-image]:not([data-loading]):not([data-error]):not([data-ending-style]))>&]:opacity-0",
           className
         ),
-        children: isEmpty(children) ? <IconUser aria-hidden /> : children,
+        children: isEmpty(children) ? <UserIcon aria-hidden /> : children,
       },
       props,
       { "data-slot": "avatar-fallback", "data-ready": String(ready) } as Record<

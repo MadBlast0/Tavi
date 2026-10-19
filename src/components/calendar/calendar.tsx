@@ -3,11 +3,11 @@
 import * as React from "react"
 import { useDirection } from "@base-ui/react/direction-provider"
 import {
-  IconChevronDown,
-  IconChevronLeft,
-  IconChevronRight,
-  IconChevronUp,
-} from "@tabler/icons-react"
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+} from "lucide-react"
 import { cn } from "cn"
 
 import {
@@ -339,10 +339,10 @@ function CalendarChevron({ className, orientation, ...props }: ChevronProps) {
   const mirrored =
     dayPickerProps.navLayout === "around" && dayPickerProps.dir === "rtl"
   const icons = {
-    left: IconChevronLeft,
-    right: IconChevronRight,
-    up: IconChevronUp,
-    down: IconChevronDown,
+    left: ChevronLeftIcon,
+    right: ChevronRightIcon,
+    up: ChevronUpIcon,
+    down: ChevronDownIcon,
   }
   const Icon = icons[orientation ?? "left"]
 

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { NavigationMenu as NavigationMenuPrimitive } from "@base-ui/react/navigation-menu"
-import { IconChevronDown } from "@tabler/icons-react"
+import { ChevronDownIcon } from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -176,7 +176,7 @@ function NavigationMenuTrigger({
       {...props}
     >
       {children}
-      <IconChevronDown
+      <ChevronDownIcon
         aria-hidden="true"
         data-slot="navigation-menu-trigger-icon"
         className="size-3.5 text-muted-foreground transition-transform duration-300 ease-out-quint group-data-popup-open/navigation-menu-trigger:rotate-180 group-data-popup-open/navigation-menu-trigger:text-accent-foreground motion-reduce:transition-none"

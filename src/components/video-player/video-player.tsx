@@ -5,30 +5,21 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 import { useRender } from "@base-ui/react/use-render"
 import {
-  IconAlertTriangle,
-  IconBadgeCc,
-  IconBadgeCcFilled,
-  IconChevronsLeft,
-  IconChevronsRight,
-  IconMaximize,
-  IconMinimize,
-  IconPictureInPictureOff,
-  IconPictureInPictureOn,
-  IconPlayerPauseFilled,
-  IconPlayerPlayFilled,
-  IconRewindBackward10,
-  IconRewindBackward15,
-  IconRewindBackward30,
-  IconRewindBackward5,
-  IconRewindForward10,
-  IconRewindForward15,
-  IconRewindForward30,
-  IconRewindForward5,
-  IconRotateClockwise,
-  IconVolume,
-  IconVolume2,
-  IconVolume3,
-} from "@tabler/icons-react"
+  AlertTriangleIcon,
+  CaptionsIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  MaximizeIcon,
+  MinimizeIcon,
+  PictureInPicture2Icon,
+  PauseIcon,
+  PlayIcon,
+  RotateCcwIcon,
+  RotateCwIcon,
+  Volume1Icon,
+  Volume2Icon,
+  VolumeIcon,
+} from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -1047,7 +1038,7 @@ function VideoPlayer({
               data-started={started ? "" : undefined}
               className="grid size-14 place-items-center rounded-full bg-background/60 backdrop-blur-sm transition-[opacity,scale] duration-200 ease-out-quint data-started:opacity-0 motion-safe:data-started:scale-90 motion-reduce:transition-opacity [&_svg]:size-6"
             >
-              <IconPlayerPlayFilled />
+              <PlayIcon />
             </span>
           )}
           {!error && (
@@ -1096,7 +1087,7 @@ function VideoPlayer({
               data-slot="video-player-error"
               className="flex max-w-xs flex-col items-center gap-2 px-6 text-center text-sm text-pretty text-muted-foreground [&_svg]:size-6"
             >
-              <IconAlertTriangle aria-hidden className="text-foreground" />
+              <AlertTriangleIcon aria-hidden className="text-foreground" />
               {errorMessage}
             </div>
           )}
@@ -1119,19 +1110,19 @@ function VideoPlayer({
 function FlashIcon({ kind }: { kind: FlashKind }) {
   switch (kind) {
     case "play":
-      return <IconPlayerPlayFilled />
+      return <PlayIcon />
     case "pause":
-      return <IconPlayerPauseFilled />
+      return <PauseIcon />
     case "back":
-      return <IconChevronsLeft />
+      return <ChevronsLeftIcon />
     case "forward":
-      return <IconChevronsRight />
+      return <ChevronsRightIcon />
     case "mute":
-      return <IconVolume3 />
+      return <VolumeIcon />
     case "volume":
-      return <IconVolume />
+      return <Volume1Icon />
     case "captions":
-      return <IconBadgeCcFilled />
+      return <CaptionsIcon />
     default:
       return null
   }
@@ -1608,17 +1599,17 @@ function VideoPlayerPlayButton({
           aria-hidden
           className="grid *:col-start-1 *:row-start-1 *:transition-[opacity,scale] *:duration-200 *:ease-out-quint motion-reduce:*:transition-opacity"
         >
-          <IconPlayerPlayFilled
+          <PlayIcon
             className={cn(
               state !== "paused" && "opacity-0 motion-safe:scale-50"
             )}
           />
-          <IconPlayerPauseFilled
+          <PauseIcon
             className={cn(
               state !== "playing" && "opacity-0 motion-safe:scale-50"
             )}
           />
-          <IconRotateClockwise
+          <RotateCwIcon
             className={cn(
               state !== "ended" && "opacity-0 motion-safe:scale-50"
             )}
@@ -1630,10 +1621,10 @@ function VideoPlayerPlayButton({
 }
 
 const seekIcons: Record<number, [React.ElementType, React.ElementType]> = {
-  5: [IconRewindBackward5, IconRewindForward5],
-  10: [IconRewindBackward10, IconRewindForward10],
-  15: [IconRewindBackward15, IconRewindForward15],
-  30: [IconRewindBackward30, IconRewindForward30],
+  5: [RotateCcwIcon, RotateCwIcon],
+  10: [RotateCcwIcon, RotateCwIcon],
+  15: [RotateCcwIcon, RotateCwIcon],
+  30: [RotateCcwIcon, RotateCwIcon],
 }
 
 type VideoPlayerSeekButtonProps = VideoPlayerButtonProps & {
@@ -1657,7 +1648,7 @@ function VideoPlayerSeekButton({
   const amount = Math.abs(offset)
   const backward = offset < 0
   const icons = seekIcons[amount]
-  const Icon = icons?.[backward ? 0 : 1] ?? IconRotateClockwise
+  const Icon = icons?.[backward ? 0 : 1] ?? RotateCwIcon
   const resolvedLabel =
     label ??
     `${backward ? "Back" : "Forward"} ${amount} ${amount === 1 ? "second" : "seconds"}`
@@ -1726,11 +1717,11 @@ function VideoPlayerMuteButton({
     >
       {children ??
         (level === "muted" ? (
-          <IconVolume3 aria-hidden />
+          <VolumeIcon aria-hidden />
         ) : level === "low" ? (
-          <IconVolume2 aria-hidden />
+          <Volume2Icon aria-hidden />
         ) : (
-          <IconVolume aria-hidden />
+          <Volume1Icon aria-hidden />
         ))}
     </ControlButton>
   )
@@ -2195,9 +2186,9 @@ function VideoPlayerCaptionsButton({
     >
       {children ??
         (active ? (
-          <IconBadgeCcFilled aria-hidden />
+          <CaptionsIcon aria-hidden />
         ) : (
-          <IconBadgeCc aria-hidden />
+          <CaptionsIcon aria-hidden />
         ))}
     </ControlButton>
   )
@@ -2241,9 +2232,9 @@ function VideoPlayerPictureInPictureButton({
     >
       {children ??
         (active ? (
-          <IconPictureInPictureOff aria-hidden />
+          <PictureInPicture2Icon aria-hidden />
         ) : (
-          <IconPictureInPictureOn aria-hidden />
+          <PictureInPicture2Icon aria-hidden />
         ))}
     </ControlButton>
   )
@@ -2284,7 +2275,7 @@ function VideoPlayerFullscreenButton({
       {...props}
     >
       {children ??
-        (active ? <IconMinimize aria-hidden /> : <IconMaximize aria-hidden />)}
+        (active ? <MinimizeIcon aria-hidden /> : <MaximizeIcon aria-hidden />)}
     </ControlButton>
   )
 }

@@ -4,11 +4,11 @@ import * as React from "react"
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox"
 import { useDirection } from "@base-ui/react/direction-provider"
 import {
-  IconCheck,
-  IconChevronDown,
-  IconSearch,
-  IconX,
-} from "@tabler/icons-react"
+  CheckIcon,
+  ChevronDownIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -120,7 +120,7 @@ function ComboboxTrigger({
           {children}
         </span>
       ) : null}
-      <IconChevronDown
+      <ChevronDownIcon
         aria-hidden
         data-slot="combobox-trigger-icon"
         className="text-muted-foreground transition-transform duration-200 ease-spring group-data-popup-open/combobox-trigger:rotate-180 motion-reduce:transition-none"
@@ -147,7 +147,7 @@ function ComboboxClear({
       )}
       {...props}
     >
-      {children ?? <IconX />}
+      {children ?? <XIcon />}
     </ComboboxPrimitive.Clear>
   )
 }
@@ -186,7 +186,7 @@ function ComboboxInput({
       )}
     >
       {inContent ? (
-        <IconSearch
+        <SearchIcon
           aria-hidden
           className="size-4 shrink-0 text-muted-foreground"
         />
@@ -221,7 +221,7 @@ function ComboboxInput({
                 "group/combobox-trigger transition-[color,background-color,opacity,scale] duration-150 ease-out-quint peer-data-visible/combobox-clear:pointer-events-none peer-data-visible/combobox-clear:opacity-0 motion-safe:peer-data-visible/combobox-clear:scale-75"
               )}
             >
-              <IconChevronDown
+              <ChevronDownIcon
                 aria-hidden
                 className="transition-transform duration-200 ease-spring group-data-popup-open/combobox-trigger:rotate-180 motion-reduce:transition-none"
               />
@@ -372,7 +372,7 @@ function ComboboxItem({
         data-slot="combobox-item-indicator"
         className="ms-auto flex size-4 shrink-0 items-center justify-center opacity-0 transition-[opacity,scale] duration-150 ease-out-quint data-[selected]:opacity-100 motion-safe:scale-50 motion-safe:data-[selected]:scale-100 motion-reduce:transition-none"
       >
-        <IconCheck className="text-foreground" />
+        <CheckIcon className="text-foreground" />
       </ComboboxPrimitive.ItemIndicator>
     </ComboboxPrimitive.Item>
   )
@@ -517,7 +517,7 @@ function ComboboxChip({
           aria-label="Remove"
           className="relative inline-flex size-5 shrink-0 items-center justify-center rounded-[max(calc(var(--radius-sm)*0.5),calc(var(--radius-md)-0.4375rem))] text-muted-foreground outline-none after:absolute after:-inset-0.5 hover:bg-foreground/10 hover:text-foreground focus-visible:outline-hidden pointer-coarse:after:-inset-2 [&_svg]:pointer-events-none [&_svg]:size-3.5"
         >
-          <IconX />
+          <XIcon />
         </ComboboxPrimitive.ChipRemove>
       ) : null}
     </ComboboxPrimitive.Chip>

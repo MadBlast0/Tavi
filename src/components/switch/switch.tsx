@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Switch as SwitchPrimitive } from "@base-ui/react/switch"
-import { IconCheck } from "@tabler/icons-react"
+import { CheckIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -323,8 +323,8 @@ function Switch({
           data-slot="switch-icons"
           className="pointer-events-none absolute inset-0 flex items-center justify-between px-[calc((var(--switch-h)-0.625rem)/2)] text-primary-foreground group-data-[variant=ios]/switch:text-success-foreground [&_svg]:size-2.5"
         >
-          <IconCheck
-            stroke={3}
+          <CheckIcon
+            strokeWidth={3}
             className="opacity-0 transition-opacity duration-200 group-data-[drag=off]/switch:opacity-0 group-data-[drag=on]/switch:opacity-100 group-data-checked/switch:opacity-100"
           />
           <span className="size-2 rounded-full opacity-100 inset-ring-[1.5px] inset-ring-muted-foreground transition-opacity duration-200 group-data-[drag=off]/switch:opacity-100 group-data-[drag=on]/switch:opacity-0 group-data-checked/switch:opacity-0" />

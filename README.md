@@ -51,7 +51,7 @@ npm run tauri dev
 ```
 
 `npm run dev` starts Vite and the chat server together via `concurrently`.
-`tauri.conf.json` already invokes the same command, so `npm run tauri dev`
+`src-tauri/tauri.conf.json` already invokes the same command, so `npm run tauri dev`
 starts both.
 
 ## Provider key
@@ -69,7 +69,7 @@ each request and attaches it as a bearer header to the loopback server.
 
 > Residual risk: in the desktop app the key exists briefly in webview JS memory
 > per request. That is inherent to the process split — see
-> `docs/plan/ai-app-master-plan.md` §9.2.
+> `docs/plan/Plan_master.md` §9.2.
 
 ## Configuration
 
@@ -80,6 +80,24 @@ each request and attaches it as a bearer header to the loopback server.
 
 There is no default model. The server streams only the model the client sends,
 and rejects a request that carries none with `400 No model selected`.
+
+Your last pick is remembered. Model, effort, mode and composer layout are
+restored on load, and a stored model that has left the catalogue is replaced
+with one the picker names. See [`docs/storage.md`](docs/storage.md) for where
+each kind of data lives on the web and desktop targets.
+
+## Storage
+
+| Data | Where |
+|---|---|
+| Preferences (model, effort, mode, layout) | `localStorage` via `src/lib/prefs.ts` |
+| Conversation threads | `localStorage` via `src/lib/sessions.ts`, capped at 50 |
+| Folder handles | IndexedDB via `src/lib/fs-access.ts` — handles cannot go in `localStorage` |
+| API key | OS credential store, through Rust. Never web storage |
+
+Browser storage is evictable, and that is fine on the web target but not for an
+installed app. `docs/storage.md` covers the platform paths and what should move
+into an app-data file.
 
 ## Tools
 
@@ -136,20 +154,106 @@ public catalog, projected to a slim shape and cached for 15 minutes.
 - Searchable by model name, id, or provider.
 - Capabilities are shown as text (`free · 256k ctx · tools · reasoning · vision`),
   not as icons.
-- A reasoning-effort selector appears **only** for models that advertise
-  `reasoning_effort`. The server re-checks this before forwarding it, so an
-  unsupported value is never sent.
+- Reasoning is modelled as **five separate capabilities**, not one setting:
+  whether a reasoning mechanism exists, reasoning *effort*, *thinking mode*, a
+  *thinking budget*, and *reasoning display*. They have different semantics and
+  are never substituted for one another. In particular effort, thinking mode and
+  reasoning display are never conflated — see `src/lib/reasoning.ts`.
+- The effort selector offers **only the levels the selected model publishes**,
+  with the provider's own wire values and labels. Across the live catalogue that
+  is 27 distinct level sets, from `[high]` to
+  `[none, minimal, low, medium, high, xhigh, max]` — including sets with holes,
+  such as `[none, high]` or `[low, high, max]`. There is no universal level list,
+  and an earlier hardcoded one was wrong for most models.
+- A model that accepts the effort *parameter* but publishes no levels for it gets
+  **no picker and an explanation**, not an assumed range. An absent metadata
+  field is treated as `unknown`, which is distinct from `unsupported`: the
+  former means "not looked up", the latter means "documented as absent".
+- **Choosing no effort means the provider's default, expressed by omitting the
+  field** — never by sending `medium` or any other value. An explicit choice the
+  model cannot honour is refused with `400` and the list it does accept; it is
+  never quietly remapped.
+- `none` is shown as whatever the provider calls it ("None"), and is *not*
+  treated as a universal "thinking off". Turning thinking off is a
+  **thinking-mode** decision, which providers model separately and which
+  OpenRouter does not publish at all.
+- Selection and effort persist in local storage; both are preferences, not
 - Selection and effort persist in local storage; both are preferences, not
   secrets.
+
+### Provider support
+
+All four adapters are implemented. What differs is **how each one's capabilities
+were established** — and that distinction is deliberate, because three of them
+cannot be verified live from this checkout.
+
+| Provider | Capability source | Verified |
+| --- | --- | --- |
+| **OpenRouter** | Live `GET /api/v1/models`, per-model `reasoning.supported_efforts` | **Live** — 471 models, 204 publishing level sets |
+| **Anthropic** | Documented `GET /v1/models` capability schema (`capabilities.effort`, `capabilities.thinking.types`) | **Fixtures only** — a live run needs `ANTHROPIC_API_KEY` |
+| **OpenAI** | Curated from the official reasoning guide. `GET /v1/models` is a listing endpoint, not a capability schema, so nothing is derived from it; uncurated models stay `unknown` | **Fixtures only** — needs `OPENAI_API_KEY` |
+| **NVIDIA NIM** | `GET /v1/models` returns only `id`/`object`/`created`/`owned_by` — **no capability metadata whatsoever** | **Fixtures only** — listing is public |
+
+**NVIDIA NIM specifically.** Effort controls are *not* inherently impossible on
+NIM — NVIDIA documents `reasoning_effort` for its GPT-OSS models in multi-LLM
+deployments configured with `NIM_REASONING_PARSER=openai_gptoss`. That is a
+**server-side deployment setting the API does not expose**, so this app cannot
+establish whether it is set. Rather than match on a model name and offer a control
+that silently fails on an unconfigured deployment, every NIM model resolves to
+`unknown` and stays on the provider default. The documented levels are recorded in
+`server/providers.nim.ts` with their source, and `nimEffortFromDeployment` is the
+single seam where a deployment capability channel would slot in.
+
+### How effort reaches the provider
+
+Effort is one facet of five (capability, effort, thinking mode, thinking budget,
+display) and is validated on its own. `reasoning.effort` (OpenRouter),
+`output_config.effort` (Anthropic) and `reasoning.effort` (OpenAI) are three
+different wire parameters; none is derived from another. Choosing no effort omits
+the field entirely — it is never `medium`. An explicit value a model does not
+accept is refused with a message naming what it does accept.
+
+`max` is a real value on OpenRouter's `reasoning.effort` surface (94 models
+publish it) even though it is absent from the separate `reasoning_effort` enum,
+and it is verified live: on `upstage/solar-mini4`, `xhigh` returned 45 reasoning
+tokens and `max` returned 298. It is *not* borrowed from `verbosity`, which is a
+third, unrelated parameter controlling answer length.
+
+Provider-specific behaviour lives in `server/providers*.ts` only. Adding one means
+adding an adapter there; the UI and the request path do not change.
 
 `openrouter/free` is sorted last: it routes to a random free model per request,
 so tool support is intermittent.
 
 ## Known limitations
 
-- **Effort levels are not discoverable per model.** The catalog says whether
-  effort is supported, never which discrete levels are accepted. An unsupported
-  level surfaces the provider's error verbatim.
+- **Only the local environment exists.** The composer footer carries an
+  environment picker because the upstream assistant-ui composer it is modelled on
+  has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,
+  marked "Soon" and refusing the click, because there is no remote transport and
+  no hosted backend to point them at. `docs/plan/Plan_master.md` puts cloud
+  synchronization out of scope. There is no state behind the picker — the value
+  can only ever be `local`, so a state variable would overstate what the app can
+  do.
+- **The environment scopes the folder picker.** Which filesystem "choose a
+  folder" means depends on where the agent runs — VS Code merges the two into one
+  picker for the same reason, searching local, GitHub and remote workspaces
+  through a single control. Here the folder control takes its copy from
+  `FOLDER_SOURCE`, keyed by `SelectableEnvironment`, so making a second
+  environment selectable fails to compile until that environment says what its
+  files are called and where they live. Only `local` has an entry, because only
+  `local` has a filesystem behind it.
+- **Effort levels come from OpenRouter's `supported_efforts`.** That is per
+  model and accurate, but it is the *gateway's* view, translated into its own
+  vocabulary: `minimal` is sent to Claude as `low`, and `xhigh` maps down to
+  `high` for Gemini. A model served direct from another provider would need an
+  adapter beside the others in `server/providers.ts` before its real levels could
+  be trusted.
+- **There is no "ultracode" effort level.** Claude Code has a toggle by that
+  name, but its own docs describe it as a session setting that orchestrates
+  subagents, not an effort value — and `ultrathink` is a prompt keyword
+  rewritten client-side. Neither is a `reasoning_effort` value, so neither can
+  be sent to an API.
 - **MCP support is not discoverable per model.** It is a provider-side plugin
   concept, not a model capability.
 - **The catalog is global, not key-filtered.** "What this key supports" is the

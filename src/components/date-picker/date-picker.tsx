@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconCalendar } from "@tabler/icons-react"
+import { CalendarIcon } from "lucide-react"
 import { cn } from "cn"
 import type { DateRange } from "react-day-picker"
 
@@ -142,7 +142,7 @@ function DatePickerShell({
 
   const triggerContent = (
     <>
-      <IconCalendar aria-hidden className="text-muted-foreground" />
+      <CalendarIcon aria-hidden className="text-muted-foreground" />
       <span className="min-w-0 truncate">{label ?? placeholder}</span>
     </>
   )

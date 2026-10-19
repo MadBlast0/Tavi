@@ -17,6 +17,46 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { KeyStatus } from "./key-types";
+import {
+  availableEffort,
+  type ModelReasoningCapabilities,
+} from "../lib/reasoning";
+
+/**
+ * What the model actually publishes about effort, or why nothing is shown.
+ *
+ * "unknown" is stated as unknown. Describing an unlooked-up capability as absent
+ * is the same class of mistake as inventing a level list.
+ */
+const describeReasoning = (model: SlimModel): string => {
+  const { status, values, defaultKnown, defaultValue } = model.capabilities.effort;
+  if (status === "unknown") return "Not published";
+  if (status === "unsupported") return "Not supported";
+  const levels = availableEffort(model.capabilities.effort);
+  if (levels.length === 0) {
+    return status === "supported"
+      ? "Supported, levels not published"
+      : "Not published";
+  }
+  const shown = levels.map((level) => level.label).join(" · ");
+  if (defaultKnown && defaultValue) {
+    const match = levels.find((level) => level.value === defaultValue);
+    return match ? `${shown} (default ${match.label})` : shown;
+  }
+  void values;
+  return shown;
+};
+
+/** Thinking mode is a separate control from effort and is reported separately. */
+const describeThinking = (model: SlimModel): string => {
+  const mode = model.capabilities.thinkingMode;
+  if (mode.status === "unknown") return "Not published";
+  if (mode.status === "unsupported") return "Not supported";
+  if (mode.alwaysOn) return "Always on";
+  const options = mode.options ?? [];
+  if (options.length === 0) return "Supported, modes not published";
+  return options.map((option) => option.label).join(" · ");
+};
 
 type SlimModel = {
   id: string;
@@ -26,8 +66,8 @@ type SlimModel = {
   free: boolean;
   supportsTools: boolean;
   supportsReasoning: boolean;
-  supportsEffort: boolean;
-  reasoningMandatory: boolean;
+  /** Full normalised reasoning profile for this model, straight from the adapter. */
+  capabilities: ModelReasoningCapabilities;
   inputModalities: string[];
   outputModalities: string[];
   promptPrice: number;
@@ -133,15 +173,14 @@ const ModelDetails = ({ hovered }: { hovered: Hovered }) => {
         muted={!model.supportsTools}
       />
       <DetailRow
-        label="Reasoning"
-        value={
-          model.supportsReasoning
-            ? model.reasoningMandatory
-              ? "Always reasons"
-              : "Optional"
-            : "No reasoning"
-        }
-        muted={!model.supportsReasoning}
+        label="Reasoning effort"
+        value={describeReasoning(model)}
+        muted={availableEffort(model.capabilities.effort).length === 0}
+      />
+      <DetailRow
+        label="Thinking"
+        value={describeThinking(model)}
+        muted={model.capabilities.thinkingMode.status !== "supported"}
       />
       <DetailRow
         label="Context"
@@ -245,7 +284,15 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
   }, [aui, modelId, effort]);
 
   const selected = catalog.find((m) => m.id === modelId);
-  const showEffort = selected?.supportsEffort ?? false;
+  // Gated on whether this specific model publishes this specific level, not
+  // merely on the model supporting effort at all: a model offering only
+  // low/medium/high must not be sent a "max" carried over from another model.
+  const showEffort =
+    selected !== undefined &&
+    effort !== "" &&
+    availableEffort(selected.capabilities.effort).some(
+      (level) => level.value === effort,
+    );
   const effectiveEffort = showEffort ? effort : undefined;
 
   const showDetails = (model: SlimModel, element: HTMLElement) => {

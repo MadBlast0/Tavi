@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Accordion as AccordionPrimitive } from "@base-ui/react/accordion"
-import { IconChevronDown } from "@tabler/icons-react"
+import { ChevronDownIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -217,7 +217,7 @@ function AccordionTrigger({
             className="ms-auto mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground transition-[color,translate] duration-150 group-hover/accordion-trigger:text-foreground group-active/accordion-trigger:translate-y-px group-data-panel-open/accordion-trigger:text-foreground motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4"
           >
             {icon ?? (
-              <IconChevronDown className="transition-[rotate] duration-200 ease-spring group-data-panel-open/accordion-trigger:rotate-180 motion-reduce:transition-none" />
+              <ChevronDownIcon className="transition-[rotate] duration-200 ease-spring group-data-panel-open/accordion-trigger:rotate-180 motion-reduce:transition-none" />
             )}
           </span>
         )}

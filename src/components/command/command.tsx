@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
-import { IconChevronLeft, IconSearch, IconX } from "@tabler/icons-react"
+import { ChevronLeftIcon, SearchIcon, XIcon } from "lucide-react"
 import { Command as CommandPrimitive, useCommandState } from "cmdk"
 import { cn } from "cn"
 
@@ -432,14 +432,14 @@ function CommandInput({
           }}
           className="-ms-1.5 inline-flex h-6 max-w-40 min-w-0 shrink-0 items-center gap-0.5 rounded-[calc(var(--radius-sm)*0.8)] bg-muted ps-0.5 pe-2 text-xs font-medium text-foreground transition-[background-color,scale] duration-150 ease-out-quint outline-none hover:bg-foreground/10 focus-visible:ring-3 focus-visible:ring-focus-ring focus-visible:outline-hidden motion-safe:animate-in motion-safe:animation-duration-150 motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:active:scale-95 pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
         >
-          <IconChevronLeft
+          <ChevronLeftIcon
             aria-hidden
             className="size-3.5 shrink-0 rtl:-scale-x-100"
           />
           <span className="truncate">{page.title}</span>
         </button>
       ) : (
-        <IconSearch
+        <SearchIcon
           aria-hidden
           className="pointer-events-none size-4 shrink-0 text-muted-foreground"
         />
@@ -499,7 +499,7 @@ function CommandInput({
             : "opacity-100"
         )}
       >
-        <IconX />
+        <XIcon />
       </Button>
     </div>
   )
@@ -895,7 +895,7 @@ function CommandItem({
     <>
       {children}
       {page ? (
-        <IconChevronLeft
+        <ChevronLeftIcon
           aria-hidden
           className="ms-auto size-4 shrink-0 rotate-180 text-muted-foreground rtl:rotate-0"
         />
@@ -1108,7 +1108,7 @@ function CommandDialog({
                 />
               }
             >
-              <IconX />
+              <XIcon />
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           ) : null}

@@ -5,7 +5,7 @@ import { Field as FieldPrimitive } from "@base-ui/react/field"
 import { Fieldset as FieldsetPrimitive } from "@base-ui/react/fieldset"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconAlertCircle, IconCheck } from "@tabler/icons-react"
+import { AlertCircleIcon, CheckIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -315,8 +315,8 @@ function FieldStatus({ className, ...props }: React.ComponentProps<"span">) {
       )}
       {...props}
     >
-      <IconCheck className="hidden text-success group-data-dirty/field:group-data-valid/field:block motion-safe:animate-checkbox-draw motion-safe:[stroke-dasharray:22] motion-safe:[stroke-dashoffset:22]" />
-      <IconAlertCircle className="hidden text-destructive group-data-invalid/field:block motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50" />
+      <CheckIcon className="hidden text-success group-data-dirty/field:group-data-valid/field:block motion-safe:animate-checkbox-draw motion-safe:[stroke-dasharray:22] motion-safe:[stroke-dashoffset:22]" />
+      <AlertCircleIcon className="hidden text-destructive group-data-invalid/field:block motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50" />
     </span>
   )
 }

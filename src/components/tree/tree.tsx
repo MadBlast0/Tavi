@@ -4,7 +4,7 @@ import * as React from "react"
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconChevronRight } from "@tabler/icons-react"
+import { ChevronRightIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -1053,7 +1053,7 @@ function TreeItemLabel({
               aria-hidden="true"
               className="relative grid size-(--tree-chevron) shrink-0 place-items-center text-muted-foreground transition-colors duration-150 group-hover/tree-item-label:text-foreground after:absolute after:-inset-x-1 after:-inset-y-2 rtl:-scale-x-100 [&>svg]:invisible [&>svg]:size-4 [&>svg]:transition-[rotate] [&>svg]:duration-200 [&>svg]:ease-out-quint group-data-expanded/tree-item-label:[&>svg]:rotate-90 motion-reduce:[&>svg]:transition-none"
             >
-              <IconChevronRight />
+              <ChevronRightIcon />
             </span>
             {tree.checkboxes ? (
               <Checkbox

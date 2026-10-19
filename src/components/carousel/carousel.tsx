@@ -4,13 +4,13 @@ import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import {
-  IconArrowDown,
-  IconArrowLeft,
-  IconArrowRight,
-  IconArrowUp,
-  IconPlayerPause,
-  IconPlayerPlay,
-} from "@tabler/icons-react"
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  PauseIcon,
+  PlayIcon,
+} from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -1259,9 +1259,9 @@ function CarouselPrevious({
     >
       {children ??
         (orientation === "horizontal" ? (
-          <IconArrowLeft className="rtl:-scale-x-100" />
+          <ArrowLeftIcon className="rtl:-scale-x-100" />
         ) : (
-          <IconArrowUp />
+          <ArrowUpIcon />
         ))}
     </Button>
   )
@@ -1289,9 +1289,9 @@ function CarouselNext({
     >
       {children ??
         (orientation === "horizontal" ? (
-          <IconArrowRight className="rtl:-scale-x-100" />
+          <ArrowRightIcon className="rtl:-scale-x-100" />
         ) : (
-          <IconArrowDown />
+          <ArrowDownIcon />
         ))}
     </Button>
   )
@@ -1526,7 +1526,7 @@ function CarouselAutoplayToggle({
       {...props}
     >
       {children ??
-        (snapshot.playing ? <IconPlayerPause /> : <IconPlayerPlay />)}
+        (snapshot.playing ? <PauseIcon /> : <PlayIcon />)}
     </Button>
   )
 }

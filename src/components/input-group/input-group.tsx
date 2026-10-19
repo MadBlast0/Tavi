@@ -3,7 +3,7 @@
 import * as React from "react"
 import { flushSync } from "react-dom"
 import { Input as InputPrimitive } from "@base-ui/react/input"
-import { IconEye, IconEyeOff, IconX } from "@tabler/icons-react"
+import { EyeIcon, EyeOffIcon, XIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -552,7 +552,7 @@ function InputGroupClear({
       }}
       {...props}
     >
-      {children ?? <IconX />}
+      {children ?? <XIcon />}
     </InputGroupButton>
   )
 }
@@ -625,11 +625,11 @@ function InputGroupPasswordToggle({
       }}
       {...props}
     >
-      <IconEye
+      <EyeIcon
         aria-hidden="true"
         className={cn(reveal, revealed && "scale-50 opacity-0 blur-[2px]")}
       />
-      <IconEyeOff
+      <EyeOffIcon
         aria-hidden="true"
         className={cn(reveal, !revealed && "scale-50 opacity-0 blur-[2px]")}
       />

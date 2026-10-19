@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { CheckboxGroup as CheckboxGroupPrimitive } from "@base-ui/react/checkbox-group"
-import { IconCheck, IconMinus } from "@tabler/icons-react"
+import { CheckIcon, MinusIcon } from "lucide-react"
 import { cn } from "cn"
 
 function mergeClassName<State>(
@@ -30,13 +30,13 @@ function CheckboxMark({ indeterminate }: { indeterminate: boolean }) {
     }
   }, [])
 
-  const Icon = indeterminate ? IconMinus : IconCheck
+  const Icon = indeterminate ? MinusIcon : CheckIcon
 
   return (
     <Icon
       ref={markRef}
       aria-hidden
-      stroke={2.75}
+      strokeWidth={2.75}
       className={cn(
         "pointer-events-none size-3.5 motion-safe:data-draw:animate-checkbox-draw",
         indeterminate

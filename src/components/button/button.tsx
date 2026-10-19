@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { IconAlertCircle, IconCircleCheck } from "@tabler/icons-react"
+import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -276,7 +276,7 @@ function Button({
     if (layer === "success") {
       return (
         <>
-          <IconCircleCheck
+          <CircleCheckIcon
             className={cn(
               animated &&
                 "motion-safe:[&>path:first-child]:animate-button-draw-circle motion-safe:[&>path:first-child]:[stroke-dasharray:57] motion-safe:[&>path:first-child]:[stroke-dashoffset:57] motion-safe:[&>path:last-child]:animate-button-draw-check motion-safe:[&>path:last-child]:[stroke-dasharray:9] motion-safe:[&>path:last-child]:[stroke-dashoffset:9]"
@@ -288,7 +288,7 @@ function Button({
     }
     return (
       <>
-        <IconAlertCircle />
+        <AlertCircleIcon />
         {iconOnly ? null : resolvedErrorLabel}
       </>
     )

@@ -14,7 +14,13 @@ import {
 import type { ToolSet, UIMessage } from "ai";
 
 import { fetchKeyStatus } from "./key-status.ts";
-import { getCatalog, modelSupportsEffort } from "./models.ts";
+import { defaultConnection, getCatalog, modelCapabilities } from "./models.ts";
+import {
+  cloneRepository,
+  ensureProjectsRoot,
+  listProjects,
+} from "./projects.ts";
+import { adapterFor, type OpenRouterProviderOptions } from "./providers.ts";
 
 /**
  * The Tauri window loads a static Vite bundle, so there is no server colocated
@@ -24,27 +30,17 @@ import { getCatalog, modelSupportsEffort } from "./models.ts";
 
 const PORT = Number(process.env.CHAT_SERVER_PORT ?? 8787);
 
-const REASONING_EFFORTS = [
-  "xhigh",
-  "high",
-  "medium",
-  "low",
-  "minimal",
-  "none",
-] as const;
-
-type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
-
-const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
-  typeof value === "string" &&
-  (REASONING_EFFORTS as readonly string[]).includes(value);
-
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
 type ChatConfig = {
   modelName?: string;
+  /**
+   * How hard to reason, on one scale that includes `none` for "do not reason".
+   * There is no separate on/off: providers express turning reasoning off as the
+   * bottom of this same dial.
+   */
   reasoningEffort?: string;
 };
 
@@ -54,7 +50,7 @@ async function handleChat(request: Request): Promise<Response> {
     system?: string;
     tools?: FrontendTools;
     config?: ChatConfig;
-    // The client may also merge effort at the top level rather than inside
+    // The client may also merge these at the top level rather than inside
     // `config`; both are accepted so the wiring choice does not matter.
     reasoningEffort?: string;
   };
@@ -72,22 +68,48 @@ async function handleChat(request: Request): Promise<Response> {
     );
   }
 
-  const requestedEffort =
-    body.config?.reasoningEffort ?? body.reasoningEffort;
-  const effort = isReasoningEffort(requestedEffort)
-    ? requestedEffort
-    : undefined;
+  /* The provider adapter owns validation and serialisation for this connection.
+     It refuses an explicit value the model cannot honour instead of substituting
+     another one: a silently-downgraded effort is indistinguishable from the
+     model simply running at a lower setting. A provider default serialises to an
+     omitted field, never to a guessed `medium`. */
+  const connection = defaultConnection();
+  const adapter = adapterFor(connection.providerId);
+  const capabilities = await modelCapabilities(connection, modelName);
 
-  // Never forward an unsupported parameter; several models reject it outright.
-  const supportsEffort = effort ? await modelSupportsEffort(modelName) : false;
+  let reasoningFields: OpenRouterProviderOptions | Record<string, never> = {};
+  if (adapter && capabilities) {
+    const requestedEffort =
+      body.config?.reasoningEffort ?? body.reasoningEffort;
 
-  // Logs the resolved model and whether effort was applied. No key, no headers,
-  // no request body.
-  console.log(
-    `[chat] model=${modelName} effort=${effort ?? "none"}${
-      effort && !supportsEffort ? " (dropped: model lacks effort support)" : ""
-    }`,
-  );
+    const serialized = adapter.serializeReasoning(capabilities, {
+      effort:
+        requestedEffort === undefined || requestedEffort === null
+          ? { mode: "provider_default" }
+          : { mode: "explicit", value: String(requestedEffort) },
+      thinkingMode: { mode: "provider_default" },
+    });
+
+    if (serialized.kind === "reject") {
+      console.log(`[chat] rejected: ${serialized.message}`);
+      return Response.json({ error: serialized.message }, { status: 400 });
+    }
+    if (serialized.kind === "payload") {
+      // The adapter returns provider-native fields; they are namespaced here for
+      // whichever provider client is in use.
+      reasoningFields =
+        connection.providerId === "openrouter"
+          ? { openrouter: serialized.fields as OpenRouterProviderOptions["openrouter"] }
+          : (serialized.fields as Record<string, never>);
+    }
+  }
+
+  const applied = Object.keys(reasoningFields).length
+    ? JSON.stringify(reasoningFields)
+    : "provider default";
+  // Logs the resolved model and the fields actually serialised. No key, no
+  // headers, no request body.
+  console.log(`[chat] model=${modelName} reasoning=${applied}`);
 
   // AssistantChatTransport forwards system messages and any frontend tools the
   // provider registered, so both have to be rehydrated here.
@@ -104,12 +126,8 @@ async function handleChat(request: Request): Promise<Response> {
     // result and no assistant reply. Five covers realistic tool chains while
     // capping what a confused run can burn on the free tier.
     stopWhen: stepCountIs(5),
-    ...(supportsEffort && effort
-      ? {
-          providerOptions: {
-            openrouter: { reasoning: { effort } },
-          },
-        }
+    ...(Object.keys(reasoningFields).length
+      ? { providerOptions: reasoningFields }
       : {}),
   });
 
@@ -137,6 +155,21 @@ const readBody = (req: IncomingMessage): Promise<Buffer> =>
     req.on("error", reject);
   });
 
+/**
+ * Cloning runs `git` against this machine's filesystem, so it is only offered to
+ * requests that originated here. Anything else is a different process making a
+ * request the app has no reason to honour.
+ */
+const isLoopback = (req: IncomingMessage): boolean => {
+  const address = req.socket.remoteAddress ?? "";
+  return (
+    address === "127.0.0.1" ||
+    address === "::1" ||
+    address === "::ffff:127.0.0.1" ||
+    address === ""
+  );
+};
+
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -151,6 +184,42 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/health") {
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  /* Where cloned repositories live, so the composer can tell the user before
+     they paste a URL rather than after. */
+  if (url.pathname === "/api/projects") {
+    try {
+      sendJson(res, 200, {
+        root: await ensureProjectsRoot(),
+        projects: await listProjects(),
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        error: `Could not read the projects folder: ${(error as Error).message}`,
+      });
+    }
+    return;
+  }
+
+  /* Runs on this machine, so it is restricted to loopback. A request that
+     arrives from elsewhere is not from this app's own page. */
+  if (url.pathname === "/api/projects/clone") {
+    if (!isLoopback(req)) {
+      sendJson(res, 403, { error: "Cloning is only available to the local app." });
+      return;
+    }
+    let body: { url?: string };
+    try {
+      const raw = await readBody(req);
+      body = JSON.parse(raw.toString("utf8")) as { url?: string };
+    } catch {
+      sendJson(res, 400, { error: "Could not read the request body." });
+      return;
+    }
+    const result = await cloneRepository(body.url ?? "");
+    sendJson(res, result.ok ? 200 : 400, result);
     return;
   }
 

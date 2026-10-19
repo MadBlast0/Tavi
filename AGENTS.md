@@ -40,3 +40,21 @@ identity — ask the maintainer.
 - **No hidden fallbacks.** The server refuses a chat request that carries no
   model (`400`) rather than substituting a default. Keep it that way.
 - `server/chat.ts` never logs request bodies, headers, or the API key.
+
+## Icons
+
+**Use `lucide-react`, not `@tabler/icons-react`.**
+
+`components.json` sets `"iconLibrary": "lucide"`, which is shadcn's own default
+and what any new `shadcn add` will generate. The assistant-ui elements
+(`src/components/assistant-ui/*.aui.tsx`) hardcode Lucide and ignore that setting
+entirely. Following Lucide means regenerating a component produces what the
+codebase already has, instead of re-introducing the other pack every time.
+
+A number of checked-in shadcn block files were scaffolded with Tabler. Those are
+being migrated to Lucide; do not add new Tabler imports.
+
+The two packs are not interchangeable at the same size — both stroke at 2px, but
+their glyph proportions differ, so mixing them at `size-4` reads as a mistake.
+
+Name icons `<Thing>Icon` and import from `lucide-react`.

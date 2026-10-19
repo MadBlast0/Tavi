@@ -2,13 +2,13 @@
 
 import * as React from "react"
 import {
-  IconArrowUp,
-  IconFileText,
-  IconPaperclip,
-  IconPlayerStopFilled,
-  IconRefresh,
-  IconX,
-} from "@tabler/icons-react"
+  ArrowUpIcon,
+  FileTextIcon,
+  PaperclipIcon,
+  SquareIcon,
+  RefreshCwIcon,
+  XIcon,
+} from "lucide-react"
 import { cn } from "cn"
 
 import { prefersReducedMotion, useSizeMorph } from "@/lib/motion"
@@ -608,7 +608,7 @@ function PromptInput({
             className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm motion-safe:animate-in motion-safe:animation-duration-150 motion-safe:fade-in-0"
           >
             <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-ring px-10 py-8 text-sm text-muted-foreground">
-              <IconPaperclip className="size-6 text-foreground" />
+              <PaperclipIcon className="size-6 text-foreground" />
               Drop files to attach
             </div>
           </div>
@@ -659,7 +659,7 @@ function PromptInputBody({
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-(--composer-radius) border-2 border-dashed border-ring bg-background/90 text-sm text-muted-foreground motion-safe:animate-in motion-safe:animation-duration-150 motion-safe:fade-in-0"
         >
-          <IconPaperclip className="size-4 text-foreground" />
+          <PaperclipIcon className="size-4 text-foreground" />
           Drop files to attach
         </div>
       ) : null}
@@ -694,6 +694,34 @@ function PromptInputTextarea({
   React.useEffect(() => {
     if (autoFocus && !readCoarse()) textareaRef.current?.focus()
   }, [autoFocus, textareaRef])
+
+  /**
+   * Each variant renders its own textarea and only one is mounted at a time, but
+   * they share the single `textareaRef` in context. A plain ref object does not
+   * survive a variant switch: React clears it on unmount, and the outgoing
+   * variant unmounts *after* the incoming one has registered, so the shared ref
+   * ends up null and stays that way.
+   *
+   * Everything that writes into the field directly - the starter chips, the @
+   * file menu, the / commands, dictation - goes through that ref, so once it is
+   * null those controls look fine and silently do nothing.
+   *
+   * Each instance therefore remembers its own node and releases the shared ref
+   * only if that node is still the registered one.
+   */
+  const ownField = React.useRef<HTMLTextAreaElement | null>(null)
+  const attachField = React.useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      if (node) {
+        ownField.current = node
+        textareaRef.current = node
+        return
+      }
+      if (textareaRef.current === ownField.current) textareaRef.current = null
+      ownField.current = null
+    },
+    [textareaRef],
+  )
 
   const empty =
     !text && files.length === 0 && mentions.length === 0 && tools === 0
@@ -730,7 +758,7 @@ function PromptInputTextarea({
 
   return (
     <textarea
-      ref={textareaRef}
+      ref={attachField}
       data-slot="prompt-input-textarea"
       name="message"
       value={text}
@@ -892,7 +920,7 @@ function PromptInputSubmit({ className }: { className?: string }) {
                 />
               }
             >
-              <IconPlayerStopFilled />
+              <SquareIcon />
             </TooltipTrigger>
             <TooltipContent>
               Stop <KbdGroup keys="escape" size="sm" />
@@ -922,8 +950,8 @@ function PromptInputSubmit({ className }: { className?: string }) {
           }
         >
           <span className="grid *:col-start-1 *:row-start-1">
-            <IconArrowUp className="transition duration-150 ease-out group-data-[mode=stop]/submit:scale-50 group-data-[mode=stop]/submit:opacity-0 motion-reduce:transition-none" />
-            <IconPlayerStopFilled className="scale-50 opacity-0 transition duration-150 ease-out group-data-[mode=stop]/submit:scale-100 group-data-[mode=stop]/submit:opacity-100 motion-reduce:transition-none" />
+            <ArrowUpIcon className="transition duration-150 ease-out group-data-[mode=stop]/submit:scale-50 group-data-[mode=stop]/submit:opacity-0 motion-reduce:transition-none" />
+            <SquareIcon className="scale-50 opacity-0 transition duration-150 ease-out group-data-[mode=stop]/submit:scale-100 group-data-[mode=stop]/submit:opacity-100 motion-reduce:transition-none" />
           </span>
         </TooltipTrigger>
         <TooltipContent>
@@ -987,7 +1015,7 @@ function PromptInputAttachments({ className }: { className?: string }) {
                   context.textareaRef.current?.focus()
                 }}
               >
-                <IconX />
+                <XIcon />
               </AttachmentAction>
             </AttachmentActions>
           </Attachment>
@@ -1011,7 +1039,7 @@ function PromptInputAttachments({ className }: { className?: string }) {
               </AttachmentMedia>
             ) : (
               <AttachmentMedia>
-                {file.pasted ? <IconFileText /> : <IconPaperclip />}
+                {file.pasted ? <FileTextIcon /> : <PaperclipIcon />}
               </AttachmentMedia>
             )}
             <AttachmentContent>
@@ -1024,7 +1052,7 @@ function PromptInputAttachments({ className }: { className?: string }) {
                   aria-label={`Retry ${file.name}`}
                   onClick={() => context.retryFile(file.id)}
                 >
-                  <IconRefresh />
+                  <RefreshCwIcon />
                 </AttachmentAction>
               ) : null}
               <AttachmentAction
@@ -1034,7 +1062,7 @@ function PromptInputAttachments({ className }: { className?: string }) {
                   context.textareaRef.current?.focus()
                 }}
               >
-                <IconX />
+                <XIcon />
               </AttachmentAction>
             </AttachmentActions>
           </Attachment>
@@ -1113,7 +1141,7 @@ function PromptInputQueue({ className }: { className?: string }) {
             aria-label="Remove from queue"
             onClick={() => context.removeQueued(item.id)}
           >
-            <IconX />
+            <XIcon />
           </Button>
         </li>
       ))}

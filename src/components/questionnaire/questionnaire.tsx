@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Questionnaire as QuestionnairePrimitive } from "@shadcn/react/questionnaire"
-import { IconCheck } from "@tabler/icons-react"
+import { CheckIcon } from "lucide-react"
 import { type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -735,8 +735,8 @@ function QuestionnaireChoice({
         className="relative flex size-4 shrink-0 items-center justify-center rounded-full bg-background inset-ring-(length:--hairline) inset-ring-input transition-[background-color,box-shadow] duration-150 group-has-data-[slot=questionnaire-choice-description]/questionnaire-choice:mt-0.5 group-data-invalid/questionnaire-choice:inset-ring-destructive group-data-[type=checkbox]/questionnaire-choice:rounded-[4px] group-data-checked/questionnaire-choice:bg-primary group-data-checked/questionnaire-choice:text-primary-foreground group-data-checked/questionnaire-choice:inset-ring-primary dark:bg-input/30 dark:group-data-checked/questionnaire-choice:bg-primary forced-colors:border"
       >
         <span className="size-1.5 scale-0 rounded-full bg-current transition-[scale] duration-300 ease-spring group-data-[type=checkbox]/questionnaire-choice:hidden group-data-checked/questionnaire-choice:scale-100 motion-reduce:transition-none" />
-        <IconCheck
-          stroke={3}
+        <CheckIcon
+          strokeWidth={3}
           className="hidden size-3 opacity-0 group-data-[type=checkbox]/questionnaire-choice:block group-data-checked/questionnaire-choice:opacity-100 motion-safe:group-data-checked/questionnaire-choice:animate-checkbox-draw motion-safe:group-data-checked/questionnaire-choice:[stroke-dasharray:22] motion-safe:group-data-checked/questionnaire-choice:[stroke-dashoffset:22]"
         />
       </span>

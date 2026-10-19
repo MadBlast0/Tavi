@@ -4,10 +4,10 @@ import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import {
-  IconChevronLeft,
-  IconChevronRight,
-  IconDots,
-} from "@tabler/icons-react"
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  EllipsisIcon,
+} from "lucide-react"
 import { cn } from "cn"
 
 import { buttonVariants } from "@/components/button"
@@ -513,7 +513,7 @@ function PaginationPrevious({
       className={cn(text ? "ps-2" : "px-0", className)}
       {...props}
     >
-      <IconChevronLeft
+      <ChevronLeftIcon
         data-icon={text ? "inline-start" : undefined}
         className="rtl:-scale-x-100"
       />
@@ -534,7 +534,7 @@ function PaginationNext({
       {...props}
     >
       {text ? <span className="max-sm:hidden">{text}</span> : null}
-      <IconChevronRight
+      <ChevronRightIcon
         data-icon={text ? "inline-end" : undefined}
         className="rtl:-scale-x-100"
       />
@@ -703,7 +703,7 @@ function PaginationEllipsis({
         aria-label="More pages, go to page"
         className="text-muted-foreground hover:text-foreground"
       >
-        <IconDots />
+        <EllipsisIcon />
       </PaginationJump>
     )
   }
@@ -717,7 +717,7 @@ function PaginationEllipsis({
       )}
       {...props}
     >
-      <IconDots aria-hidden="true" />
+      <EllipsisIcon aria-hidden="true" />
       <span className="sr-only">More pages</span>
     </span>
   )

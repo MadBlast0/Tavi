@@ -1,14 +1,31 @@
 /**
- * OpenRouter model discovery.
+ * Model discovery across configured provider connections.
  *
- * The upstream catalog is several megabytes and carries descriptions,
- * benchmarks and provider links the interface never renders, so it is
- * projected down to a slim shape before crossing to the browser.
+ * Discovery and capability resolution both go through `server/providers.ts`, so
+ * adding a provider never requires editing this file. The catalogue is cached
+ * per connection because the same model id can mean different things through
+ * different gateways, protocols or routes.
  */
 
-const CATALOG_URL = "https://openrouter.ai/api/v1/models";
+import {
+  adapterFor,
+  openRouterAdapter,
+  type ProviderConnection,
+  type ProviderModel,
+} from "./providers.ts";
+import type { ModelReasoningCapabilities } from "../src/lib/reasoning.ts";
+
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * What the browser receives.
+ *
+ * The upstream catalogue is several megabytes and carries descriptions,
+ * benchmarks and provider links the interface never renders, so it is projected
+ * down. `capabilities` is the full normalised profile: the reasoning controls are
+ * several distinct facets, and collapsing them here is what previously made
+ * effort and thinking look interchangeable.
+ */
 export type SlimModel = {
   id: string;
   name: string;
@@ -17,29 +34,17 @@ export type SlimModel = {
   free: boolean;
   supportsTools: boolean;
   supportsReasoning: boolean;
-  supportsEffort: boolean;
-  reasoningMandatory: boolean;
+  capabilities: ModelReasoningCapabilities;
   inputModalities: string[];
   outputModalities: string[];
   promptPrice: number;
   completionPrice: number;
 };
 
-type UpstreamModel = {
-  id: string;
-  name: string;
-  context_length?: number;
-  architecture?: {
-    input_modalities?: string[];
-    output_modalities?: string[];
-  };
-  pricing?: { prompt?: string; completion?: string };
-  supported_parameters?: string[];
-  reasoning?: { mandatory?: boolean };
-};
+type CacheEntry = { models: SlimModel[]; fetchedAt: number };
 
-let cache: { models: SlimModel[]; fetchedAt: number } | null = null;
-let inFlight: Promise<SlimModel[]> | null = null;
+const cache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<SlimModel[]>>();
 
 const toNumber = (value: string | undefined): number => {
   const parsed = Number(value);
@@ -57,78 +62,103 @@ const deriveProvider = (name: string, id: string) => {
   return slash > 0 ? id.slice(0, slash) : id;
 };
 
-const project = (upstream: UpstreamModel): SlimModel => {
-  const parameters = upstream.supported_parameters ?? [];
-  const promptPrice = toNumber(upstream.pricing?.prompt);
-  const completionPrice = toNumber(upstream.pricing?.completion);
+const project = (
+  provider: ProviderModel,
+  capabilities: ModelReasoningCapabilities,
+): SlimModel => {
+  const raw = (provider.raw ?? {}) as {
+    context_length?: number;
+    architecture?: { input_modalities?: string[]; output_modalities?: string[] };
+    pricing?: { prompt?: string; completion?: string };
+    supported_parameters?: string[];
+  };
+
+  const promptPrice = toNumber(raw.pricing?.prompt);
+  const completionPrice = toNumber(raw.pricing?.completion);
 
   return {
-    id: upstream.id,
-    name: upstream.name,
-    provider: deriveProvider(upstream.name, upstream.id),
-    contextLength: upstream.context_length ?? null,
+    id: provider.id,
+    name: provider.displayName,
+    provider: deriveProvider(provider.displayName, provider.id),
+    contextLength: raw.context_length ?? null,
     free: promptPrice === 0 && completionPrice === 0,
-    supportsTools: parameters.includes("tools"),
-    supportsReasoning: parameters.includes("reasoning"),
-    supportsEffort: parameters.includes("reasoning_effort"),
-    reasoningMandatory: upstream.reasoning?.mandatory ?? false,
-    inputModalities: upstream.architecture?.input_modalities ?? ["text"],
-    outputModalities: upstream.architecture?.output_modalities ?? ["text"],
+    supportsTools: (raw.supported_parameters ?? []).includes("tools"),
+    supportsReasoning: capabilities.reasoningCapability !== "unsupported",
+    capabilities,
+    inputModalities: raw.architecture?.input_modalities ?? ["text"],
+    outputModalities: raw.architecture?.output_modalities ?? ["text"],
     promptPrice,
     completionPrice,
   };
 };
 
-const fetchCatalog = async (): Promise<SlimModel[]> => {
-  const response = await fetch(CATALOG_URL, {
-    headers: { accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`Model catalog request failed: HTTP ${response.status}`);
+const fetchFor = async (connection: ProviderConnection): Promise<SlimModel[]> => {
+  const adapter = adapterFor(connection.providerId);
+  if (!adapter) {
+    throw new Error(`No adapter registered for provider "${connection.providerId}"`);
   }
-  const payload = (await response.json()) as { data?: UpstreamModel[] };
-  return (payload.data ?? []).map(project);
+  const listed = await adapter.listModels(connection);
+  return Promise.all(
+    listed.map(async (model) =>
+      project(model, await adapter.getModelCapabilities(connection, model)),
+    ),
+  );
 };
 
 /**
- * Cached catalog. Stale data is served on upstream failure rather than failing
- * the request, so a provider hiccup does not empty the picker.
+ * Cached catalogue for one connection.
+ *
+ * Stale data is served on upstream failure rather than failing the request, so a
+ * provider hiccup does not empty the picker.
  */
-export const getCatalog = async (): Promise<{
-  models: SlimModel[];
-  stale: boolean;
-}> => {
+export const getCatalog = async (
+  connection: ProviderConnection = defaultConnection(),
+): Promise<{ models: SlimModel[]; stale: boolean }> => {
   const now = Date.now();
-
-  if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
-    return { models: cache.models, stale: false };
+  const hit = cache.get(connection.id);
+  if (hit && now - hit.fetchedAt < CACHE_TTL_MS) {
+    return { models: hit.models, stale: false };
   }
 
-  inFlight ??= fetchCatalog()
-    .then((models) => {
-      cache = { models, fetchedAt: Date.now() };
-      inFlight = null;
-      return models;
-    })
-    .catch((error) => {
-      inFlight = null;
-      throw error;
-    });
+  if (!inFlight.has(connection.id)) {
+    inFlight.set(
+      connection.id,
+      fetchFor(connection)
+        .then((models) => {
+          cache.set(connection.id, { models, fetchedAt: Date.now() });
+          return models;
+        })
+        .finally(() => inFlight.delete(connection.id)),
+    );
+  }
 
   try {
-    return { models: await inFlight, stale: false };
+    return { models: await inFlight.get(connection.id)!, stale: false };
   } catch (error) {
-    if (cache) return { models: cache.models, stale: true };
+    if (hit) return { models: hit.models, stale: true };
     throw error;
   }
 };
 
-/** Capability lookup used to gate reasoning effort before forwarding it. */
-export const modelSupportsEffort = async (id: string): Promise<boolean> => {
-  try {
-    const { models } = await getCatalog();
-    return models.find((m) => m.id === id)?.supportsEffort ?? false;
-  } catch {
-    return false;
-  }
+/** The OpenRouter connection, configured from the environment. */
+export const defaultConnection = (): ProviderConnection => ({
+  id: "openrouter",
+  providerId: openRouterAdapter.id,
+  apiProtocol: "openai-chat-completions",
+  baseUrl: "https://openrouter.ai/api/v1",
+  credentialRef: "OPENROUTER_API_KEY",
+});
+
+/**
+ * Capabilities for one model on one connection.
+ *
+ * A miss yields an `unknown` profile rather than a fabricated one, so a failed
+ * or missing lookup can never be mistaken for "this model supports nothing".
+ */
+export const modelCapabilities = async (
+  connection: ProviderConnection,
+  modelId: string,
+): Promise<ModelReasoningCapabilities | undefined> => {
+  const { models } = await getCatalog(connection);
+  return models.find((model) => model.id === modelId)?.capabilities;
 };

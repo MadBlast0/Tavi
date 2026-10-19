@@ -8,7 +8,7 @@ import {
 import { mergeProps } from "@base-ui/react/merge-props"
 import { OTPField as OTPFieldPrimitive } from "@base-ui/react/otp-field"
 import { useRender } from "@base-ui/react/use-render"
-import { IconMinus } from "@tabler/icons-react"
+import { MinusIcon } from "lucide-react"
 import { cva } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -889,7 +889,7 @@ function InputOTPSeparator({
       )}
       {...props}
     >
-      {children ?? <IconMinus aria-hidden="true" />}
+      {children ?? <MinusIcon aria-hidden="true" />}
     </OTPFieldPrimitive.Separator>
   )
 }

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconChevronRight, IconDots } from "@tabler/icons-react"
+import { ChevronRightIcon, EllipsisIcon } from "lucide-react"
 import { cn } from "cn"
 
 import { duration, easeSpring } from "@/lib/motion"
@@ -152,7 +152,7 @@ function BreadcrumbSeparator({
       {
         role: "presentation",
         "aria-hidden": true,
-        children: children ?? <IconChevronRight className="rtl:-scale-x-100" />,
+        children: children ?? <ChevronRightIcon className="rtl:-scale-x-100" />,
         className: cn(
           "inline-flex shrink-0 items-center text-muted-foreground/60 select-none [&>svg]:pointer-events-none [&>svg:not([class*='size-'])]:size-3.5 [&[data-collapsed]:has(+[data-collapsed])]:hidden",
           className
@@ -185,7 +185,7 @@ function BreadcrumbEllipsis({
           : { role: "presentation", "aria-hidden": true as const }),
         children: children ?? (
           <>
-            <IconDots aria-hidden />
+            <EllipsisIcon aria-hidden />
             <span className="sr-only">More</span>
           </>
         ),

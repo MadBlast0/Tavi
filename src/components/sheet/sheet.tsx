@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Drawer as SheetPrimitive } from "@base-ui/react/drawer"
-import { IconX } from "@tabler/icons-react"
+import { XIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -227,7 +227,7 @@ function SheetContent({
                 render={<Button variant="ghost" size="icon-sm" />}
                 className="absolute end-(--sheet-close-end,0.75rem) top-(--sheet-close-top,0.75rem) z-20 rounded-(--sheet-close-radius,var(--radius-md)) text-muted-foreground hover:text-foreground"
               >
-                <IconX />
+                <XIcon />
               </SheetPrimitive.Close>
             ) : null}
           </SheetPrimitive.Popup>

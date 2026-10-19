@@ -7,7 +7,7 @@ import {
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@shadcn/react/message-scroller"
-import { IconArrowDown } from "@tabler/icons-react"
+import { ArrowDownIcon } from "lucide-react"
 import { cn } from "cn"
 
 import { useSizeMorph } from "@/lib/motion"
@@ -366,7 +366,7 @@ function MessageScrollerButton({
     >
       {children ?? (
         <>
-          <IconArrowDown />
+          <ArrowDownIcon />
           {label ? (
             <span className="whitespace-nowrap">{label}</span>
           ) : (

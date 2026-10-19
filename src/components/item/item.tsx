@@ -3,7 +3,7 @@
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { IconChevronRight } from "@tabler/icons-react"
+import { ChevronRightIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -684,9 +684,9 @@ function ItemFooter({
 function ItemChevron({
   className,
   ...props
-}: React.ComponentProps<typeof IconChevronRight>) {
+}: React.ComponentProps<typeof ChevronRightIcon>) {
   return (
-    <IconChevronRight
+    <ChevronRightIcon
       aria-hidden="true"
       data-slot="item-chevron"
       className={cn(

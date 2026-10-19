@@ -4,7 +4,7 @@ import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"
 import { useRender } from "@base-ui/react/use-render"
-import { IconLayoutSidebar } from "@tabler/icons-react"
+import { PanelLeftIcon } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -515,7 +515,7 @@ function SidebarTrigger({
     >
       {children ?? (
         <>
-          <IconLayoutSidebar className="rtl:-scale-x-100" />
+          <PanelLeftIcon className="rtl:-scale-x-100" />
           <span className="sr-only">Toggle Sidebar</span>
         </>
       )}

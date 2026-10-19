@@ -10,10 +10,10 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import {
-  IconCheck,
-  IconChevronRight,
-  IconCircleFilled,
-} from "@tabler/icons-react"
+  CheckIcon,
+  ChevronRightIcon,
+  CircleIcon,
+} from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
@@ -404,7 +404,7 @@ function DropdownMenuCheckboxItem({
             data-slot="dropdown-menu-checkbox-item-indicator"
             className={dropdownMenuIndicatorClassName}
           >
-            <IconCheck className="text-current" />
+            <CheckIcon className="text-current" />
           </MenuPrimitive.CheckboxItemIndicator>
         </span>
       ) : null}
@@ -416,7 +416,7 @@ function DropdownMenuCheckboxItem({
             data-slot="dropdown-menu-checkbox-item-indicator"
             className={dropdownMenuIndicatorClassName}
           >
-            <IconCheck className="text-current" />
+            <CheckIcon className="text-current" />
           </MenuPrimitive.CheckboxItemIndicator>
         </span>
       ) : null}
@@ -472,7 +472,7 @@ function DropdownMenuRadioItem({
             data-slot="dropdown-menu-radio-item-indicator"
             className={dropdownMenuIndicatorClassName}
           >
-            <IconCircleFilled className="size-2 text-current" />
+            <CircleIcon className="size-2 text-current" />
           </MenuPrimitive.RadioItemIndicator>
         </span>
       ) : null}
@@ -484,7 +484,7 @@ function DropdownMenuRadioItem({
             data-slot="dropdown-menu-radio-item-indicator"
             className={dropdownMenuIndicatorClassName}
           >
-            <IconCheck className="text-current" />
+            <CheckIcon className="text-current" />
           </MenuPrimitive.RadioItemIndicator>
         </span>
       ) : null}
@@ -555,7 +555,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <IconChevronRight
+      <ChevronRightIcon
         aria-hidden
         data-slot="dropdown-menu-sub-trigger-icon"
         className="ms-auto rtl:-scale-x-100"
