@@ -5,11 +5,11 @@ import {
   CircleSmallIcon,
   ClockIcon,
   FolderIcon,
-  LayersIcon,
   ListFilterIcon,
   PlusIcon,
-  RepeatIcon,
+  ShapesIcon,
   SlidersHorizontalIcon,
+  ZapIcon,
 } from "lucide-react"
 
 import {
@@ -132,8 +132,15 @@ type NavEntry = {
  * and a row that looks pressable and is not is worse than one that says so.
  *
  * The icons are chosen to be told apart at 16px without reading the label:
- * a plus for starting something, a layer stack for what has been produced, a
- * loop for what repeats, a clock for what is due.
+ * a plus for starting something, a shape for what has been produced, a bolt
+ * for what runs on its own, a clock for what is due.
+ *
+ * The bolt is drawn filled-looking at a glance because its zigzag is the only
+ * silhouette here with a strong diagonal, which is what keeps Routines from
+ * reading as another box or stack next to Artifacts. Artifacts was a layer
+ * stack, which at 16px is three near-parallel lines and not much of a shape;
+ * a circle and a square crossed over each other is heavier and reads at the
+ * same size without being confused with Projects' folder.
  */
 const NAV: Record<"chat" | "code", NavEntry[]> = {
   chat: [
@@ -147,7 +154,7 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
     {
       id: "artifacts",
       label: "Artifacts",
-      icon: LayersIcon,
+      icon: ShapesIcon,
       why: "Not built yet — there is no artifacts store",
     },
     {
@@ -168,13 +175,13 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
     {
       id: "artifacts",
       label: "Artifacts",
-      icon: LayersIcon,
+      icon: ShapesIcon,
       why: "Not built yet — there is no artifacts store",
     },
     {
       id: "routines",
       label: "Routines",
-      icon: RepeatIcon,
+      icon: ZapIcon,
       why: "Not built yet — nothing can be run on a schedule",
     },
     {
