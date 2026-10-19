@@ -96,7 +96,7 @@ export const KeySettings = () => {
           <DialogDescription>
             {supported
               ? "Stored in the operating system's credential store — Windows Credential Manager, macOS Keychain, or libsecret. It is never written to disk in plaintext."
-              : "Key storage needs the desktop app. Run `npm run tauri dev`, or set OPENROUTER_API_KEY in .env.local for the web target."}
+              : "Key storage needs the desktop app. Run `pnpm tauri dev`, or set OPENROUTER_API_KEY in .env.local for the web target."}
           </DialogDescription>
         </DialogHeader>
 

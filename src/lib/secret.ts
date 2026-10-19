@@ -16,7 +16,7 @@ export const isKeyStoreAvailable = () => isDesktop();
 export const saveApiKey = async (key: string) => {
   if (!isDesktop()) {
     throw new Error(
-      "Key storage is only available in the desktop app. Start it with `npm run tauri dev`, or set OPENROUTER_API_KEY in .env.local.",
+      "Key storage is only available in the desktop app. Start it with `pnpm tauri dev`, or set OPENROUTER_API_KEY in .env.local.",
     );
   }
   await invoke("set_api_key", { key });

@@ -34,7 +34,7 @@ export const isDesktopApp = isDesktop;
 const requireDesktop = () => {
   if (!isDesktop()) {
     throw new Error(
-      "This tool is only available in the desktop app. Start it with `npm run tauri dev`.",
+      "This tool is only available in the desktop app. Start it with `pnpm tauri dev`.",
     );
   }
 };

@@ -73,7 +73,7 @@ async function discover(): Promise<FontDiscoveryResult> {
       reason: inDesktop ? "failed" : "unsupported",
       message: inDesktop
         ? "Could not read the installed fonts."
-        : "Installed fonts can only be listed in the desktop app. Start it with `npm run tauri dev`.",
+        : "Installed fonts can only be listed in the desktop app. Start it with `pnpm tauri dev`.",
     };
   }
 }

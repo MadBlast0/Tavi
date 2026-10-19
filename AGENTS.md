@@ -23,7 +23,7 @@ identity — ask the maintainer.
 
 ## Before committing
 
-- `npx tsc --noEmit` must be clean.
+- `pnpm typecheck` must be clean.
 - Confirm nothing under `node_modules/`, `dist/`, or `src-tauri/target/` is
   staged; those are ignored but large enough to matter.
 - Never commit `.env`, `.env.local`, or any file holding a credential.

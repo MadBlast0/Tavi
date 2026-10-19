@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n vite,chat -c blue,magenta \"npm:dev:web\" \"npm:chat\"",
+    "dev": "concurrently -k -n vite,chat -c blue,magenta \"pnpm:dev:web\" \"pnpm:chat\"",
     "dev:web": "vite",
     "chat": "node --env-file=.env.local --watch server/chat.ts",
     "build": "tsc && vite build",

@@ -16,7 +16,7 @@ time it is used.
 `cargo tauri build`) creates the projects root before first launch, so a fresh
 install has it without the user having to clone anything first.
 
-**Depends on.** A real installer pipeline. `npm run tauri build` does not currently
+**Depends on.** A real installer pipeline. `pnpm tauri build` does not currently
 produce a working app — see "Known limitations" in the README, which is mostly
 this: the shipping frontend is static and the chat server is not bundled.
 
