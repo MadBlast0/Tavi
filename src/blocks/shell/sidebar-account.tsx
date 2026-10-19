@@ -253,11 +253,13 @@ export function SidebarAccount() {
           title={APPS_TITLE}
           className="ms-auto shrink-0"
         >
-          {/* The component's small icon button draws a 12px glyph, which beside a
-              28px avatar reads as a smudge rather than a mark of the same weight.
-              Sized here to match the avatar it sits beside, which is what makes
-              the two ends of the row look like they belong together. */}
-          <AppsIcon className="size-5" />
+          {/* 16px, like every other icon in the rail. This was 20px, which made
+              it the only icon that size anywhere in the sidebar and the
+              brightest thing in a footer whose other marks — the chevron, the
+              avatar — are muted. An outlined glyph at 20px reads heavier than
+              the filled 28px avatar beside it, not matched to it, so matching
+              the avatar was the wrong way round to be matching. */}
+          <AppsIcon />
         </Button>
       </div>
     </SidebarFooter>
