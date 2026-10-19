@@ -51,4 +51,5 @@ export const PREF = {
   effort: "effort",
   mode: "mode",
   variant: "variant",
+  font: "font",
 } as const

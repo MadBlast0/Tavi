@@ -4,8 +4,10 @@ import * as React from "react"
 import { CodeXmlIcon, MessageCircleIcon } from "lucide-react"
 
 import { PREF, readPref, writePref } from "@/lib/prefs"
-import { cn } from "@/lib/utils"
-import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
+import {
+  IconSwitch,
+  type IconSwitchOption,
+} from "@/components/icon-switch"
 
 /** Which of the two composer layouts is in force. */
 export type ComposerVariant = "chat" | "code"
@@ -15,11 +17,7 @@ export type ComposerVariant = "chat" | "code"
  * other collapses to just its icon, so the control keeps a stable width and the
  * sliding indicator in `ToggleGroup` does the work of showing which is active.
  */
-const VARIANT_OPTIONS: {
-  value: ComposerVariant
-  label: string
-  icon: React.ReactNode
-}[] = [
+const VARIANT_OPTIONS: IconSwitchOption<ComposerVariant>[] = [
   { value: "chat", label: "Chat", icon: <MessageCircleIcon /> },
   { value: "code", label: "Code", icon: <CodeXmlIcon /> },
 ]
@@ -84,54 +82,23 @@ export function useComposerVariant() {
  * composer box (`--composer-radius`) so the two read as the same shape, and the
  * items are fully rounded so the indicator inherits that radius and the
  * highlight is a pill.
+ *
+ * The switch itself is now `IconSwitch`, shared with the theme switch in
+ * settings. That is not tidiness for its own sake — both are the same decision
+ * (a few options, one of them in force, the control keeping its size whichever
+ * is chosen) with the same animation, and as two hand-written copies they would
+ * have started to differ the first time either was touched.
  */
 export function ComposerVariantSwitch({ className }: { className?: string }) {
   const { variant, setVariant } = useComposerVariant()
 
   return (
-    <ToggleGroup
-      className={cn("gap-0 rounded-[1.625rem] bg-muted/50 p-1", className)}
+    <IconSwitch
       aria-label="Composer"
-      size="sm"
-      value={[variant]}
-      onValueChange={(next) => {
-        const [value] = next as ComposerVariant[]
-        if (value) setVariant(value)
-      }}
-    >
-      {VARIANT_OPTIONS.map((option) => (
-        <ToggleGroupItem
-          key={option.value}
-          value={option.value}
-          className="rounded-full gap-0 px-2"
-        >
-          <span className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
-            {option.icon}
-          </span>
-          {/* Collapses to zero width when unselected. The grid track approach is
-              content-sized, so a longer label would widen the control on its
-              own rather than being clipped. The easing matches the indicator's
-              own glide. */}
-          <span
-            className={cn(
-              "ms-0 grid grid-cols-[0fr] transition-[grid-template-columns] duration-300",
-              "ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              "group-data-pressed/toggle:ms-1.5",
-              "group-data-pressed/toggle:grid-cols-[1fr]"
-            )}
-          >
-            <span
-              className={cn(
-                "overflow-hidden whitespace-nowrap opacity-0",
-                "transition-opacity duration-200 motion-reduce:transition-none",
-                "group-data-pressed/toggle:opacity-100"
-              )}
-            >
-              {option.label}
-            </span>
-          </span>
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+      value={variant}
+      onValueChange={setVariant}
+      options={VARIANT_OPTIONS}
+      className={className}
+    />
   )
 }

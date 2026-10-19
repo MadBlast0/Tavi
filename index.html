@@ -9,10 +9,23 @@
       // Runs before the app mounts so dark-mode users never see a light flash.
       // Dark is the default; a stored choice wins. Storage can throw in
       // restricted contexts, so every access is guarded.
+      //
+      // This is a copy of src/lib/theme.ts, not a use of it: the bundle does
+      // not exist yet at this point, and a flash of the wrong theme is exactly
+      // what this is here to prevent. The key and the three preferences have to
+      // match that module; changing one means changing both.
       (function () {
         try {
           var stored = localStorage.getItem("theme");
-          var dark = stored ? stored === "dark" : true;
+          var preference =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "dark";
+          var dark =
+            preference === "system"
+              ? !window.matchMedia ||
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+              : preference === "dark";
           document.documentElement.classList.toggle("dark", dark);
         } catch (e) {
           document.documentElement.classList.add("dark");

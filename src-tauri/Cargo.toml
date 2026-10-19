@@ -26,6 +26,7 @@ serde_json = "1"
 # libsecret on Linux. Chosen over the first-party stronghold vault because that
 # requires a master password just to store an API key.
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "tokio"] }
+font-kit = "0.14.3"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

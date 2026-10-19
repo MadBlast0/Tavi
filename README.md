@@ -260,6 +260,28 @@ so tool support is intermittent.
   session and a reload returns it to the default. A width chosen on one screen
   is the wrong width on another, and storing it would reopen the app with the
   work area squeezed for no reason.
+- **The app font can only be listed in the desktop app.** The Appearance
+  settings let you pick any font installed on the machine, discovered through the
+  OS: DirectWrite on Windows, Core Text on macOS, Fontconfig on Linux. A web page
+  has no access to the system font registry — there is no standard API for it, and
+  the Chromium-only Local Font Access API would mean a permission prompt and a
+  different answer per browser — so `npm run dev` shows the app's own font and a
+  message saying where the list comes from, rather than a fake one. This is also
+  why there is no bundled list of font names anywhere: a list written into the
+  app would name fonts that are not installed, and CSS substitutes silently, so
+  every one of them would render as the fallback while appearing to have worked.
+- **Building on Linux needs Fontconfig and FreeType development packages.** The
+  font picker reaches the system through `font-kit`, which links both. On
+  Debian and Ubuntu:
+
+  ```sh
+  sudo apt install pkg-config libfreetype6-dev libfontconfig1-dev
+  ```
+
+  Fedora and RHEL equivalents are `pkgconf-pkg-config`, `freetype-devel` and
+  `fontconfig-devel`; Arch is `pkgconf`, `freetype2-dev` and `fontconfig-dev`.
+  Windows and macOS need nothing extra, as both backends are part of the system.
+  Only the Linux build is affected — the web target never calls into them.
 - **Dictation depends on a browser speech service, and the desktop app may not
   have one.** The microphone uses the Web Speech API with the system default
   device — there is nothing to configure, and no device picker exists. That API

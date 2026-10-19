@@ -27,6 +27,7 @@ import {
   findSettingsEntry,
   type SettingsGroup,
 } from "./settings-sections"
+import { GeneralSettings } from "./settings-general"
 import { cn } from "@/lib/utils"
 
 /**
@@ -202,6 +203,34 @@ function SettingsName({ tall }: { tall: boolean }) {
     >
       Settings
     </DialogTitle>
+  )
+}
+
+/**
+ * The pane's own heading: the section's name.
+ *
+ * It carries the gap to whatever follows it. That gap is the whole reason this
+ * is a component rather than the two copies of an `h2` it replaced — without
+ * one, "General" and the "Appearance" group heading beneath it sat flush
+ * together and read as a single two-line title, because two headings of
+ * different sizes with nothing between them look like one heading that wrapped.
+ *
+ * The margin is here rather than on the content for a second reason: the tall
+ * shape hides this heading with `sr-only`, which is `position: absolute`, so it
+ * leaves the flow and its margin goes with it. Spacing attached to the heading
+ * therefore disappears exactly when the heading does, and spacing attached to
+ * the content would not.
+ */
+function PaneHeading({ label, hidden }: { label: string; hidden: boolean }) {
+  return (
+    <h2
+      className={cn(
+        "mb-8 text-base leading-snug font-semibold text-pretty",
+        hidden && "sr-only"
+      )}
+    >
+      {label}
+    </h2>
   )
 }
 
@@ -581,17 +610,15 @@ export function SettingsDialog({
                 have said the section's, so this heading is dropped — the same
                 words twice, a hundred pixels apart, reads as a mistake. */}
             <DialogBody className="pt-6 pb-6 pe-14">
-              {current ? (
+              {current?.id === "general" ? (
                 <>
-                  <h2
-                    className={cn(
-                      "text-base leading-snug font-semibold text-pretty",
-                      tall && "sr-only"
-                    )}
-                  >
-                    {current.label}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <PaneHeading label={current.label} hidden={tall} />
+                  <GeneralSettings />
+                </>
+              ) : current ? (
+                <>
+                  <PaneHeading label={current.label} hidden={tall} />
+                  <p className="text-sm text-muted-foreground">
                     Nothing here yet — this section has no controls behind it.
                   </p>
                 </>

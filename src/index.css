@@ -146,6 +146,48 @@
     }
 }
 
+/* ---------------------------------------------------------------------------
+   App font
+
+   The typeface the whole app is drawn in, which the Appearance settings can
+   change to any family installed on the machine.
+
+   It is its own variable rather than an override of `--font-sans` because that
+   variable cannot be overridden: `--font-sans` is declared inside `@theme
+   inline`, and `inline` makes Tailwind substitute the *value* into each
+   utility rather than emitting `var(--font-sans)`. So `html` and every
+   `.font-sans` rule in the build carry the literal `'Geist Variable',
+   sans-serif`, and setting `--font-sans` on the root would change nothing at
+   all — a silently ineffective setting.
+
+   The default is `--font-sans` itself, so with nothing set the app is drawn in
+   exactly the face it shipped with.
+
+   `.font-heading` is re-pointed alongside `.font-sans` because card titles,
+   dialog titles and empty-state titles use it, and they would otherwise stay in
+   Geist while the rest of the app changed.
+
+   `font-mono` is deliberately left alone. Code, file paths and inline code
+   stay monospaced whatever the chat font is set to.
+
+   These rules are unlayered, so they take precedence over Tailwind's layered
+   utilities regardless of source order — the same reason the composer shell
+   rules further down are unlayered.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --app-font-family: var(--font-sans);
+}
+
+html {
+  font-family: var(--app-font-family);
+}
+
+.font-sans,
+.font-heading {
+  font-family: var(--app-font-family);
+}
+
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
 
 @custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
