@@ -4,8 +4,8 @@ import * as React from "react"
 import {
   ClockIcon,
   FolderIcon,
-  FunnelIcon,
   LayersIcon,
+  ListFilterIcon,
   PlusIcon,
   RepeatIcon,
   SlidersHorizontalIcon,
@@ -254,7 +254,11 @@ function ThreadListHeading({
               <Button variant="ghost" size="icon-xs" aria-label="Sort threads" />
             }
           >
-            <FunnelIcon />
+            {/* Three centred lines narrowing downward — the funnel's triangle
+                drawn as lines rather than as a shape. Reads as the same control
+                without the solid mass a filled funnel puts next to a list of
+                thin type. */}
+            <ListFilterIcon />
           </DropdownMenuTrigger>
           {/* Opens to the right of the rail, not under the button. The rail's own
               content clips at its edge, so a menu that opened downward would be
