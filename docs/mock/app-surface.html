@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tavi — app surface</title>
+    <script>
+      // Copied verbatim from the project's index.html. Runs before the app
+      // mounts so a dark-mode user never sees a light flash. Dark is the
+      // default; a stored choice wins. Storage can throw in restricted
+      // contexts, so every access is guarded.
+      (function () {
+        try {
+          var stored = localStorage.getItem("theme");
+          var dark = stored ? stored === "dark" : true;
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <script type="module">
+      /* ------------------------------------------------------------------
+       * This file is the app, and nothing else.
+       *
+       * The real entry point is src/main.tsx, which mounts <App />, and App is
+       * a single line: `<PromptBlock />`. So this mounts PromptBlock with the
+       * same theme bootstrap and the same stylesheet the real page loads.
+       *
+       * There is nothing transcribed here on purpose. A copy of the work area
+       * would drift from src/ the moment either file changed, and the point of
+       * this page is to be the app rather than a picture of it. Every component,
+       * icon, animation, size and measurement below comes from /src at runtime.
+       *
+       * Requires the dev server: `npm run dev`, then open
+       * http://localhost:1420/docs/mock/app-surface.html
+       * ------------------------------------------------------------------ */
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import '/src/index.css'
+      import { PromptBlock } from '/src/blocks/prompt-input/prompt-block'
+
+      const h = React.createElement
+
+      createRoot(document.getElementById('root')).render(
+        h(React.StrictMode, null, h(PromptBlock)),
+      )
+    </script>
+  </body>
+</html>
