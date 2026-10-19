@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently -k -n vite,chat -c blue,magenta \"pnpm:dev:web\" \"pnpm:chat\"",
     "dev:web": "vite",
-    "chat": "node --env-file=.env.local --watch server/chat.ts",
+    "chat": "node --env-file-if-exists=.env.local --watch server/chat.ts",
     "build": "tsc && vite build",
     "test": "node --test server/*.test.ts",
     "typecheck": "tsc --noEmit",

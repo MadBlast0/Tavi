@@ -54,6 +54,10 @@ pnpm tauri dev
 Or double-click `preview.bat`, which does the same thing and stays open on
 failure.
 
+Nothing here needs a `.env.local` — the app starts without one and says so when
+you try to chat. If you would rather keep the key in the environment than in
+the app, copy `.env.example` to `.env.local` and fill it in.
+
 `pnpm dev` starts Vite and the chat server together via `concurrently`.
 `src-tauri/tauri.conf.json` already invokes the same command, so `pnpm tauri dev`
 starts both.
