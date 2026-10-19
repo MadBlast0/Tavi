@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  CircleSmallIcon,
   ClockIcon,
   FolderIcon,
   LayersIcon,
@@ -78,6 +79,38 @@ const GROUP = "px-2 py-1"
 
 /** The label above a group of threads is a caption, not a row. */
 const LABEL = "h-5 px-1"
+
+/**
+ * Every sort option carries a ring; the chosen one is filled in.
+ *
+ * The component's own radio mark cannot express this. It draws nothing at all
+ * on the unchosen options, scales to half size when unchosen
+ * (`motion-safe:scale-50`) and is a hollow circle even when chosen — so making
+ * it show on every row leaves four rings in two different sizes, which reads as
+ * a mistake rather than as a set of choices.
+ *
+ * The mark is also the only thing saying which ordering is in force, so a solid
+ * disc answers that more plainly than an empty one does. Which option is
+ * chosen is known here, so the mark is drawn from that rather than inferred
+ * from a state attribute, and the component's is hidden. Its 16px slot at the
+ * row's start is kept — both marks sit in the same place, so the labels do not
+ * move — and `aria-checked` still comes from the radio item, so assistive
+ * technology is unaffected.
+ */
+const SORT_OPTION = "[&_[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
+
+function SortMark({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute start-2 flex size-4 items-center justify-center"
+    >
+      {/* circle-small, not circle: it is drawn at half the radius, so at this
+          size it stays a clean ring instead of closing up into a dot. */}
+      <CircleSmallIcon className={cn("size-3", selected && "fill-current")} />
+    </span>
+  )
+}
 
 type NavEntry = {
   id: string
@@ -277,7 +310,12 @@ function ThreadListHeading({
               onValueChange={(next) => onSortChange(next as Sort)}
             >
               {SORTS.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                <DropdownMenuRadioItem
+                  key={option.value}
+                  value={option.value}
+                  className={SORT_OPTION}
+                >
+                  <SortMark selected={sort === option.value} />
                   {option.label}
                 </DropdownMenuRadioItem>
               ))}

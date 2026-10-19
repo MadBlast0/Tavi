@@ -1,4 +1,5 @@
 export * from "./use-autosize"
+export * from "./use-box-shape"
 export * from "./use-button-feedback"
 export * from "./use-composed-ref"
 export * from "./use-delayed-loading"

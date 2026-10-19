@@ -110,6 +110,36 @@ selectable will not compile until that environment says what its files are calle
 and where they live. Each transport has to answer three questions before it can be
 switched on: what a picked thing is called, where it lives, and how it is picked.
 
+## 4c. Microphone selection and offline dictation
+
+**Status:** not built. The mic uses whatever the system calls the default
+device, which is what the Web Speech API gives with no configuration.
+
+**Why a device picker is not a small addition.** SpeechRecognition takes no
+device argument - it opens the default itself. Picking a specific microphone
+means abandoning it for getUserMedia({ audio: { deviceId } }) and doing the
+transcription locally, which means a transcription backend the app does not
+have. OpenRouter is text-only. So this is a real dependency decision, not a
+dropdown.
+
+**The same decision fixes the desktop app.** Chromium's recogniser is a remote
+service; the Tauri webview has no route to it. Moving to a local model (Whisper
+or similar, over the existing server/) is what makes dictation work offline
+and work in the packaged app at all. The 	ranscribe prop on
+PromptInputDictation is the seam for it: pass a function that posts a Blob to
+a server route and the component records, sends, and inserts - that path is
+implemented and simply unused today.
+
+**Deciding between them.**
+
+- **Local model via the 	ranscribe path.** Works offline, works in Tauri,
+  enables device selection, but the text appears at the end rather than live
+  unless the endpoint streams partial transcripts.
+- **Keep Web Speech.** No backend, and live interim text for free - which is
+  what now shows in the composer - but it is browser-only.
+
+Streaming partials would be the best of both, and is the reason to prefer the
+server path if this gets built.
 ## 5. Opening a cloned project without the system picker
 
 **Status:** not built, and this is the main limitation of clone as it stands.

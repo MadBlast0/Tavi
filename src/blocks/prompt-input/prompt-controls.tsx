@@ -1351,83 +1351,6 @@ function canRecord() {
   )
 }
 
-const sampleEvery = 50
-
-function Waveform({
-  levelsRef,
-  sampledRef,
-}: {
-  levelsRef: React.RefObject<number[]>
-  sampledRef: React.RefObject<number>
-}) {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null)
-
-  React.useEffect(() => {
-    const canvas = canvasRef.current
-    const context = canvas?.getContext("2d")
-    if (!canvas || !context) return
-    const ratio = Math.min(2, window.devicePixelRatio || 1)
-    const styles = getComputedStyle(canvas)
-    const bar = styles.color
-    const dot = styles.borderTopColor || bar
-    const still = prefersReducedMotion()
-    let frame = 0
-
-    const draw = () => {
-      const width = Math.max(1, Math.round(canvas.clientWidth * ratio))
-      const height = Math.max(1, Math.round(canvas.clientHeight * ratio))
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width
-        canvas.height = height
-      }
-      context.clearRect(0, 0, width, height)
-      const step = 5 * ratio
-      const thickness = 2.5 * ratio
-      const slots = Math.floor(width / step) + 1
-      const levels = levelsRef.current
-      const start = Math.max(0, levels.length - slots)
-      const filled = levels.length - start
-      const middle = height / 2
-      const progress = still
-        ? 0
-        : Math.min(1, (performance.now() - sampledRef.current) / sampleEvery)
-      const shift = levels.length > 0 ? progress * step : 0
-      for (let slot = 0; slot < slots; slot++) {
-        const x = width - (slots - slot) * step + (step - thickness) / 2 - shift + step
-        const index = slot - (slots - filled)
-        if (index < 0) {
-          context.fillStyle = dot
-          context.globalAlpha = 0.5
-          context.beginPath()
-          context.arc(x + thickness / 2, middle, ratio, 0, Math.PI * 2)
-          context.fill()
-          continue
-        }
-        const level = levels[start + index]
-        const size = Math.max(thickness, level * height * 0.9)
-        context.globalAlpha = 0.85
-        context.fillStyle = bar
-        context.beginPath()
-        context.roundRect(x, middle - size / 2, thickness, size, thickness / 2)
-        context.fill()
-      }
-      context.globalAlpha = 1
-      if (!still) frame = requestAnimationFrame(draw)
-    }
-
-    frame = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(frame)
-  }, [levelsRef, sampledRef])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      className="h-8 min-w-0 flex-1 border-muted-foreground text-foreground/70 rtl:-scale-x-100"
-    />
-  )
-}
-
 type DictationStatus = "idle" | "recording" | "transcribing"
 
 type DictationSession = {
@@ -1442,6 +1365,18 @@ type DictationSession = {
   ended: Promise<void>
   stopped: boolean
   failed: boolean
+  /** The composer text before dictation began, restored if the user cancels. */
+  original: string
+  /**
+   * The range the dictated text currently occupies.
+   *
+   * Interim recognition results revise themselves - the engine re-sends a phrase
+   * as it grows more confident - so each preview must replace the previous one.
+   * Appending would stack "hel" then "hello" and the user would watch a stutter
+   * instead of their sentence.
+   */
+  from: number
+  to: number
 }
 
 function PromptInputDictation({
@@ -1461,29 +1396,54 @@ function PromptInputDictation({
   )
   const [status, setStatus] = React.useState<DictationStatus>("idle")
   const sessionRef = React.useRef<DictationSession | null>(null)
-  const levelsRef = React.useRef<number[]>([])
-  const sampledRef = React.useRef(0)
   const latest = React.useRef(context)
   latest.current = context
   const { announce, textareaRef } = context
 
-  const insert = React.useCallback(
-    (text: string) => {
+  /**
+   * Writes the transcript into the composer as it is being recognised.
+   *
+   * The text goes in live, over the range the last preview occupied, so the user
+   * can read back what the microphone is actually hearing - the thing they were
+   * previously unable to see, because the whole composer used to be hidden
+   * behind a waveform until the recording finished.
+   *
+   * `setRangeText` plus a synthetic `input` event is what the rest of this file
+   * uses to write into the field, and it is what React listens for, so composer
+   * state and the saved draft stay in step with what is on screen.
+   */
+  const preview = React.useCallback(
+    (session: DictationSession, text: string) => {
       const field = textareaRef.current
+      if (!field) return
       const clean = text.replace(/\s+/g, " ").trim()
-      if (!field || !clean) return false
-      const before = field.value.slice(0, field.selectionStart)
-      insertText(field, before && !/\s$/.test(before) ? ` ${clean}` : clean)
-      return true
+      const before = field.value.slice(0, session.from)
+      const lead = before && !/\s$/.test(before) && clean ? " " : ""
+      const next = lead + clean
+      field.setRangeText(next, session.from, session.to, "end")
+      field.dispatchEvent(new Event("input", { bubbles: true }))
+      session.to = session.from + next.length
     },
-    [textareaRef]
+    [textareaRef],
   )
 
-  const release = (session: DictationSession) => {
+  /** Puts the composer back exactly as it was before dictation started. */
+  const restore = React.useCallback(
+    (session: DictationSession) => {
+      const field = textareaRef.current
+      if (!field) return
+      field.value = session.original
+      field.dispatchEvent(new Event("input", { bubbles: true }))
+    },
+    [textareaRef],
+  )
+
+  /** Frees the hardware a session was holding. Stable, so `start` stays stable. */
+  const release = React.useCallback((session: DictationSession) => {
     clearInterval(session.timer)
     session.stream?.getTracks().forEach((track) => track.stop())
     session.audio?.close().catch(() => {})
-  }
+  }, [])
 
   const start = React.useCallback(async () => {
     if (sessionRef.current || !canRecord()) return
@@ -1491,6 +1451,12 @@ function PromptInputDictation({
     const ended = new Promise<void>((resolve) => {
       finish = resolve
     })
+    /* Dictation starts at the caret and only ever covers what comes after it,
+       so text the user had already written is never rewritten by the transcript.
+       The anchor is read before any microphone work, because `getUserMedia` is
+       async and the caret can move while it waits. */
+    const field = textareaRef.current
+    const anchor = field?.selectionStart ?? 0
     const session: DictationSession = {
       stream: null,
       audio: null,
@@ -1503,48 +1469,39 @@ function PromptInputDictation({
       ended,
       stopped: false,
       failed: false,
+      original: field?.value ?? "",
+      from: anchor,
+      to: anchor,
     }
     sessionRef.current = session
-    levelsRef.current = []
-    sampledRef.current = performance.now()
     setStatus("recording")
     haptic("tap")
 
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      if (sessionRef.current === session) sessionRef.current = null
-      setStatus("idle")
-      announce("Microphone access is blocked")
-      textareaRef.current?.focus()
-      return
-    }
-    if (session.stopped) {
-      stream.getTracks().forEach((track) => track.stop())
-      return
-    }
-    session.stream = stream
-    const audio = new AudioContext()
-    session.audio = audio
-    const analyser = audio.createAnalyser()
-    analyser.fftSize = 1024
-    audio.createMediaStreamSource(stream).connect(analyser)
-    const samples = new Float32Array(analyser.fftSize)
-    let smooth = 0
-    session.timer = setInterval(() => {
-      analyser.getFloatTimeDomainData(samples)
-      let sum = 0
-      for (const sample of samples) sum += sample * sample
-      const level = Math.min(1, Math.sqrt(sum / samples.length) * 6)
-      smooth += (level - smooth) * (level > smooth ? 0.65 : 0.3)
-      levelsRef.current.push(smooth)
-      if (levelsRef.current.length > 400) levelsRef.current.shift()
-      sampledRef.current = performance.now()
-    }, sampleEvery)
-
+    /* The microphone stream is only opened for the server-transcription path.
+       Speech Recognition brings its own capture, so asking for a stream as well
+       meant the user granted the microphone twice for one recording, and bought
+       an AudioContext and a 20Hz analyser whose only output was a waveform
+       across the whole composer. */
     if (transcribe) {
-      const recorder = new MediaRecorder(stream)
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      } catch {
+        if (sessionRef.current === session) sessionRef.current = null
+        setStatus("idle")
+        announce("Microphone access is blocked")
+        textareaRef.current?.focus()
+        return
+      }
+      if (session.stopped) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      session.stream = stream
+    }
+
+    if (transcribe && session.stream) {
+      const recorder = new MediaRecorder(session.stream)
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) session.chunks.push(event.data)
       }
@@ -1566,14 +1523,29 @@ function PromptInputDictation({
             else pending += result[0].transcript
           }
           session.pending = pending
+          /* Show it as it arrives. This is the whole point of the change: the
+             user watches their sentence being written and can see immediately
+             when the engine has misheard something. */
+          preview(session, `${session.heard} ${session.pending}`)
         }
         recognition.onerror = (event) => {
           if (event.error === "no-speech" || event.error === "aborted") return
           session.failed = true
+          /* Each of these is a different fix for the user, so they get their own
+             sentence rather than one "stopped" for all of them. `service-not-
+             allowed` and `network` are the two that bite in practice: Chromium's
+             recogniser calls a hosted service, so in a webview with no route to
+             it the failure looks identical to "nothing happened" otherwise. */
           announce(
-            event.error === "not-allowed" || event.error === "service-not-allowed"
-              ? "Speech recognition is blocked"
-              : "Speech recognition stopped"
+            event.error === "not-allowed"
+              ? "Microphone access was denied. Allow it in your browser settings and try again."
+              : event.error === "service-not-allowed"
+                ? "Speech recognition isn't available here. This browser build has no speech service; it usually needs an internet connection."
+                : event.error === "audio-capture"
+                  ? "No microphone was found."
+                  : event.error === "network"
+                    ? "Speech recognition lost its connection to the speech service."
+                    : "Speech recognition stopped.",
           )
         }
         recognition.onend = () => {
@@ -1585,14 +1557,27 @@ function PromptInputDictation({
           }
           finish()
         }
-        recognition.start()
-        session.recognition = recognition
+        /* `start()` throws if the engine is already running, which Chromium
+           does readily when the service drops and the session is restarted by
+           `onend`. A throw here would otherwise abandon the session with the
+           button stuck on the recording glyph and the microphone still hot. */
+        try {
+          recognition.start()
+          session.recognition = recognition
+        } catch {
+          if (sessionRef.current === session) sessionRef.current = null
+          release(session)
+          setStatus("idle")
+          announce("The microphone could not be started. Try again.")
+          textareaRef.current?.focus()
+          return
+        }
       } else {
         finish()
       }
     }
-    announce("Recording. Press Escape to cancel.")
-  }, [announce, textareaRef, transcribe])
+    announce("Recording. Press Escape to cancel, or click the microphone again to stop.")
+  }, [announce, preview, release, textareaRef, transcribe])
 
   const stop = React.useCallback(
     async (action: "insert" | "send" | "cancel") => {
@@ -1605,16 +1590,25 @@ function PromptInputDictation({
       if (action === "cancel") {
         session.recorder?.stop()
         session.recognition?.abort()
+        /* The preview has been writing into the composer the whole time, so
+           cancelling has to take it back out. Restoring the original value is
+           exact; there is nothing to reconstruct. */
+        restore(session)
         setStatus("idle")
         announce("Recording discarded")
         textareaRef.current?.focus()
         return
       }
-      let text = ""
+
+      /* Only the transcribe path has text left to fetch. With live recognition
+         the transcript is already in the field - `preview` wrote it as it
+         arrived - so there is nothing to insert again here. */
+      let added = session.to > session.from
       if (session.recorder && transcribe) {
         session.recorder.stop()
         setStatus("transcribing")
         await session.ended
+        let text = ""
         try {
           text = await transcribe(
             new Blob(session.chunks, { type: session.recorder.mimeType })
@@ -1622,27 +1616,33 @@ function PromptInputDictation({
         } catch {
           announce("Couldn’t transcribe that. Try again.")
         }
+        preview(session, text)
+        added = session.to > session.from
       } else if (session.recognition) {
-        setStatus("transcribing")
         session.recognition.stop()
+        /* No visible "transcribing" step: with live preview there is nothing
+           left to wait for, and flashing a spinner over text that is already
+           there would be noise. */
         await Promise.race([
           session.ended,
-          new Promise((resolve) => setTimeout(resolve, 1500)),
+          new Promise((resolve) => setTimeout(resolve, 400)),
         ])
-        text = `${session.heard} ${session.pending}`
       }
       setStatus("idle")
-      const added = insert(text)
       if (!added) {
         announce("Didn’t catch anything")
         textareaRef.current?.focus()
         return
       }
+      /* Leave the caret after the dictated text so typing continues from
+         there rather than jumping back to where the recording started. */
+      const field = textareaRef.current
+      if (field) field.setSelectionRange(session.to, session.to)
       if (action === "send" || autoSend) {
         setTimeout(() => latest.current.submit(), 350)
       }
     },
-    [announce, autoSend, insert, textareaRef, transcribe]
+    [announce, autoSend, preview, restore, textareaRef, transcribe]
   )
 
   React.useEffect(
@@ -1683,110 +1683,66 @@ function PromptInputDictation({
 
   if (!supported) return null
 
+  const recording = status === "recording"
+  const busy = status !== "idle"
+
+  /* One button, three meanings, no overlay.
+     Idle it starts dictation. Recording it stops and keeps the text. Transcribing
+     it is inert until the transcript lands.
+
+     The composer used to blank out entirely behind a waveform while recording,
+     which meant the user could not read back what the microphone was hearing -
+     the transcription only appeared at the very end, with no way to notice it had
+     gone wrong until it was too late. Now the text arrives in the textarea as it
+     is recognised, so the composer stays put and this button carries the
+     recording state on its own. */
   return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              shape="pill"
-              aria-label="Dictate"
-              disabled={context.disabled || status !== "idle"}
-              onClick={() => void start()}
-            />
-          }
-        >
-          <MicIcon />
-        </TooltipTrigger>
-        <TooltipContent>
-          Dictate {shortcut ? <KbdGroup keys={shortcut} size="sm" /> : null}
-        </TooltipContent>
-      </Tooltip>
-      {status !== "idle" ? (
-        <div
-          role="group"
-          aria-label="Dictation"
-          className="absolute inset-px z-20 flex items-center gap-2 rounded-(--composer-radius-inner) bg-background p-1.75 dark:bg-card"
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  shape="pill"
-                  aria-label="Cancel dictation"
-                  disabled={status !== "recording"}
-                  onClick={() => void stop("cancel")}
-                />
-              }
-            >
-              <XIcon />
-            </TooltipTrigger>
-            <TooltipContent>
-              Cancel <KbdGroup keys="escape" size="sm" />
-            </TooltipContent>
-          </Tooltip>
-          <div className="relative flex min-w-0 flex-1 items-center px-2">
-            {status === "transcribing" ? (
-              <span className="flex h-8 flex-1 items-center justify-center text-sm text-shimmer motion-safe:animate-in motion-safe:animation-duration-200 motion-safe:fade-in-0">
-                Transcribing…
-              </span>
-            ) : (
-              <Waveform levelsRef={levelsRef} sampledRef={sampledRef} />
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            shape="pill"
+            data-recording={recording ? "" : undefined}
+            aria-label={recording ? "Stop dictation" : busy ? "Transcribing" : "Dictate"}
+            aria-pressed={recording || undefined}
+            disabled={context.disabled || (busy && !recording)}
+            onClick={() => void (recording ? stop("insert") : start())}
+            className={cn(
+              "relative transition-colors",
+              recording && "bg-destructive/10 text-destructive hover:bg-destructive/15",
+              /* The recording heartbeat. It pulses the button's own opacity, so
+                 it stays inside the button - an earlier version rang a border
+                 outward from an inset, which drew outside the button, over the
+                 composer's rounded edge and onto the card behind it. */
+              recording && "motion-safe:animate-pulse",
             )}
-          </div>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="secondary"
-                  shape="pill"
-                  aria-label="Stop and insert text"
-                  disabled={status !== "recording"}
-                  onClick={() => void stop("insert")}
-                  className="relative"
-                />
-              }
-            >
-              {status === "recording" ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute -inset-1 rounded-full border border-foreground/15 motion-safe:animate-pulse"
-                />
-              ) : null}
-              <SquareIcon />
-            </TooltipTrigger>
-            <TooltipContent>
-              Stop <KbdGroup keys={shortcut || "ctrl+shift+d"} size="sm" />
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon"
-                  shape="pill"
-                  aria-label="Send now"
-                  disabled={status !== "recording"}
-                  onClick={() => void stop("send")}
-                />
-              }
-            >
-              <ArrowUpIcon />
-            </TooltipTrigger>
-            <TooltipContent>Send</TooltipContent>
-          </Tooltip>
-        </div>
-      ) : null}
-    </>
+          />
+        }
+      >
+        {recording ? (
+          /* Stop means a filled square - the one shape the user already knows.
+             Swapping the glyph in place keeps the button from resizing.
+
+             `fill-current` is what makes it solid: lucide draws with
+             `fill="none"`, so an outlined square reads as a hollow box rather
+             than a stop button. */
+          <SquareIcon className="size-3.5 fill-current" />
+        ) : (
+          <MicIcon className={cn(busy && "animate-pulse")} />
+        )}
+      </TooltipTrigger>
+      <TooltipContent>
+        {recording
+          ? "Stop and keep text"
+          : busy
+            ? "Transcribing…"
+            : "Dictate"}{" "}
+        {shortcut ? <KbdGroup keys={shortcut} size="sm" /> : null}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

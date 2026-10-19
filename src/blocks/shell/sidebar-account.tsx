@@ -25,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu"
 import { SidebarFooter } from "@/components/sidebar"
+import { formatHotkey, useIsApple } from "@/lib/hotkey"
+import { SETTINGS_HOTKEY } from "./settings-dialog"
 
 /**
  * Who this row is. The only part of the account menu that is a fact about a
@@ -104,8 +106,13 @@ type KeyStatus = {
  * full of greyed rows is not the menu; each one carries a title saying what it
  * will do when it does something, so nothing here is quietly pretending.
  */
-export function SidebarAccount() {
+export function SidebarAccount({
+  onOpenSettings,
+}: {
+  onOpenSettings: () => void
+}) {
   const [status, setStatus] = React.useState<KeyStatus | null>(null)
+  const apple = useIsApple()
   /**
    * A zero-width mark pinned to the row's left edge, used as the menu's anchor.
    *
@@ -201,10 +208,12 @@ export function SidebarAccount() {
                actually means "put it on the left". */
             anchor={anchorRef}
           >
-            <DropdownMenuItem className={ITEM} title="Not built yet — there is no settings screen">
+            <DropdownMenuItem className={ITEM} onClick={onOpenSettings}>
               <SettingsIcon />
               Settings
-              <DropdownMenuShortcut>Ctrl+,</DropdownMenuShortcut>
+              <DropdownMenuShortcut>
+                {formatHotkey(SETTINGS_HOTKEY, apple)}
+              </DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem className={ITEM} title="Not built yet — the app has one language">
               <GlobeIcon />

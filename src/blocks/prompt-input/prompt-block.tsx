@@ -1726,7 +1726,7 @@ export function PromptBlock() {
                           against PromptInputBody, which is the positioned ancestor
                           of both this row and the actions row, so moving it does
                           not change what the overlay covers. */}
-                      <PromptInputDictation autoSend />
+                      <PromptInputDictation />
                       <PromptInputSelect
                         label="Mode"
                         options={MODES}
@@ -1802,7 +1802,7 @@ export function PromptBlock() {
                   <PromptInputTextarea autoFocus placeholder="Ask anything" />
                   <PromptInputActions>
                     <PromptInputMeter />
-                    <PromptInputDictation autoSend />
+                    <PromptInputDictation />
                     <PromptInputSubmit />
                   </PromptInputActions>
                 </PromptInputBody>

@@ -781,7 +781,7 @@ function PromptInputTextarea({
       aria-controls={context.menu?.listId}
       aria-activedescendant={context.menu?.activeId}
       className={cn(
-        "order-2 group-data-dictating/composer:invisible field-sizing-content max-h-52 min-h-9 min-w-0 flex-1 basis-0 resize-none bg-transparent px-2 py-1.5 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed group-data-[layout=expanded]/composer:order-1 group-data-[layout=expanded]/composer:basis-full group-data-[layout=expanded]/composer:pt-1 pointer-coarse:text-touch",
+        "order-2 field-sizing-content max-h-52 min-h-9 min-w-0 flex-1 basis-0 resize-none bg-transparent px-2 py-1.5 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed group-data-[layout=expanded]/composer:order-1 group-data-[layout=expanded]/composer:basis-full group-data-[layout=expanded]/composer:pt-1 pointer-coarse:text-touch",
         className
       )}
       onChange={(event) => {
@@ -871,7 +871,7 @@ function PromptInputTools({ className, ...props }: React.ComponentProps<"div">) 
     <div
       data-slot="prompt-input-tools"
       className={cn(
-        "order-1 flex min-w-0 items-center gap-0.5 group-data-dictating/composer:invisible group-data-[layout=expanded]/composer:order-2",
+        "order-1 flex min-w-0 items-center gap-0.5 group-data-[layout=expanded]/composer:order-2",
         className
       )}
       {...props}

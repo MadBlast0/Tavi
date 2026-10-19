@@ -260,6 +260,15 @@ so tool support is intermittent.
   session and a reload returns it to the default. A width chosen on one screen
   is the wrong width on another, and storing it would reopen the app with the
   work area squeezed for no reason.
+- **Dictation depends on a browser speech service, and the desktop app may not
+  have one.** The microphone uses the Web Speech API with the system default
+  device — there is nothing to configure, and no device picker exists. That API
+  is not local: Chromium's implementation streams audio to a hosted speech
+  service. In an ordinary browser tab it works. In the Tauri webview it generally
+  does not, because the webview has no route to that service and no key baked in,
+  so `service-not-allowed` or `network` is the likely outcome. The app reports
+  which of those happened rather than failing silently, but reporting it is not
+  the same as working.
 - **Only the local environment exists.** The composer footer carries an
   environment picker because the upstream assistant-ui composer it is modelled on
   has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,

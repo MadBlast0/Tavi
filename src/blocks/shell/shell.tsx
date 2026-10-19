@@ -13,8 +13,10 @@ import {
   useSidebar,
 } from "@/components/sidebar"
 import { ComposerVariantSwitch } from "@/blocks/prompt-input/composer-variant"
+import { matchesHotkey } from "@/lib/hotkey"
 import { SidebarAccount } from "./sidebar-account"
 import { SidebarNav } from "./sidebar-nav"
+import { SETTINGS_HOTKEY, SettingsDialog } from "./settings-dialog"
 import { cn } from "@/lib/utils"
 
 /**
@@ -279,6 +281,7 @@ function WorkArea({ children }: { children: React.ReactNode }) {
 export function Shell({ children }: { children: React.ReactNode }) {
   const [width, setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
   const [resizing, setResizing] = React.useState(false)
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
 
   /* The rail's width is also published on the document root, not only on the
      shell wrapper the sidebar provider makes it a variable of. Menus and popovers
@@ -288,6 +291,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     document.documentElement.style.setProperty("--sidebar-width", `${width}px`)
   }, [width])
+
+  /* The account menu prints the shortcut next to its Settings row, so the
+     shortcut has to be true. It is bound on the window rather than on the card,
+     because the card may not be open — that is the whole point of a shortcut. */
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        !matchesHotkey(event, SETTINGS_HOTKEY)
+      ) {
+        return
+      }
+      event.preventDefault()
+      setSettingsOpen(true)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
 
   return (
     /* `relative` so the controls can anchor to the shell's own top-left corner —
@@ -336,7 +358,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <SidebarContent className="gap-0 scrollbar-none">
           <SidebarNav />
         </SidebarContent>
-        <SidebarAccount />
+        <SidebarAccount onOpenSettings={() => setSettingsOpen(true)} />
       </Sidebar>
       <WorkArea>{children}</WorkArea>
       <ShellControls className="absolute start-0 top-0 z-30 px-1.5" />
@@ -345,6 +367,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         onResize={setWidth}
         onResizeStart={(dragging) => setResizing(dragging)}
       />
+      {/* Outside the shell's own stacking, because the card portals to the end of
+          the body and covers the rail anyway — mounting it inside would only
+          decide what it covers on the way there. */}
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </SidebarProvider>
   )
 }
