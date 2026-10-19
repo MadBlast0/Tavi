@@ -6,7 +6,6 @@ import {
   BugIcon,
   CodeIcon,
   CloudIcon,
-  CodeXmlIcon,
   FileSearchIcon,
   FileTextIcon,
   FolderIcon,
@@ -18,7 +17,6 @@ import {
   ListChecksIcon,
   LaptopIcon,
   MailIcon,
-  MessageCircleIcon,
   MessageCircleQuestionMarkIcon,
   PaperclipIcon,
   PenLineIcon,
@@ -167,9 +165,9 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/message-scroller"
-import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
 
 import { StreamingText } from "./streaming-text"
+import { useComposerVariant } from "./composer-variant"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
 import {
   availableEffort,
@@ -270,17 +268,6 @@ const placeholders: Record<string, string> = Object.fromEntries(
 )
 
 type Variant = "chat" | "code"
-
-/**
- * Header switch between the two composer layouts. The selected entry shows its
- * icon and label; the other collapses to just its icon, so the control keeps a
- * stable width and the sliding indicator in `ToggleGroup` does the work of
- * showing which one is active.
- */
-const VARIANT_OPTIONS: { value: Variant; label: string; icon: React.ReactNode }[] = [
-  { value: "chat", label: "Chat", icon: <MessageCircleIcon /> },
-  { value: "code", label: "Code", icon: <CodeXmlIcon /> },
-]
 
 /**
  * Lists threads that actually exist. Clicking one loads it; the running dot is
@@ -892,9 +879,8 @@ export function PromptBlock() {
   const [effort, setEffort] = React.useState(
     () => readPref(PREF.effort) ?? "",
   )
-  const [variant, setVariant] = React.useState<Variant>(
-    () => (readPref(PREF.variant) === "chat" ? "chat" : "code"),
-  )
+  /* The switch that changes this lives in the sidebar; see composer-variant.tsx. */
+  const { variant } = useComposerVariant()
   const [mode, setMode] = React.useState(() => readPref(PREF.mode) ?? "edit")
   const [realModels, setRealModels] = React.useState<PromptModel[]>([])
   /** Every model's display name, including ones outside the free pool. */
@@ -1150,9 +1136,6 @@ export function PromptBlock() {
   React.useEffect(() => {
     if (effort) writePref(PREF.effort, effort)
   }, [effort])
-  React.useEffect(() => {
-    writePref(PREF.variant, variant)
-  }, [variant])
   React.useEffect(() => {
     writePref(PREF.mode, mode)
   }, [mode])
@@ -1608,57 +1591,23 @@ export function PromptBlock() {
   return (
     <MessageScrollerProvider autoScroll>
       <main className="flex h-svh flex-col bg-background">
-        <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4">
-          {/* Radius matches the composer box (`--composer-radius`) so the two
-              controls read as the same shape. `ToggleGroup` supplies the
-              sliding indicator; the items are fully rounded so the indicator
-              inherits that radius and the highlight is a pill. */}
-          <ToggleGroup
-            className="col-start-2 gap-0 rounded-[1.625rem] bg-muted/50 p-1"
-            aria-label="Composer"
-            size="sm"
-            value={[variant]}
-            onValueChange={(next) => {
-              const [value] = next as Variant[]
-              if (value) setVariant(value)
-            }}
-          >
-            {VARIANT_OPTIONS.map((option) => (
-              <ToggleGroupItem
-                key={option.value}
-                value={option.value}
-                className="rounded-full gap-0 px-2"
-              >
-                <span className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
-                  {option.icon}
-                </span>
-                {/* Collapses to zero width when unselected. The grid track
-                    approach is content-sized, so a longer label would widen
-                    the control on its own rather than being clipped. The
-                    easing matches the indicator's own glide. */}
-                <span
-                  className={cn(
-                    "ms-0 grid grid-cols-[0fr] transition-[grid-template-columns] duration-300",
-                    "ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                    "group-data-pressed/toggle:ms-1.5",
-                    "group-data-pressed/toggle:grid-cols-[1fr]",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "overflow-hidden whitespace-nowrap opacity-0",
-                      "transition-opacity duration-200 motion-reduce:transition-none",
-                      "group-data-pressed/toggle:opacity-100",
-                    )}
-                  >
-                    {option.label}
-                  </span>
-                </span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <header className="grid h-(--shell-top-bar-h) shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4">
+          {/* The centre cell is empty. It held the Chat/Code switch, which now
+              lives in the sidebar beside the work area; the grid is kept so
+              "New chat" stays in the outer column rather than drifting to the
+              middle when the switch leaves.
+
+              The height is the shell's `--shell-top-bar-h`, the same number the
+              sidebar's strip is sized from. CSS variables cascade, so the value
+              set by the shell reaches this header without either block knowing
+              the other's name.
+
+              No rule under it. The two top bars were divided by hairlines, and
+              a rule drawn under one half and not the other reads as a mistake
+              rather than a boundary; drawing both just put a grey line across
+              the app for no information. */}
           {empty ? null : (
-            <Button variant="ghost" size="sm" onClick={reset} className="justify-self-end">
+            <Button variant="ghost" size="xs" onClick={reset} className="justify-self-end">
               New chat
             </Button>
           )}
