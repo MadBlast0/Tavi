@@ -13,6 +13,8 @@ import {
   useSidebar,
 } from "@/components/sidebar"
 import { ComposerVariantSwitch } from "@/blocks/prompt-input/composer-variant"
+import { SidebarAccount } from "./sidebar-account"
+import { SidebarNav } from "./sidebar-nav"
 import { cn } from "@/lib/utils"
 
 /**
@@ -82,6 +84,136 @@ function ShellControls({
 }
 
 /**
+ * The rail's width.
+ *
+ * Deliberately not stored. A width you set by dragging is a fit for the window
+ * you are looking at; saving it would reopen the app at a width chosen for some
+ * other screen, and on a narrower display the work area would be left too small
+ * to read. Closing and reopening returns it to the default, which is the only
+ * value guaranteed to be right.
+ *
+ * The floor is set where the rail's own rows stop being readable — a session
+ * title has to clear the status dot, its own padding, and the timestamp
+ * overlaid at the end of the row before it starts being clipped. The ceiling is
+ * set where the rail has stopped earning the width: past it the work area is
+ * being squeezed for a panel that has nothing wide in it yet.
+ */
+const SIDEBAR_WIDTH_DEFAULT = 256
+const SIDEBAR_WIDTH_MIN = 200
+const SIDEBAR_WIDTH_MAX = 440
+/** How far the arrow keys move the wall. */
+const SIDEBAR_WIDTH_STEP = 16
+
+function clampSidebarWidth(value: number) {
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, value))
+}
+
+/**
+ * The wall between the rail and the work area, which you can grab and drag.
+ *
+ * It sits exactly on the seam, so the line you are dragging is the line the two
+ * panels already meet at. Nothing is drawn there: the boundary between the two
+ * surfaces is already visible as the step from one colour to the other, and a
+ * rule laid over it only doubles the edge. There is deliberately no hover or
+ * active state either — this is a wall, not a control, and a wall that lights
+ * up when the pointer crosses it reads as something to press. The handle is a
+ * grab area with nothing in it.
+ *
+ * The one thing that does appear is the focus ring, and only under keyboard
+ * focus. The handle is reachable and operable from the keyboard — arrow keys to
+ * nudge, Home and End for the ends of the range — and a control that can be
+ * operated by keyboard but cannot be seen to have focus is not operable by
+ * anyone who cannot use a mouse. It never appears on click.
+ *
+ * Pointer events rather than mouse events, so it drags under a touch or a pen
+ * as well, and the pointer is captured on the way down so the drag survives
+ * leaving the 12px strip.
+ */
+function SidebarResizeHandle({
+  width,
+  onResize,
+  onResizeStart,
+}: {
+  width: number
+  onResize: (width: number) => void
+  onResizeStart: (dragging: boolean) => void
+}) {
+  const { state } = useSidebar()
+  const start = React.useRef<{ x: number; width: number } | null>(null)
+  const settleTimer = React.useRef<number | null>(null)
+
+  const cancelSettle = React.useCallback(() => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current)
+    settleTimer.current = null
+  }, [])
+
+  React.useEffect(() => cancelSettle, [cancelSettle])
+
+  function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return
+    cancelSettle()
+    start.current = { x: event.clientX, width }
+    onResizeStart(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const from = start.current
+    if (!from) return
+    onResize(clampSidebarWidth(from.width + (event.clientX - from.x)))
+  }
+
+  function onPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    start.current = null
+    onResizeStart(false)
+    cancelSettle()
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const step = SIDEBAR_WIDTH_STEP
+    if (event.key === "ArrowLeft") onResize(clampSidebarWidth(width - step))
+    else if (event.key === "ArrowRight") onResize(clampSidebarWidth(width + step))
+    else if (event.key === "Home") onResize(SIDEBAR_WIDTH_MIN)
+    else if (event.key === "End") onResize(SIDEBAR_WIDTH_MAX)
+    else return
+    event.preventDefault()
+    /* The rail's width eases over a quarter of a second so that collapsing it
+       animates. Held-down arrow keys would queue one easing move behind
+       another and the wall would trail the keyboard, so a key press marks the
+       change as direct manipulation and it lands at once. The flag is given a
+       moment to fall back so the next collapse still animates. */
+    onResizeStart(true)
+    cancelSettle()
+    settleTimer.current = window.setTimeout(() => onResizeStart(false), 200)
+  }
+
+  /* Collapsed the rail is off the page, so there is no wall to grab. */
+  if (state !== "expanded") return null
+
+  return (
+    <div
+      role="separator"
+      aria-label="Resize sidebar"
+      aria-orientation="vertical"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_WIDTH_MIN}
+      aria-valuemax={SIDEBAR_WIDTH_MAX}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onKeyDown={onKeyDown}
+      style={{ insetInlineStart: width }}
+      className="group absolute inset-y-0 z-30 w-3 -translate-x-1/2 cursor-col-resize touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-foreground/60"
+    />
+  )
+}
+
+/**
  * The work area: everything that is not the sidebar.
  *
  * While the sidebar is showing, this rounds down its left side, so the workspace
@@ -98,14 +230,35 @@ function ShellControls({
  * Collapsed, there is nothing beside it to be rounded against, so it goes back
  * to square — rounding a full-bleed panel against the window edge would just
  * look like a mistake.
+ *
+ * The radius is past the theme's scale on purpose. That scale stops at 26px,
+ * which is a corner for a card; this is a corner for a panel a thousand pixels
+ * tall, and it wants a little more than that to read as the same curve rather
+ * than a token one notch tighter. It is named here so the number has one home.
+ *
+ * `corner-shape` is what separates a corner from a proper curve. `border-radius`
+ * draws a circular arc, which meets each edge at a visible corner; Apple's does
+ * not meet them at all — it runs its curve into the straight edge so the tangent
+ * is continuous, which is why theirs reads as softer at the same radius. The
+ * browser has to say so explicitly, and a browser that does not understand the
+ * property ignores it and draws the circular arc, so this costs nothing where it
+ * is unsupported.
  */
+const WORK_AREA_CORNER = "2.5rem"
+
 function WorkArea({ children }: { children: React.ReactNode }) {
   const { state } = useSidebar()
 
   return (
     <div
       data-sidebar-open={state === "expanded" ? "" : undefined}
-      className="relative flex min-w-0 flex-1 flex-col data-[sidebar-open]:overflow-hidden data-[sidebar-open]:rounded-l-2xl"
+      style={
+        {
+          "--work-area-corner": WORK_AREA_CORNER,
+          cornerShape: "squircle",
+        } as React.CSSProperties
+      }
+      className="relative flex min-w-0 flex-1 flex-col data-[sidebar-open]:overflow-hidden data-[sidebar-open]:rounded-l-[var(--work-area-corner)]"
     >
       {children}
     </div>
@@ -124,6 +277,18 @@ function WorkArea({ children }: { children: React.ReactNode }) {
  * that is not there.
  */
 export function Shell({ children }: { children: React.ReactNode }) {
+  const [width, setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
+  const [resizing, setResizing] = React.useState(false)
+
+  /* The rail's width is also published on the document root, not only on the
+     shell wrapper the sidebar provider makes it a variable of. Menus and popovers
+     render in a portal at the end of the body, so they inherit from there and
+     never see the wrapper's value — which is what lets the account menu size
+     itself to the rail instead of spilling out of it. */
+  React.useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", `${width}px`)
+  }, [width])
+
   return (
     /* `relative` so the controls can anchor to the shell's own top-left corner —
        the one point that means the same thing whether or not the sidebar is
@@ -137,9 +302,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
        its thickness: the sidebar's strip is sized by it, and the work area's
        header reads the same variable. One number, two consumers, so the halves
        cannot end up a pixel apart. Nothing is drawn between them — a rule here
-       only ever disagreed with the one it was meant to continue. */
-    <SidebarProvider className="relative bg-sidebar [--shell-top-bar-h:2.25rem]">
-      <Sidebar collapsible="offcanvas">
+       only ever disagreed with the one it was meant to continue.
+
+       The `resizing` flag suspends the vendored sidebar's own width animation.
+       Left running, it eases the rail toward the pointer at a quarter of a
+       second per frame and the whole panel trails the cursor. */
+    <SidebarProvider
+      data-resizing={resizing ? "" : undefined}
+      style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}
+      className={cn(
+        "relative bg-sidebar [--shell-top-bar-h:2.25rem]",
+        "data-[resizing]:[&_[data-slot=sidebar]]:transition-none",
+        "data-[resizing]:[&_[data-slot=sidebar-container]]:transition-none",
+      )}
+    >
+      {/* `after:hidden` drops the vendored rail's own right-hand edge: the
+          resize handle draws that line instead, so the wall is one line that
+          reacts to the pointer rather than a static rule with a hit area on
+          top of it. */}
+      <Sidebar collapsible="offcanvas" className="after:hidden">
         {/* The four controls sit over the shell rather than in here, so they
             hold their place across the collapse. The switch belongs to the
             sidebar properly — it disappears with it — so it lives in the
@@ -149,10 +330,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <SidebarHeader className="mt-(--shell-top-bar-h)">
           <ComposerVariantSwitch className="w-fit" />
         </SidebarHeader>
-        <SidebarContent />
+        {/* `gap-0` because the groups carry their own spacing. The vendored
+            content adds 8px between them on top of each group's padding, which
+            is what makes a rail of a dozen rows feel twice as tall as it is. */}
+        <SidebarContent className="gap-0 scrollbar-none">
+          <SidebarNav />
+        </SidebarContent>
+        <SidebarAccount />
       </Sidebar>
       <WorkArea>{children}</WorkArea>
       <ShellControls className="absolute start-0 top-0 z-30 px-1.5" />
+      <SidebarResizeHandle
+        width={width}
+        onResize={setWidth}
+        onResizeStart={(dragging) => setResizing(dragging)}
+      />
     </SidebarProvider>
   )
 }

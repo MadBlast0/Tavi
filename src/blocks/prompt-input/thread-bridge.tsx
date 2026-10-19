@@ -1,0 +1,60 @@
+"use client"
+
+import * as React from "react"
+
+/**
+ * How the rail drives the composer, and what the composer is showing.
+ *
+ * The rail sits above the prompt block in the tree, so it cannot reach the
+ * block's own handlers directly — they are state inside a component that is the
+ * rail's sibling's child. Rather than lift that state out, which would mean
+ * moving a dozen interdependent pieces of the composer across a module
+ * boundary, the block publishes its two entry points here and the rail calls
+ * them.
+ *
+ * The handlers live in a ref, not in state, because nothing needs to re-render
+ * when they are published and the block rebuilds both on every render. A
+ * state-based bridge would either republish in a loop or force memoisation of
+ * functions that were never written to be stable.
+ *
+ * The open thread is state, unlike the handlers: the rail has to redraw the
+ * list when it changes, which is the one thing the rail does need to react to.
+ */
+export type ThreadBridge = {
+  /** Start a new thread, leaving whatever is open. */
+  reset: () => void
+  /** Open an existing thread by its id. */
+  open: (id: string) => void
+}
+
+type ThreadBridgeValue = {
+  functions: React.RefObject<ThreadBridge | null>
+  activeId: string | null
+  setActiveId: (id: string | null) => void
+}
+
+const ThreadBridgeContext = React.createContext<ThreadBridgeValue | null>(null)
+
+export function ThreadBridgeProvider({ children }: { children: React.ReactNode }) {
+  const functions = React.useRef<ThreadBridge | null>(null)
+  const [activeId, setActiveId] = React.useState<string | null>(null)
+
+  const value = React.useMemo<ThreadBridgeValue>(
+    () => ({ functions, activeId, setActiveId }),
+    [activeId],
+  )
+
+  return (
+    <ThreadBridgeContext.Provider value={value}>
+      {children}
+    </ThreadBridgeContext.Provider>
+  )
+}
+
+export function useThreadBridge() {
+  const value = React.useContext(ThreadBridgeContext)
+  if (!value) {
+    throw new Error("useThreadBridge must be used inside a ThreadBridgeProvider")
+  }
+  return value
+}

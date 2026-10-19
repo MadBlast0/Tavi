@@ -1,5 +1,6 @@
 import { PromptBlock } from "@/blocks/prompt-input/prompt-block";
 import { ComposerVariantProvider } from "@/blocks/prompt-input/composer-variant";
+import { ThreadBridgeProvider } from "@/blocks/prompt-input/thread-bridge";
 import { Shell } from "@/blocks/shell/shell";
 
 /**
@@ -7,17 +8,20 @@ import { Shell } from "@/blocks/shell/shell";
  * components live in @/blocks/prompt-input. The shell around it supplies the
  * left sidebar and the work area's left edge.
  *
- * The composer variant is provided here rather than inside either block: the
- * switch that sets it is in the sidebar, and the layout it chooses is in the
- * work area, so it has to sit above both.
+ * The two providers sit above both blocks because each one holds state that
+ * spans the seam between them: the composer variant, whose switch is in the
+ * rail and whose effect is in the work area; and the thread bridge, which is
+ * how the rail starts and opens threads in the work area.
  */
 function App() {
   return (
-    <ComposerVariantProvider>
-      <Shell>
-        <PromptBlock />
-      </Shell>
-    </ComposerVariantProvider>
+    <ThreadBridgeProvider>
+      <ComposerVariantProvider>
+        <Shell>
+          <PromptBlock />
+        </Shell>
+      </ComposerVariantProvider>
+    </ThreadBridgeProvider>
   );
 }
 

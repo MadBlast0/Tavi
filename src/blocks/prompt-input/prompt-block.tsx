@@ -168,6 +168,7 @@ import {
 
 import { StreamingText } from "./streaming-text"
 import { useComposerVariant } from "./composer-variant"
+import { useThreadBridge } from "./thread-bridge"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
 import {
   availableEffort,
@@ -1452,6 +1453,20 @@ export function PromptBlock() {
     )
   }
 
+  /* The rail sits above this block and cannot reach its handlers, so they are
+     published here. Written every render in a layout effect: both functions are
+     rebuilt each time, and a dependency on them would either republish in a
+     loop or require memoising functions that were never written to be stable. */
+  const threadBridge = useThreadBridge()
+  React.useLayoutEffect(() => {
+    threadBridge.functions.current = { reset, open: openSession }
+  })
+  /* Which thread is open is state, because the rail has to redraw its list when
+     it changes — unlike the handlers above, which only ever get called. */
+  React.useEffect(() => {
+    threadBridge.setActiveId(activeSessionId)
+  }, [activeSessionId, threadBridge])
+
   /**
    * The model picker, shared by both variants.
    *
@@ -1751,7 +1766,7 @@ export function PromptBlock() {
                       >
                         <DropdownMenuItem onClick={() => void browse()}>
                           <FolderOpenIcon />
-                          Open folder…
+                          Open folder
                         </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setCloneOpen(true)}>
                             <GitBranchIcon />

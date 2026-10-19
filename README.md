@@ -227,6 +227,39 @@ so tool support is intermittent.
 
 ## Known limitations
 
+- **The account row is not an account.** It opens a menu on click and shows
+  the two facts this app has about itself — the machine it is running on, and
+  the provider key it can reach, including whether that key is on a free tier.
+  There is no signed-in user, no email, no plan to upgrade and nothing to log
+  out of, because there is no auth anywhere in the app, so a menu carrying those
+  items would be a picture of a sign-in that does not exist. The row and its
+  open-on-click behaviour are built; the contents are what is actually known.
+- **Most of the rail has nothing behind it yet.** Chat offers Projects,
+  Artifacts, Scheduled and Customize; Code offers Artifacts, Routines,
+  Scheduled and Customize. None of those destinations exists, so all eight rows
+  are rendered disabled and say why on hover. Only `New` works. The two lists are
+  kept separate rather than merged because Chat and Code are meant to lead
+  somewhere different — sharing rows that happen to look alike would mean
+  offering each mode something the other cannot honour.
+- **The thread menu has no Archive and no Move to project.** Right-clicking a
+  thread in the rail gives Pin, Rename, Copy ID, Delete, plus Fork in Code. Those
+  are the options the comparable apps offer that this one can actually honour.
+  Two that show up in Cursor, Zed and Kimi Code are left out on purpose. Archive
+  is the reversible option, and it needs somewhere to read archived threads and a
+  way back out of it, which would be a second list rather than a menu item. Move
+  to project needs a project to move to, and `GET /api/projects` returns nothing,
+  so the picker would open empty. An empty picker is worse than no picker.
+- **Code's thread list is grouped by project, and projects are usually
+  empty.** A thread records the folder it was run against, so that is what the
+  grouping uses. `GET /api/projects` currently returns an empty list because
+  nothing has been cloned into the projects folder, so every real thread lands
+  under a `No folder` group until one has a folder on it. The grouping is
+  derived from the thread, not invented for it: a thread with no folder is
+  labelled as having none rather than being hidden or given a name.
+- **The rail's width is not remembered.** Dragging the seam sets it for the
+  session and a reload returns it to the default. A width chosen on one screen
+  is the wrong width on another, and storing it would reopen the app with the
+  work area squeezed for no reason.
 - **Only the local environment exists.** The composer footer carries an
   environment picker because the upstream assistant-ui composer it is modelled on
   has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,
