@@ -31,6 +31,31 @@
           document.documentElement.classList.add("dark");
         }
       })();
+
+      // The palette, applied for the same reason and in the same way: the
+      // stylesheet selects tokens on `data-palette`, and setting it after the
+      // first paint would mean the app is drawn in one palette and then
+      // repainted in another.
+      //
+      // Also a copy of src/lib/palette.ts rather than a use of it, for the
+      // reason the script above is. It does not check the value against a list
+      // of known ids: an id this build has never heard of matches no palette
+      // block, so the base tokens on `:root` apply — which is the default
+      // palette. A list here would be a second copy of `PALETTES`, and one
+      // that failed to mention a newly added palette would pin the app to the
+      // default until the bundle loaded and corrected it, which is a flash of
+      // exactly the kind this script exists to prevent.
+      (function () {
+        try {
+          var stored = localStorage.getItem("palette");
+          document.documentElement.setAttribute(
+            "data-palette",
+            stored || "default"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-palette", "default");
+        }
+      })();
     </script>
   </head>
 

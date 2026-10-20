@@ -8,6 +8,7 @@ import { Switch } from "@/components/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
 import { useThemePreference, type ThemePreference } from "@/lib/theme"
 import { FontPicker } from "./settings-font"
+import { PalettePicker } from "./settings-palette"
 import { cn } from "@/lib/utils"
 
 /**
@@ -163,13 +164,37 @@ function ThemeRow() {
 }
 
 /**
+ * The Colour palette row, which works.
+ *
+ * Below Theme rather than above it, because the two are separate axes and read
+ * as a sentence in this order: the app is light or dark, and it is drawn in
+ * these colours. A palette carries its own light and dark token values, so
+ * neither of them implies anything about the other.
+ *
+ * There is only one palette so far — the app's existing token set, which is
+ * also the fallback for anything unrecognised. The list grows by adding to
+ * `PALETTES` and writing the matching tokens in `index.css`; the control does
+ * not change.
+ */
+function PaletteRow() {
+  return (
+    <Row
+      label="Colour palette"
+      description="The colours every surface, border and accent is drawn from."
+    >
+      <PalettePicker />
+    </Row>
+  )
+}
+
+/**
  * The General section.
  *
- * Everything in it except Theme is a row with the shape of a control and
- * nothing behind it. They are here as a layout rather than as settings: the
- * card's proportions, the two-pane split and the scroll of the pane are all
- * decided by what fits, and there is no way to know what fits from one line of
- * placeholder text.
+ * Everything in it except Theme, Colour palette and App font is a row with
+ * the shape of a control and nothing behind it. They are here as a layout
+ * rather than as settings: the card's proportions, the two-pane split and the
+ * scroll of the pane are all decided by what fits, and there is no way to know
+ * what fits from one line of placeholder text.
  *
  * Each inert row says why in its own tooltip rather than being silently dead,
  * and none of them is enabled. A row that looked live and was not would be the
@@ -180,6 +205,8 @@ export function GeneralSettings() {
     <div className="flex flex-col gap-8">
       <Group title="Appearance">
         <ThemeRow />
+
+        <PaletteRow />
 
         <Row
           label="App font"

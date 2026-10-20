@@ -134,6 +134,35 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Palettes.
+ *
+ * A palette is a complete set of token values, selected by `data-palette` on
+ * the root element and orthogonal to light and dark. Each one needs a block
+ * per mode, and the two must agree with each other: `primary` in one and the
+ * matching `primary-foreground` in the other is what keeps a button readable,
+ * and a palette that gets that wrong looks broken in exactly one mode, which
+ * is the hardest kind of wrong to notice before shipping.
+ *
+ * `default` has no block of its own, and does not need one. It is the set
+ * above, which is what the app has always used; adding a copy of it here
+ * would be a second answer to the same question and the two would drift.
+ *
+ * The attribute is always written, even for the default, so a palette is
+ * never "absent" as a way of being selected. To add one: give it an id in
+ * `src/lib/palette.ts`, then add
+ *
+ *     html:not(.dark)[data-palette="your-id"] { ...light tokens... }
+ *     .dark[data-palette="your-id"] { ...dark tokens... }
+ *
+ * The `:not(.dark)` on the light one is not decoration. `[data-palette="x"]`
+ * is one attribute and `.dark` is one class, so they have the same
+ * specificity and whichever comes later wins — a light block written after
+ * `.dark`, or after the dark palette block, overrides the dark tokens and the
+ * app renders light in both modes. That was verified against this stylesheet
+ * rather than assumed. Excluding `.dark` from the light selector removes the
+ * contest entirely: the two rules can no longer both match, so their order
+ * stops mattering. */
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
