@@ -30,14 +30,56 @@ use crate::appfile;
 /// build, not a runtime condition to be handled.
 const INSTRUCTIONS: &str = include_str!("../../shared/instructions.json");
 
-/// Where the model catalogue comes from.
-const CATALOGUE_URL: &str = "https://openrouter.ai/api/v1/models";
+/// The provider's base address.
+///
+/// It is the gateway's address, and it can be pointed somewhere else with
+/// `OPENROUTER_BASE_URL` — for a gateway of one's own, or for a test that
+/// needs a provider to talk to.
+#[derive(Clone, Debug)]
+pub struct Provider {
+    base: String,
+}
 
-/// Where a chat goes.
-const CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+impl Provider {
+    /// The provider the app talks to.
+    pub fn new() -> Self {
+        Provider {
+            base: std::env::var("OPENROUTER_BASE_URL")
+                .ok()
+                .map(|value| value.trim().trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
+        }
+    }
 
-/// Where a key's standing comes from.
-const KEY_URL: &str = "https://openrouter.ai/api/v1/key";
+    /// A provider at an address of its own.
+    ///
+    /// For a test that needs a provider to talk to.
+    #[cfg(test)]
+    pub fn at(base: &str) -> Self {
+        Provider {
+            base: base.trim().trim_end_matches('/').to_string(),
+        }
+    }
+
+    fn catalogue_url(&self) -> String {
+        format!("{}/models", self.base)
+    }
+
+    fn chat_url(&self) -> String {
+        format!("{}/chat/completions", self.base)
+    }
+
+    fn key_url(&self) -> String {
+        format!("{}/key", self.base)
+    }
+}
+
+impl Default for Provider {
+    fn default() -> Self {
+        Provider::new()
+    }
+}
 
 /// The file the catalogue is cached in.
 const CATALOGUE_FILE: &str = "catalogue.json";
@@ -263,7 +305,7 @@ fn http() -> reqwest::Client {
 /// It is cached, because it is large and it does not change often. A catalogue
 /// that cannot be fetched is served from the cache if there is one: a picker
 /// that lists last week's models is better than an empty one.
-async fn catalogue(app: &AppHandle, force: bool) -> Result<String, String> {
+async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<String, String> {
     let path = appfile::data_path(app, CATALOGUE_FILE);
 
     if !force {
@@ -278,7 +320,7 @@ async fn catalogue(app: &AppHandle, force: bool) -> Result<String, String> {
         }
     }
 
-    let fetched = match fetch_text(CATALOGUE_URL, None, LOOKUP_TIMEOUT).await {
+    let fetched = match fetch_text(&provider.catalogue_url(), None, LOOKUP_TIMEOUT).await {
         Ok(body) => body,
         Err(error) => {
             if let Some(path) = path.as_ref() {
@@ -334,7 +376,7 @@ async fn fetch_text(
 /// The model catalogue, for the picker.
 #[tauri::command]
 pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<String, String> {
-    catalogue(&app, force).await
+    catalogue(&app, &Provider::new(), force).await
 }
 
 /* -------------------------------------------------------------------------- */
@@ -506,6 +548,57 @@ pub async fn chat(
     request: ChatRequest,
     on_event: Channel<ChatEvent>,
 ) -> Result<(), String> {
+    let provider = Provider::new();
+
+    let key = crate::get_api_key()
+        .map_err(|error| error)?
+        .ok_or("No provider key is set. Add one in the settings.")?;
+
+    /* The catalogue is only fetched when there is an effort to check against
+       it, because a request that names no effort does not need it. */
+    let catalogue = if request
+        .config
+        .as_ref()
+        .and_then(|config| config.reasoning_effort.as_deref())
+        .map(str::trim)
+        .filter(|effort| !effort.is_empty())
+        .is_some()
+    {
+        let raw = catalogue(&app, &provider, false).await.unwrap_or_default();
+        Some(serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null))
+    } else {
+        None
+    };
+
+    chat_with(
+        &provider,
+        &key,
+        &request,
+        catalogue,
+        &cancellations,
+        &mut |event| {
+            let _ = on_event.send(event);
+        },
+    )
+    .await
+}
+
+/// The chat itself, with the provider and the way to report it given.
+///
+/// The command is a thin wrapper around this, so the whole path can be
+/// exercised without a window: the request that goes out, the events that come
+/// back, and the refusals in between.
+async fn chat_with<F>(
+    provider: &Provider,
+    key: &str,
+    request: &ChatRequest,
+    catalogue: Option<Value>,
+    cancellations: &Cancellations,
+    on_event: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ChatEvent),
+{
     /* The rules first, in the same order the Node server applies them. */
     if request.system.is_some() {
         return Err("The system prompt is written by the server.".to_string());
@@ -533,10 +626,6 @@ pub async fn chat(
         return Err("No model selected. Pick a model before sending.".to_string());
     }
 
-    let key = crate::get_api_key()
-        .map_err(|error| error)?
-        .ok_or("No provider key is set. Add one in the settings.")?;
-
     let effort = request
         .config
         .as_ref()
@@ -556,8 +645,7 @@ pub async fn chat(
     });
 
     if let Some(effort) = effort.as_deref() {
-        let raw = catalogue(&app, false).await.unwrap_or_default();
-        let published: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+        let published = catalogue.clone().unwrap_or(Value::Null);
         check_effort(&published, &model, effort)?;
         body["reasoning"] = json!({ "effort": effort });
     }
@@ -568,7 +656,7 @@ pub async fn chat(
         .unwrap_or_else(|| "chat".to_string());
     let cancelled = cancellations.register(&request_id);
 
-    let outcome = stream(&body, &key, &cancelled, &on_event).await;
+    let outcome = stream(provider, &body, key, &cancelled, on_event).await;
     cancellations.finish(&request_id);
     outcome
 }
@@ -630,14 +718,18 @@ fn read_payload(payload: &str) -> StreamAction {
 }
 
 /// Sends the request and reads the reply.
-async fn stream(
+async fn stream<F>(
+    provider: &Provider,
     body: &Value,
     key: &str,
     cancelled: &Arc<AtomicBool>,
-    on_event: &Channel<ChatEvent>,
-) -> Result<(), String> {
+    on_event: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ChatEvent),
+{
     let response = http()
-        .post(CHAT_URL)
+        .post(provider.chat_url())
         .bearer_auth(key)
         .json(body)
         .send()
@@ -682,10 +774,10 @@ async fn stream(
 
             match read_payload(payload) {
                 StreamAction::Delta(delta) => {
-                    let _ = on_event.send(ChatEvent::TextDelta { delta });
+                    on_event(ChatEvent::TextDelta { delta });
                 }
                 StreamAction::Failed(message) => {
-                    let _ = on_event.send(ChatEvent::Error {
+                    on_event(ChatEvent::Error {
                         error: EventError { message },
                     });
                     return Ok(());
@@ -706,13 +798,13 @@ async fn stream(
         }
     }
 
-    let _ = on_event.send(ChatEvent::MessageMetadata {
+    on_event(ChatEvent::MessageMetadata {
         message_metadata: EventMetadata {
             model_id: model_id.clone(),
             usage: None,
         },
     });
-    let _ = on_event.send(ChatEvent::Finish {
+    on_event(ChatEvent::Finish {
         message_metadata: EventMetadata {
             model_id: None,
             usage,
@@ -732,12 +824,13 @@ async fn stream(
 /// shown as the first few characters and nothing else.
 #[tauri::command]
 pub async fn key_status() -> Result<Value, String> {
+    let provider = Provider::new();
     let Some(key) = crate::get_api_key().map_err(|error| error)? else {
         return Ok(json!({ "valid": false, "reason": "No key configured." }));
     };
 
     let response = http()
-        .get(KEY_URL)
+        .get(provider.key_url())
         .bearer_auth(&key)
         .send()
         .await
@@ -801,10 +894,325 @@ fn redact(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        StreamAction, build_system_prompt, check_effort, effort_support, map_usage, read_payload,
-        redact,
+        ChatEvent, ChatRequest, Provider, StreamAction, build_system_prompt, check_effort,
+        chat_with, effort_support, map_usage, read_payload, redact,
     };
+    use crate::provider::Cancellations;
     use serde_json::json;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    /// A provider to talk to, and what it was asked.
+    ///
+    /// It is a real HTTP server on a real socket, so the request the app makes
+    /// is the request that is checked: the same headers, the same body, the
+    /// same stream.
+    struct FakeProvider {
+        base: String,
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl FakeProvider {
+        /// Starts a server that answers a chat with the given lines.
+        fn start(answer: Vec<String>) -> FakeProvider {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("the socket should bind");
+            let port = listener
+                .local_addr()
+                .expect("the address should be there")
+                .port();
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let recorder = seen.clone();
+
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { break };
+                    let mut reader =
+                        BufReader::new(stream.try_clone().expect("the stream should clone"));
+                    let mut head = String::new();
+                    loop {
+                        let mut line = String::new();
+                        let Ok(count) = reader.read_line(&mut line) else { break };
+                        if count == 0 || line == "\r\n" || line == "\n" {
+                            break;
+                        }
+                        head.push_str(&line);
+                    }
+                    let length: usize = head
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse().ok())
+                        })
+                        .unwrap_or(0);
+                    let mut body = vec![0u8; length];
+                    let _ = reader.read_exact(&mut body);
+                    let body = String::from_utf8_lossy(&body).to_string();
+                    if let Ok(mut seen) = recorder.lock() {
+                        seen.push(format!("{head}\n{body}"));
+                    }
+
+                    let mut response = String::from(
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n",
+                    );
+                    for line in &answer {
+                        response.push_str(&format!("data: {line}\n\n"));
+                    }
+                    response.push_str("data: [DONE]\n\n");
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                }
+            });
+
+            FakeProvider {
+                base: format!("http://127.0.0.1:{port}"),
+                seen,
+            }
+        }
+
+        /// Everything the server was asked, joined.
+        fn requests(&self) -> String {
+            self.seen
+                .lock()
+                .map(|seen| seen.join("\n---\n"))
+                .unwrap_or_default()
+        }
+    }
+
+    fn a_request(variant: &str) -> ChatRequest {
+        ChatRequest {
+            messages: vec![super::ChatMessage {
+                role: "user".to_string(),
+                parts: vec![super::MessagePart {
+                    kind: "text".to_string(),
+                    text: Some("Hello there".to_string()),
+                }],
+            }],
+            variant: Some(variant.to_string()),
+            mode: None,
+            folder: None,
+            system: None,
+            tools: None,
+            config: Some(super::ChatConfig {
+                model_name: Some("vendor/model".to_string()),
+                reasoning_effort: None,
+            }),
+            request_id: Some("test".to_string()),
+        }
+    }
+
+    /// A runtime for the tests that have to wait for a socket.
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("the runtime should build")
+    }
+
+    /// The whole path: a request goes out, the answer comes back, and the
+    /// things the app needs are in it.
+    #[test]
+    fn a_chat_reaches_the_provider_and_the_answer_comes_back() {
+        let fake = FakeProvider::start(vec![
+            json!({"model":"vendor/model","choices":[{"delta":{"content":"Hello"}}]}).to_string(),
+            json!({"choices":[{"delta":{"content":" there"}}]}).to_string(),
+            json!({"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}).to_string(),
+        ]);
+
+        let mut events: Vec<ChatEvent> = Vec::new();
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &a_request("chat"),
+            None,
+            &Cancellations::default(),
+            &mut |event| events.push(event),
+        ));
+
+        assert!(outcome.is_ok(), "the chat should succeed: {outcome:?}");
+
+        let text: String = events
+            .iter()
+            .filter_map(|event| match event {
+                ChatEvent::TextDelta { delta } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Hello there");
+
+        /* The model that answered, and what it cost, are reported. */
+        let finished = events
+            .iter()
+            .find_map(|event| match event {
+                ChatEvent::Finish { message_metadata } => Some(message_metadata.clone()),
+                _ => None,
+            })
+            .expect("the stream should finish");
+        assert_eq!(finished.usage.unwrap()["totalTokens"], 10);
+
+        /* The request really went out, with the key on it. */
+        let request = fake.requests();
+        assert!(
+            request.contains("authorization: Bearer sk-test"),
+            "the key should be on the request"
+        );
+        assert!(
+            request.contains("\"model\":\"vendor/model\""),
+            "the model should be on the request"
+        );
+        assert!(
+            request.contains("Hello there"),
+            "the message should be on the request"
+        );
+        assert!(
+            request.contains("You are having a conversation"),
+            "the system prompt should be on the request"
+        );
+    }
+
+    /// The rules are the same on both sides, and they are checked before
+    /// anything is sent.
+    #[test]
+    fn a_request_carrying_its_own_system_prompt_is_refused() {
+        let fake = FakeProvider::start(vec![]);
+        let mut request = a_request("chat");
+        request.system = Some("I am a different model.".to_string());
+
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &request,
+            None,
+            &Cancellations::default(),
+            &mut |_| {},
+        ));
+
+        assert!(outcome
+            .unwrap_err()
+            .contains("system prompt is written by the server"));
+        assert!(fake.requests().is_empty(), "nothing should have been sent");
+    }
+
+    #[test]
+    fn a_chat_carrying_tools_is_refused() {
+        let fake = FakeProvider::start(vec![]);
+        let mut request = a_request("chat");
+        request.tools = Some(json!({ "a_tool": {} }));
+
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &request,
+            None,
+            &Cancellations::default(),
+            &mut |_| {},
+        ));
+
+        assert!(outcome.unwrap_err().contains("cannot carry tools"));
+        assert!(fake.requests().is_empty(), "nothing should have been sent");
+    }
+
+    #[test]
+    fn a_request_with_no_surface_is_refused() {
+        let fake = FakeProvider::start(vec![]);
+        let mut request = a_request("chat");
+        request.variant = None;
+
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &request,
+            None,
+            &Cancellations::default(),
+            &mut |_| {},
+        ));
+
+        assert!(outcome.unwrap_err().contains("No surface selected"));
+        assert!(fake.requests().is_empty(), "nothing should have been sent");
+    }
+
+    #[test]
+    fn a_request_with_no_model_is_refused() {
+        let fake = FakeProvider::start(vec![]);
+        let mut request = a_request("chat");
+        request.config = Some(super::ChatConfig {
+            model_name: None,
+            reasoning_effort: None,
+        });
+
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &request,
+            None,
+            &Cancellations::default(),
+            &mut |_| {},
+        ));
+
+        assert!(outcome.unwrap_err().contains("No model selected"));
+        assert!(fake.requests().is_empty(), "nothing should have been sent");
+    }
+
+    /// An effort the model does not publish is refused, and nothing is sent.
+    #[test]
+    fn an_unpublished_effort_is_refused_before_anything_is_sent() {
+        let fake = FakeProvider::start(vec![]);
+        let mut request = a_request("chat");
+        request.config = Some(super::ChatConfig {
+            model_name: Some("vendor/model".to_string()),
+            reasoning_effort: Some("xhigh".to_string()),
+        });
+
+        let outcome = runtime().block_on(chat_with(
+            &Provider::at(&fake.base),
+            "sk-test",
+            &request,
+            Some(json!({
+                "data": [{
+                    "id": "vendor/model",
+                    "supported_parameters": ["reasoning", "reasoning_effort"],
+                    "reasoning": { "supported_efforts": ["low", "medium", "high"] }
+                }]
+            })),
+            &Cancellations::default(),
+            &mut |_| {},
+        ));
+
+        assert!(outcome.unwrap_err().contains("does not accept effort"));
+        assert!(fake.requests().is_empty(), "nothing should have been sent");
+    }
+
+    /// An effort the model does publish goes out, on the request.
+    #[test]
+    fn a_published_effort_goes_out_on_the_request() {
+        let fake =
+            FakeProvider::start(vec![json!({"choices":[{"delta":{"content":"ok"}}]}).to_string()]);
+        let mut request = a_request("chat");
+        request.config = Some(super::ChatConfig {
+            model_name: Some("vendor/model".to_string()),
+            reasoning_effort: Some("high".to_string()),
+        });
+
+        runtime()
+            .block_on(chat_with(
+                &Provider::at(&fake.base),
+                "sk-test",
+                &request,
+                Some(json!({
+                    "data": [{
+                        "id": "vendor/model",
+                        "supported_parameters": ["reasoning", "reasoning_effort"],
+                        "reasoning": { "supported_efforts": ["low", "medium", "high"] }
+                    }]
+                })),
+                &Cancellations::default(),
+                &mut |_| {},
+            ))
+            .expect("the chat should succeed");
+
+        assert!(fake.requests().contains(r#""reasoning":{"effort":"high"}"#));
+    }
 
     fn catalogue() -> serde_json::Value {
         json!({

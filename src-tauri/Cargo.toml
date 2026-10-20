@@ -42,6 +42,7 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "tokio"] }
 font-kit = "0.14.3"
 tauri-plugin-dialog = "2.8.3"
+tokio = { version = "1.54.0", features = ["rt", "macros"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
