@@ -496,7 +496,10 @@ folder.
   "No sessions yet" — rather than rendering an empty padded group in Chat and
   nothing at all in Code.
 - The conversation's empty state is per side: Chat asks a different question
-  than Code. ("What are we working on?" is a code question.)
+  than Code. ("What are we working on?" is a code question.) Both are drawn with
+  `src/components/empty` — `Empty`, `EmptyHeader`, `EmptyMedia`, `EmptyTitle`,
+  `EmptyDescription`, `EmptyContent` — which is vendored, unused today, and
+  exactly this shape. Nothing new is invented for it.
 - The rail row shows what differs: the project is already the group heading, so
   the row shows the model instead.
 - The pin indicator is visible, not only felt through ordering.
@@ -616,6 +619,7 @@ mistaken for consequences of it.
 | **The switch's placement is now argued, not assumed** — D10. | Claude puts Chat-vs-Cowork in the message box (same job) and makes Code a tab (different job). Ours is a tab-equivalent, so the rail is the right place. |
 | **The reference table gained the storage layout, the enforcement rule, the session-row metadata and the per-folder mode memory.** | Claude's `local-agent-mode-sessions/` vs `claude-code-sessions/`, "enforced in the app's main process, not just hidden in the UI", the git branch on a session row, and `~/.claude/projects/<project>/`. |
 | **New decisions D9 and D10; new bugs B9–B12; new edge cases.** | |
+| **The per-side empty states use the vendored `src/components/empty` primitive**, not new markup. | It is already in the tree, unused, and is exactly an empty state with a title and a description. |
 | **§4.2 explains why we do *not* store one store per project,** even though Claude does. | `localStorage` has no directories and a session's folder can change. A `folder` field is the honest equivalent. |
 
 ---
