@@ -1,11 +1,17 @@
 # Separating Chat from Code
 
-**Status:** plan, revision 4. **The seven stages are built.** What is left is
-recorded in §11.
+**Status:** plan, revision 4. **The seven stages are built**, and the two
+cross-surface bugs the split introduces are fixed.
 **Decided by:** the maintainer, 2026-10-20. The decisions are recorded in §7 and are
 not to be reopened without saying so here first.
 **Why this document exists:** the app has a Chat surface and a Code surface, and
 they are two views of one thing. This is the plan to make them two things.
+
+> **Revision 4** fixed the bug the maintainer reported: a conversation could
+> cross from one surface to the other. It also closed the last four gaps against
+> the plan, and made the rules executable — the store, the migrations, the
+> system prompt and the two write rules are now tests rather than comments.
+> §10 lists every change.
 
 > **Revision 3** re-checked every claim against the code, against the repo's own
 > documents — the mock, the master plan, the storage strategy and the README —
@@ -726,6 +732,8 @@ quietly reversed later.
 | **D8** | **The agent mode (Edit / Plan / Ask) and the folder are Code-only**, living on the session record. The default mode for a new session is remembered **per folder**. | A chat has no repository and no permission model. Claude remembers a permission mode per folder; Plan applies to the session only. |
 | **D9** | **A folder's identity is a generated id, not its directory name.** The session records the id and the display name separately. | Two folders with the same directory name currently collide: the second pick overwrites the first's handle and the Code rail merges their sessions. Claude's project identity is the directory path. The grouping becomes permanent once the two surfaces are apart, so it has to be right. |
 | **D10** | **The switch stays in the rail**, not in the composer. | Claude puts Chat-vs-Cowork in the message box because they are the same job, and makes Code a tab because a code session owns a folder and a working tree. Ours is a tab-equivalent switch, so app chrome is the right place. |
+| **D11** | **A turn's thread is decided when the turn is sent**, and carried through to the reply's write. | The composer can change while a reply is on its way — the user can press "New", or switch to the other surface. Reading the composer's state at the moment of the write is what produced two threads with the same conversation in them (B20). |
+| **D12** | **A reply that arrives late does not touch the composer.** It is kept on the thread it was asked on; the composer is left showing whatever it is showing now. | Otherwise one side's conversation ends up under the other side's composer, and the next message there saves it as a thread of the wrong kind (B20). |
 
 ---
 
@@ -746,6 +754,9 @@ quietly reversed later.
 | Reload the app | Both sides open empty, as the app opens in Chat today. Restoring the last open thread per side is future work (§6). |
 | Tray "New chat" / "New session" | Switches to that side and starts a new thread there, draining any queued intent. |
 | A queued tray intent | Drained by every "new thread" path, including the rail's. |
+| **A reply arrives after the user switched surfaces** | It is kept on the thread it was asked on, and it does not touch the composer (D12). The side now showing keeps its own conversation. |
+| **A reply arrives after the user pressed "New"** | It is kept on the thread it was asked on, and it does not refill the composer (D12). "New" means a blank composer. |
+| **A reply arrives after the user deleted the thread it belongs to** | The write recreates it — a thread that is written to exists afterwards. |
 | A folder is renamed on disk | Its id does not change, so the session stays attached; the group heading is refreshed from the recents list. |
 | Two folders with the same name | Two ids, two groups, two sets of sessions (D9). |
 | The old `tavi.sessions.v1` / `ai-app.sessions.v1` keys | Deleted once, at startup, and never read again (D3). |
@@ -778,6 +789,7 @@ mistaken for consequences of it.
 | **B17** | **A restored thread carries less context than the original request.** Attachment text is inlined at up to 400 KB but truncated to 20 000 characters on store, and the `@`-mentioned folder files are not stored at all — only their paths — so a restored Code session loses its file context unless the folder is re-granted. | `prompt-block.tsx:750` vs `:615-630`, `:758-761` | Low, pre-existing |
 | **B18** | **"New session" already means something else.** The app menu's View ▸ Split view has "New session on right" and "New session below" — a split pane, not a Code session. A File ▸ New session has to be distinguishable from them. | `app-menu.tsx:100-101` | Low |
 | **B19** | **The README contradicts itself about tools.** `:618-619` says "Agent mode has no tool execution. Modes change the system prompt only", while `:343-385` documents five working tools and `DesktopToolGate` as live. And `:644-647` says the prompt-input block "is not wired up… Kept for reference" when it is the app surface. | `README.md:618-619` vs `:343-385`; `README.md:644-647` | Medium — the docs are quoted in review, so they have to be right |
+| **B20** | **A conversation could cross from one surface to the other.** A reply that arrived after the user had switched surfaces, or pressed "New", was still written into the composer — which was by then showing the *other* side. The next message there took the other side's conversation along with it and saved it as a thread of the wrong kind: a chat that also produced a session with the chat's conversation in it. Two things caused it: the write read the thread id from the composer's state *after* an await, so a thread closed in the meantime read as no thread and a second one was made; and a late reply overwrote *which thread the composer had open*, so the next message found no thread and made another. | `prompt-block.tsx` — `persist` and the stream's settle handler | **High** — it is what the maintainer reported. Fixed by D11 and D12, and checked by `src/blocks/prompt-input/thread-writes.test.ts` |
 
 ---
 
@@ -797,6 +809,7 @@ mistaken for consequences of it.
 | **§6.1 lists the mock's own bugs**, so the implementer does not copy them. | The mock labels its palette action "New chat" in both modes, shows a timestamp as a keyboard shortcut, and gives the account row per-mode values that differ only in case. |
 | **The empty states are a bare heading and a plain line, not the vendored `Empty` block.** | The mock is explicit: "The app's empty state is a bare heading, not an Empty block: no icon, no description, no border" (`shell-layout.html:825-829`). |
 | **New bugs B13–B19**, including the open chat route (B14), which the new server rule depends on. | Found by the audit of `server/`, `src-tauri/src/tray.rs` and the README. |
+| **B20 found by the maintainer: a conversation could cross from one surface to the other.** Fixed by D11 and D12, and by two rules made pure and testable in `src/blocks/prompt-input/thread-writes.ts`. | The write read the thread id from the composer's state *after* an await, and a late reply overwrote which thread the composer had open. Both let one side's conversation end up under the other side's composer, and the next message there saved it as a thread of the wrong kind. |
 | **D4** and **D8** now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
 | **The composer's sessions menu is removed**, and the rail takes over what it carried — including the live running indicator, which the rail could not show before. §3.1, §3.5 and B4 are updated. | It was a second view of the same list the rail draws, with a "New chat" item inside the **code-only** footer that did not set the variant. Two lists of the same threads is the thing this whole plan exists to undo. |
 
@@ -837,7 +850,9 @@ the order in which each stage can be checked by hand.
 | 1 + 2 | `0991d0c` | Two stores, two open threads, two drafts, a folder with a real identity, the one-time migrations |
 | 3 + 4 | `876fb9e` | The server writes the system prompt; the mode's default is per folder; the compaction summary is sent |
 | 5 + 6 | `8dcd720` | Code's things stay in Code; the small seams closed; the switch carries a count |
-| 7 | this | The documentation, and the two stale passages in the README |
+| 7 | `7f43e11` | The documentation, and the three stale passages in the README |
+| — | `0e43526` | The last four gaps: the rail's "New" drains the tray intent, the row shows the model, a deleted thread stops being open, the group is called by the folder's current name. The rules became tests. |
+| — | this | **B20**: a conversation could cross from one surface to the other. The write now decides its thread when the turn is sent, and a late reply no longer touches the composer. |
 
 **The check for the whole plan is one sentence:** a chat never appears in the
 Sessions list, a session never appears in the Chats list, and switching between
@@ -853,6 +868,10 @@ It is checked, in the running app:
 | The rail in Code | the Sessions list, grouped by project, and only the sessions |
 | Switching Chat → Code | the Code surface: its own conversation, or an empty one |
 | Switching Code → Chat | the chat's own conversation, restored |
+| Chat, then Code, then Chat | one chat and one session, and no second thread with the same conversation in it |
+| A reply interrupted by "New" | kept on its own thread; the composer stays blank |
+| A reply interrupted by switching surfaces | kept on its own thread; the other surface's conversation is untouched |
+| An attachment in Chat | does not follow you into Code |
 | The old store | gone, from both namespaces |
 | A request with no surface | `400 No surface selected` |
 | A request with its own system prompt | `400 The system prompt is written by the server` |

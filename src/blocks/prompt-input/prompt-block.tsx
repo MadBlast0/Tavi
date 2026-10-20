@@ -171,6 +171,10 @@ import {
 } from "@/components/message-scroller"
 
 import { StreamingText } from "./streaming-text"
+import {
+  replyMayTouchComposer,
+  threadIdFor,
+} from "./thread-writes"
 import { useComposerVariant } from "./composer-variant"
 import { useThreadBridge } from "./thread-bridge"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
@@ -502,6 +506,15 @@ type Turn =
 type WriteState = {
   /** Which side the thread belongs to. */
   side: Side
+  /**
+   * The thread the turn belongs to.
+   *
+   * Decided when the turn is sent and carried through to the reply's write, so
+   * that a reply which arrives after the user has pressed "New" or switched
+   * surfaces lands on the thread it belongs to rather than making a second one
+   * with the same conversation in it.
+   */
+  id: string | null
   model: string
   effort: string
   /** The agent mode. Code only. */
@@ -963,6 +976,25 @@ export function PromptBlock() {
   const busy = status === "submitted" || status === "streaming"
 
   /**
+   * Empties a side's conversation.
+   *
+   * The composer holds the live copy of the thread that is open, and this is
+   * what "no thread is open" looks like. It is also what a thread that has
+   * been deleted looks like: a conversation that no longer exists is not a
+   * conversation, and leaving the other side's turns on screen under this
+   * side's composer would be a lie about what is open.
+   */
+  const clearThread = React.useCallback((side: Side) => {
+    setTurns([])
+    setUsage(null)
+    setServedModel(null)
+    activeRef.current = { side, id: null }
+    setActiveBySide((current) =>
+      current[side] === null ? current : { ...current, [side]: null },
+    )
+  }, [])
+
+  /**
    * Shows a thread, or nothing at all.
    *
    * The store is the truth about a thread that is not open; the composer holds
@@ -982,13 +1014,7 @@ export function PromptBlock() {
       setStatus("ready")
 
       if (!id) {
-        setTurns([])
-        setUsage(null)
-        setServedModel(null)
-        activeRef.current = { side, id: null }
-        setActiveBySide((current) =>
-          current[side] === null ? current : { ...current, [side]: null },
-        )
+        clearThread(side)
         /* The folder and the agent mode are left alone.
            The folder is the side's, not the thread's: it is what the composer
            is pointed at, and a new session starts where the last one was left.
@@ -998,7 +1024,13 @@ export function PromptBlock() {
 
       if (side === "chat") {
         const chat = findChat(id)
-        if (!chat) return
+        if (!chat) {
+          /* The thread is not there. Showing the other side's conversation
+             under this side's composer would be a lie about what is open, so
+             the composer is emptied instead. */
+          clearThread(side)
+          return
+        }
         setTurns(fromStoredTurns(chat.turns))
         setUsage(chat.usage ?? null)
         setServedModel(null)
@@ -1012,7 +1044,10 @@ export function PromptBlock() {
       }
 
       const session = findSession(id)
-      if (!session) return
+      if (!session) {
+        clearThread(side)
+        return
+      }
       setTurns(fromStoredTurns(session.turns))
       setUsage(session.usage ?? null)
       setServedModel(null)
@@ -1027,7 +1062,7 @@ export function PromptBlock() {
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
       )
     },
-    [folders],
+    [folders, clearThread],
   )
 
   /**
@@ -1319,6 +1354,22 @@ export function PromptBlock() {
        ended, and by then the render that started it is long gone. */
     let reported: PromptTokenUsage | null = null
 
+    /**
+     * Whether the composer is still showing the side this reply belongs to.
+     *
+     * A reply belongs to the side it was asked on. If the user has switched to
+     * the other surface while it was arriving, the composer is now showing a
+     * different conversation, and putting this one's turns back into it would
+     * put one side's conversation under the other side's composer — where the
+     * next message would take it along and save a session that has nothing to
+     * do with Code.
+     *
+     * The reply is still stored on the thread it belongs to. Only the composer
+     * is left alone.
+     */
+    const stillHere = () =>
+      replyMayTouchComposer(write.side, write.id, activeRef.current)
+
     try {
       /* Resolve every file the thread points at before the request goes out, so
          the model receives contents rather than filenames. */
@@ -1444,7 +1495,7 @@ export function PromptBlock() {
              what the context dial reads — no estimate is involved. */
           if (event.type === "finish" && metadata?.usage) {
             reported = metadata.usage
-            setUsage(metadata.usage)
+            if (stillHere()) setUsage(metadata.usage)
           }
           if (event.type === "error") {
             throw new Error(event.error?.message ?? "The stream reported an error")
@@ -1453,6 +1504,7 @@ export function PromptBlock() {
           if (event.type === "text-delta" && event.delta) {
             shown += event.delta
             const text = shown
+            if (!stillHere()) continue
             setTurns((list) =>
               list.map((turn) =>
                 turn.id === id && turn.role === "assistant"
@@ -1466,13 +1518,20 @@ export function PromptBlock() {
 
       /* Settle the turn from the text that actually arrived, then store it. The
          reply is persisted here as well as on send, because until this point
-         only the user's half of the exchange exists. */
+         only the user's half of the exchange exists.
+
+         The composer is only updated if it is still showing this side. A reply
+         that arrives after the user has switched is kept — it belongs to the
+         thread it was asked on — but it is not put on screen under the other
+         side's conversation. */
       const settled: Turn[] = [
         ...history,
         { id, role: "assistant", text: shown, streaming: false },
       ]
-      setTurns(settled)
-      setStatus("ready")
+      if (stillHere()) {
+        setTurns(settled)
+        setStatus("ready")
+      }
       void persist(settled, { ...write, usage: reported })
     } catch (error) {
       const message =
@@ -1491,8 +1550,10 @@ export function PromptBlock() {
                 streaming: false,
               },
             ]
-      setTurns(settled)
-      setStatus("ready")
+      if (stillHere()) {
+        setTurns(settled)
+        setStatus("ready")
+      }
       void persist(settled, { ...write, usage: reported })
     } finally {
       abortRef.current = null
@@ -1512,6 +1573,14 @@ export function PromptBlock() {
    * or the code-session store — because a chat and a session are different
    * objects, and one of them appearing in the other's list is the thing this
    * separation exists to prevent.
+   *
+   * **The id is decided once, when the turn is sent**, and carried here in the
+   * write. It is not read from the composer's own state at the moment of the
+   * write, because that state can change in between — the user can press
+   * "New", or switch to the other surface, while the reply is still arriving —
+   * and a write that then finds no open thread creates a *second* one with the
+   * same conversation in it. Two threads with the same title, one of which
+   * nobody will ever open, is worse than losing a reply.
    */
   const persist = async (next: Turn[], write: WriteState) => {
     const base = {
@@ -1523,19 +1592,31 @@ export function PromptBlock() {
       effort: write.effort || undefined,
       usage: write.usage ?? undefined,
     }
-    const active = activeRef.current
-    const id = active.side === write.side ? active.id : null
+    /* The thread the turn was asked about, before the write. */
+    const asked = write.id
     const saved =
       write.side === "chat"
-        ? saveChat(id, base)
-        : saveSession(id, {
+        ? saveChat(asked, base)
+        : saveSession(asked, {
             ...base,
             mode: write.mode,
             folder: write.folderId,
             folderName: write.folderName,
           })
-    activeRef.current = { side: write.side, id: saved.id }
-    setActiveBySide((current) => ({ ...current, [write.side]: saved.id }))
+    /* The reply's own write reuses the thread this one made. */
+    write.id = saved.id
+    /* Which thread the composer has open. Only a write that belongs to the
+       thread now on screen may change it: a reply that arrives after the user
+       has switched surfaces, or pressed "New", belongs to the thread it was
+       asked on — not to the conversation now on screen. If it were allowed to
+       change it, the next message on the side now showing would find no open
+       thread and make a second one with the same conversation in it. */
+    if (replyMayTouchComposer(write.side, asked, activeRef.current)) {
+      activeRef.current = { side: write.side, id: saved.id }
+      /* The thread the side had open, whatever side the composer is on — the
+         rail highlights it, and switching back to that side finds it. */
+      setActiveBySide((current) => ({ ...current, [write.side]: saved.id }))
+    }
     return saved
   }
 
@@ -1545,10 +1626,14 @@ export function PromptBlock() {
    * The reply comes back later, and by then the user may have changed the
    * model, the folder or the surface. A thread records the settings it was
    * actually run with, not the ones that happen to be in force when the
-   * answer arrives.
+   * answer arrives — and the thread it belongs to is decided now too, not when
+   * the answer arrives.
    */
   const captureWrite = (): WriteState => ({
     side: variant,
+    /* The thread this turn belongs to: the one that is open on this side, or
+       none yet, in which case the write makes one. */
+    id: threadIdFor(variant, activeRef.current),
     model,
     effort,
     mode,
