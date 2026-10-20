@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
  */
 class MemoryStorage {
   private map = new Map<string, string>();
+  /** Set to make writes fail, the way a full browser does. */
+  refuseWrites = false;
   get length() {
     return this.map.size;
   }
@@ -26,6 +28,10 @@ class MemoryStorage {
     this.map.delete(key);
   }
   setItem(key: string, value: string) {
+    if (this.refuseWrites) {
+      /* What a browser does when there is no room left. */
+      throw new Error("QuotaExceededError");
+    }
     this.map.set(key, String(value));
   }
 }
@@ -299,4 +305,36 @@ test("clearing one store leaves the other alone", async () => {
 
   assert.equal(chats.list().length, 0);
   assert.equal(sessions.list().length, 1);
+});
+
+/**
+ * A write that is refused is reported, and the conversation stays on screen.
+ *
+ * Losing what the user can see would be worse than losing what is on disk, so
+ * the conversation is kept — and the fact that it was not saved is said
+ * rather than discovered the next time the app opens.
+ */
+test("a write that is refused is reported and the conversation is kept", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  assert.equal(chats.lastError(), null, "the first write should have worked");
+
+  (globalThis.localStorage as unknown as MemoryStorage).refuseWrites = true;
+  await chats.save(chat.id, { turns: [aTurn("hello"), aTurn("and again")] });
+
+  assert.equal(
+    chats.lastError(),
+    "The conversation could not be saved.",
+    "the failure should be reported",
+  );
+  assert.equal(
+    chats.list().length,
+    1,
+    "the conversation should still be on screen",
+  );
+  assert.equal(
+    chats.find(chat.id)?.turns.length,
+    2,
+    "the conversation should still be the one that was written",
+  );
 });

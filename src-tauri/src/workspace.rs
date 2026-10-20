@@ -40,6 +40,13 @@ pub struct Workspace {
     pub name: String,
     /// When the grant was made. */
     pub granted_at: u64,
+    /// Whether the folder is still where it was.
+    ///
+    /// A folder that has been moved or renamed is not a folder this app can
+    /// reach any more, and saying so is better than a project whose files
+    /// silently are not there.
+    #[serde(default)]
+    pub missing: bool,
 }
 
 /// The grants, as they are on disk.
@@ -79,6 +86,21 @@ pub struct WorkspaceFile {
     pub text: String,
     pub truncated: bool,
     pub bytes: u64,
+    /// Whether the file is not text at all.
+    ///
+    /// Decided by the bytes, not by the extension or the name: a text file is
+    /// one that decodes as UTF-8 and has no null byte in it. The browser
+    /// reports a `.ts` file as `video/mp2t`, which is why the type is not
+    /// asked.
+    pub binary: bool,
+}
+
+/// Whether some bytes are not text.
+///
+/// A file is text when it decodes as UTF-8 and has no null byte in it. A file
+/// of images, or of compressed data, fails both.
+fn is_binary(bytes: &[u8]) -> bool {
+    bytes.contains(&0) || std::str::from_utf8(bytes).is_err()
 }
 
 fn file_path(app: &AppHandle) -> Option<PathBuf> {
@@ -201,9 +223,68 @@ fn grant_of(app: &AppHandle, id: &str) -> Result<(PathBuf, Workspace), String> {
 }
 
 /// Every workspace the app has been given.
+///
+/// A folder that has been moved or renamed is reported as missing, so the app
+/// can say so and offer to relink it rather than showing a project whose
+/// files quietly are not there.
 #[tauri::command]
 pub async fn list_workspaces(app: AppHandle) -> Result<Vec<Workspace>, String> {
-    Ok(read_grants(&app).grants)
+    Ok(read_grants(&app)
+        .grants
+        .into_iter()
+        .map(|mut grant| {
+            grant.missing = !Path::new(&grant.path).is_dir();
+            grant
+        })
+        .collect())
+}
+
+/// Points an existing grant at a folder again.
+///
+/// The grant keeps its id, so a session that was run against it is still
+/// attached to it — a folder that has been moved is the same project, and
+/// making it a new one would lose the history that belonged to it.
+#[tauri::command]
+pub async fn relink_workspace(
+    app: AppHandle,
+    id: String,
+    path: String,
+) -> Result<Workspace, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("A folder must be named.".to_string());
+    }
+
+    let resolved = Path::new(trimmed)
+        .canonicalize()
+        .map_err(|e| format!("Cannot open {trimmed}: {e}"))?;
+    if !resolved.is_dir() {
+        return Err(format!("{} is not a folder.", resolved.display()));
+    }
+    if let Some(cap) = configured_cap() {
+        if !resolved.starts_with(&cap) {
+            return Err(format!(
+                "{} is outside the folder this app is allowed to use.",
+                resolved.display()
+            ));
+        }
+    }
+
+    let name = resolved
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| resolved.display().to_string());
+
+    let mut file = read_grants(&app);
+    let Some(grant) = file.grants.iter_mut().find(|grant| grant.id == id) else {
+        return Err("That workspace is not one this app has been given.".to_string());
+    };
+    grant.path = resolved.to_string_lossy().to_string();
+    grant.name = name;
+    grant.missing = false;
+    let relinked = grant.clone();
+    write_grants(&app, &file)?;
+    Ok(relinked)
 }
 
 /// Gives the app access to a folder.
@@ -243,6 +324,7 @@ pub async fn grant_workspace(app: AppHandle, path: String) -> Result<Workspace, 
         id: new_id(),
         path: resolved.to_string_lossy().to_string(),
         name,
+        missing: false,
         granted_at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|since| since.as_secs())
@@ -350,11 +432,22 @@ pub async fn read_workspace_file(
     let truncated = total > cap;
     let slice = if truncated { &bytes[..cap as usize] } else { &bytes[..] };
 
+    /* Whether this is text is decided by the bytes. A file that does not
+       decode as UTF-8, or that has a null byte in it, is not text, and the
+       caller is told so rather than being handed the replacement characters a
+       lossy decode would have produced. */
+    let binary = is_binary(slice);
+    let text = if binary {
+        String::new()
+    } else {
+        String::from_utf8_lossy(slice).to_string()
+    };
+
     Ok(WorkspaceFile {
         path: relative_to(&root, &resolved),
-        // Lossy rather than failing outright: a stray byte should not break a read.
-        text: String::from_utf8_lossy(slice).to_string(),
+        text,
         truncated,
+        binary,
         bytes: total,
     })
 }
@@ -377,7 +470,7 @@ fn relative_to(root: &Path, path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{relative_to, resolve_within};
+    use super::{is_binary, relative_to, resolve_within};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -420,7 +513,9 @@ mod tests {
     #[test]
     fn a_link_out_of_the_workspace_is_refused() {
         let root = scratch("symlink");
-        let outside = root.parent().unwrap().join("tavi-workspace-outside");
+        /* Its own name, because a directory shared with another test is a
+           directory that can be taken away underneath it. */
+        let outside = root.parent().unwrap().join("tavi-workspace-symlink-outside");
         fs::create_dir_all(&outside).expect("the outside directory should be creatable");
         fs::write(outside.join("secret.txt"), "not yours").expect("the file should be written");
 
@@ -472,5 +567,18 @@ mod tests {
         let other = Path::new("/somewhere/else");
         assert_eq!(relative_to(&root, other), other.to_string_lossy());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A file is text when it decodes as UTF-8 and has no null byte in it.
+    ///
+    /// The browser's own answer is not asked, because it is wrong about a
+    /// common case: Chromium reports a `.ts` file as `video/mp2t`.
+    #[test]
+    fn a_file_is_text_when_its_bytes_say_so() {
+        assert!(!is_binary(b"export const answer = 42\n"));
+        assert!(!is_binary("héllo — wörld ✓".as_bytes()));
+        assert!(!is_binary(b""));
+        assert!(is_binary(&[0x61, 0x62, 0x00, 0x63]));
+        assert!(is_binary(&[0xff, 0xfe, 0xfd]));
     }
 }

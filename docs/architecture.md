@@ -49,10 +49,14 @@ events. It does not use the AI SDK's message-stream protocol, and it sends no
 tools. `src/lib/chat.ts` chooses between the two servers — the Node one for the
 website, the Rust one for the desktop — and the composer does not know which.
 
-**The folder is a browser grant.** `src/lib/fs-access.ts` uses the File System
-Access API and keeps directory handles in IndexedDB (`tavi-fs`). This is how
-folders are picked and read, on the website and in the Tauri webview alike,
-because WebView2 exposes the same API.
+**The folder is a grant, and which kind depends on the target.** On the
+website, a folder is a **browser grant**: the File System Access API's handle,
+kept in IndexedDB, and the browser enforces it. On the desktop, a folder is a
+**Rust grant**: a canonical path the user chose, kept in the app's own file,
+and the native tools are confined to it. `src/lib/workspace.ts` is the one
+place that knows the difference, and the rules about which files are worth
+walking for live in `src/lib/file-rules.ts` and are read by both, so the model
+is shown the same files on each.
 
 **The native tools are bounded by a grant.** The Rust file commands take a
 workspace and a path inside it. A path the model names is not a permission, so
@@ -121,6 +125,8 @@ proposals or from what the code already does.
 | G5 | ~~**The chat route is unauthenticated and binds every interface.**~~ | `server.listen(PORT)` with no host and no secret. | **Stage 4** for the desktop — the route does not exist there. The website's server still has no accounts, so it is a website's own problem; see `docs/later-on.md`. |
 | G6 | ~~**The clone flow is minimal.**~~ | A URL, a fixed destination, no progress, no cancel, no retry, and a half-finished clone left on disk. | **Stage 5** — the destination is confirmed, progress is reported, a clone can be stopped, and a failure cleans up after itself. |
 | G7 | ~~**The model id is never checked against the catalogue.**~~ | Whatever string arrived was sent to the provider and failed there. | **Stage 4** — the effort is checked against what the model publishes, and a level that cannot be verified is refused. |
+| G8 | **A TypeScript file could not be read.** The browser reports `.ts` as `video/mp2t`, so every `@` mention of a TypeScript file said it could not be read. | Whether a file is text is now decided by its bytes, on both targets. |
+| G9 | **A folder that had moved was silently empty.** | A project whose files could not be reached looked like a project with no files. | A grant reports that its folder has moved, and the picker offers to relink it — keeping its id, so the sessions stay attached. |
 
 ---
 
@@ -137,6 +143,7 @@ Each stage left the app working, and each is a commit.
 | 5 | **A proper clone flow.** The destination is shown and confirmed, progress is reported, a clone can be cancelled, a failure cleans up after itself, and it runs in Rust on the desktop. | G6 |
 | 6 | **The UI that goes with it.** Storage and privacy settings: where the data is, what leaves the machine, export, import, and delete. The provider key can be set from the settings. | — |
 | 7 | **The tests and the docs.** | — |
+| 8 | **The audit.** Unused exports, unimported files, and the three pieces of the work that were not connected to anything: the grants, the toolkit's workspace binding, and a conversation that could not be saved. Then the two bugs the audit turned up: a TypeScript file that could not be read, and a folder that had moved being silently empty. | G8, G9 |
 
 ---
 

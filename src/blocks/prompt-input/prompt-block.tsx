@@ -33,6 +33,7 @@ import {
   listWorkspaces,
   pickWorkspace,
   readWorkspaceFile,
+  relinkWorkspace,
   type Workspace,
   type WorkspaceFile,
 } from "@/lib/workspace"
@@ -865,6 +866,11 @@ export function PromptBlock() {
    */
   const [saveError, setSaveError] = React.useState<string | null>(null)
   /**
+   * Something worth saying that is not an error — a folder was linked, a
+   * clone finished. It goes away on the next thing that happens.
+   */
+  const [notice, setNotice] = React.useState<string | null>(null)
+  /**
    * Which slice of the starter pool is on screen. Advances on its own - see the
    * rotation effect - so there is no shuffle control to press.
    */
@@ -1665,6 +1671,18 @@ export function PromptBlock() {
   }
 
   /**
+   * Points a folder that has moved at its new place.
+   *
+   * The grant keeps its id, so the sessions that were run against the folder
+   * stay attached to it, and the folder's files come back.
+   */
+  const relink = async (id: string) => {
+    const relinked = await relinkWorkspace(id)
+    setFolders(await listWorkspaces())
+    if (relinked) setNotice(`Folder linked to ${relinked.name}.`)
+  }
+
+  /**
    * Starts a new thread on a side.
    *
    * It resets that side's conversation and nothing else: the other side's
@@ -2000,6 +2018,14 @@ export function PromptBlock() {
               </span>
             </p>
           ) : null}
+          {notice ? (
+            <p
+              role="status"
+              className="text-muted-foreground mb-2 px-1 text-xs"
+            >
+              {notice}
+            </p>
+          ) : null}
           <PromptInput
             status={status}
             onSubmit={send}
@@ -2078,6 +2104,7 @@ export function PromptBlock() {
                         value={folderId}
                         onValueChange={chooseFolder}
                         onForget={(id) => void forget(id)}
+                        onRelink={(id) => void relink(id)}
                         onOpenFolder={() => void browse()}
                         onClone={() => setCloneOpen(true)}
                         placeholder={folderSource.placeholder}

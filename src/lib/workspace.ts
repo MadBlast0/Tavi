@@ -20,6 +20,7 @@ import {
   listWorkspaces as listRustWorkspaces,
   grantWorkspace as grantRustWorkspace,
   readWorkspaceFile as readRustWorkspaceFile,
+  relinkWorkspace as relinkRustWorkspace,
   revokeWorkspace as revokeRustWorkspace,
 } from "./desktop.ts"
 import { isDesktopApp } from "./desktop.ts"
@@ -35,8 +36,11 @@ import {
   listProjectFiles,
   listRecentFolders,
   pickFolder,
+  pickFolderHandle,
   readFileText as readBrowserFile,
+  relinkFolder,
   restoreFolder,
+  type DirHandle,
   type FileHandle,
 } from "./fs-access.ts"
 
@@ -46,6 +50,15 @@ export type Workspace = {
   id: string
   /** The folder's name, for display. */
   name: string
+  /**
+   * Whether the folder is still where it was.
+   *
+   * A folder that has been moved or renamed is not one this app can reach any
+   * more. It is still listed — the sessions that were run against it are still
+   * listed — but it is marked, so the app can offer to relink it rather than
+   * showing a project whose files quietly are not there.
+   */
+  missing?: boolean
 }
 
 /** One file inside a workspace. */
@@ -63,7 +76,11 @@ export type WorkspaceFile = {
 export const listWorkspaces = async (): Promise<Workspace[]> => {
   if (isDesktopApp()) {
     const grants = await listRustWorkspaces();
-    return grants.map((grant) => ({ id: grant.id, name: grant.name }));
+    return grants.map((grant) => ({
+      id: grant.id,
+      name: grant.name,
+      missing: grant.missing,
+    }));
   }
   const folders = await listRecentFolders();
   return folders.map((folder) => ({ id: folder.id, name: folder.name }));
@@ -86,6 +103,28 @@ export const pickWorkspace = async (): Promise<Workspace | null> => {
     return { id: grant.id, name: grant.name };
   }
   const folder = await pickFolder();
+  return folder ? { id: folder.id, name: folder.name } : null;
+};
+
+/**
+ * Points a folder at its new place.
+ *
+ * A folder that has been moved or renamed is the same project, so the grant
+ * keeps its id and the sessions that were run against it stay attached to it.
+ * The user is asked where the folder is now.
+ */
+export const relinkWorkspace = async (id: string): Promise<Workspace | null> => {
+  if (isDesktopApp()) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ directory: true, multiple: false });
+    if (!picked || Array.isArray(picked)) return null;
+    const grant = await relinkRustWorkspace(id, picked);
+    return { id: grant.id, name: grant.name, missing: grant.missing };
+  }
+
+  const handle = await pickFolderHandle();
+  if (!handle) return null;
+  const folder = await relinkFolder(id, handle);
   return folder ? { id: folder.id, name: folder.name } : null;
 };
 
@@ -145,6 +184,9 @@ export const readWorkspaceFile = async (
   /* Too large is too large: a file cut in half is not the file, and the model
      would be reading a truncation and thinking it had read the whole thing. */
   if (result.bytes > MAX_READ_BYTES) return null;
+  /* Not text at all. The website decides this by the bytes, and so does the
+     desktop, so the two agree about what the model can be shown. */
+  if (result.binary) return null;
   return result.text;
 };
 

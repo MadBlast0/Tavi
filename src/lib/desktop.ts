@@ -40,6 +40,8 @@ export type Workspace = {
   name: string;
   /** When the access was granted. */
   grantedAt: number;
+  /** Whether the folder is still where it was. */
+  missing: boolean;
 };
 
 /** One entry in a folder. */
@@ -58,6 +60,8 @@ export type WorkspaceFile = {
   text: string;
   truncated: boolean;
   bytes: number;
+  /** Whether the file is not text at all. */
+  binary: boolean;
 };
 
 /** Every workspace the app has been given access to. */
@@ -75,6 +79,20 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
 export const grantWorkspace = async (path: string): Promise<Workspace> => {
   requireDesktop();
   return invoke<Workspace>("grant_workspace", { path });
+};
+
+/**
+ * Points an existing grant at a folder again.
+ *
+ * The grant keeps its id, so a session that was run against it is still
+ * attached to it.
+ */
+export const relinkWorkspace = async (
+  id: string,
+  path: string,
+): Promise<Workspace> => {
+  requireDesktop();
+  return invoke<Workspace>("relink_workspace", { id, path });
 };
 
 /**

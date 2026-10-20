@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 /// How long a clone may take.
 const MAX_CLONE_SECS: u64 = 10 * 60;
@@ -322,6 +322,51 @@ fn error_detail(stderr: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Where a clone would land, or why it may not.
+enum Plan {
+    Ready { name: String, destination: PathBuf },
+    Refused(String),
+}
+
+/// Works out where a clone would go, and whether it may go there.
+///
+/// The destination is checked before anything is written, so an existing
+/// project is never overwritten — and a name that is not a name is refused
+/// before `git` is ever started.
+fn plan_clone(url: &str, parent: Option<&str>) -> Plan {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Plan::Refused("Enter a repository URL.".to_string());
+    }
+    if !allowed_url(trimmed) {
+        return Plan::Refused(
+            "That does not look like a repository URL. Use https://host/owner/repo or git@host:owner/repo."
+                .to_string(),
+        );
+    }
+
+    let root = match parent.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(parent) => PathBuf::from(parent),
+        None => match ensure_root() {
+            Ok(root) => root,
+            Err(error) => return Plan::Refused(error),
+        },
+    };
+    if !root.is_dir() {
+        return Plan::Refused(format!("{} is not a folder.", root.display()));
+    }
+
+    let name = project_name_from(trimmed);
+    let destination = root.join(&name);
+    if destination.exists() {
+        return Plan::Refused(format!(
+            "\"{name}\" already exists in your projects folder."
+        ));
+    }
+
+    Plan::Ready { name, destination }
+}
+
 /// Clones a repository.
 ///
 /// The destination is checked first, so an existing project is never
@@ -330,45 +375,20 @@ fn error_detail(stderr: &str) -> Option<String> {
 /// rather than as a command line.
 #[tauri::command]
 pub async fn clone_repository(
-    app: AppHandle,
     clones: State<'_, Clones>,
     url: String,
     // Where to put it. The projects folder when this is absent.
     parent: Option<String>,
     on_event: Channel<CloneEvent>,
 ) -> Result<CloneResult, String> {
-    let trimmed = url.trim().to_string();
-    if trimmed.is_empty() {
-        return Ok(CloneResult::failed("Enter a repository URL."));
-    }
-    if !allowed_url(&trimmed) {
-        return Ok(CloneResult::failed(
-            "That does not look like a repository URL. Use https://host/owner/repo or git@host:owner/repo.",
-        ));
-    }
-
-    let root = match parent.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-        Some(parent) => PathBuf::from(parent),
-        None => ensure_root()?,
+    let (name, destination) = match plan_clone(&url, parent.as_deref()) {
+        Plan::Ready { name, destination } => (name, destination),
+        Plan::Refused(error) => return Ok(CloneResult::failed(error)),
     };
-    if !root.is_dir() {
-        return Ok(CloneResult::failed(format!(
-            "{} is not a folder.",
-            root.display()
-        )));
-    }
-
-    let name = project_name_from(&trimmed);
-    let destination = root.join(&name);
-    if destination.exists() {
-        return Ok(CloneResult::failed(format!(
-            "\"{name}\" already exists in your projects folder."
-        )));
-    }
 
     let cancelled = clones.begin();
     let progress = Some(on_event.clone());
-    let url_for_thread = trimmed.clone();
+    let url_for_thread = url.trim().to_string();
     let destination_for_thread = destination.clone();
     let cancelled_for_thread = cancelled.clone();
 
@@ -395,14 +415,12 @@ pub async fn clone_repository(
         }),
         Err(CloneFailure::Cancelled) => {
             let _ = on_event.send(CloneEvent::Cancelled);
-            let _ = app;
             Ok(CloneResult::failed("The clone was stopped."))
         }
         Err(CloneFailure::Failed { message, cleanup }) => {
             if cleanup {
                 let _ = std::fs::remove_dir_all(&destination);
             }
-            let _ = app;
             Ok(CloneResult::failed(message))
         }
     }
@@ -570,7 +588,9 @@ fn run_git_clone(
 
 #[cfg(test)]
 mod tests {
-    use super::{allowed_url, error_detail, parse_progress, project_name_from};
+    use super::{allowed_url, error_detail, parse_progress, plan_clone, project_name_from, Plan};
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn an_https_url_is_allowed() {
@@ -637,5 +657,66 @@ mod tests {
     fn noise_is_not_mistaken_for_a_complaint() {
         let stderr = "Cloning into 'repo'...\nremote: Counting objects: 100\n";
         assert_eq!(error_detail(stderr), None);
+    }
+
+    /// A folder of its own, so a test cannot see or touch another one's.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tavi-projects-{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("the scratch directory should be creatable");
+        dir
+    }
+
+    /// A clone lands in a folder named after the repository, inside the
+    /// folder it was told to.
+    #[test]
+    fn a_clone_lands_in_a_folder_named_after_the_repository() {
+        let root = scratch("lands");
+        match plan_clone("https://github.com/owner/repo.git", Some(&root.to_string_lossy())) {
+            Plan::Ready { name, destination } => {
+                assert_eq!(name, "repo");
+                assert_eq!(destination, root.join("repo"));
+            }
+            Plan::Refused(error) => panic!("the clone should be allowed: {error}"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// An existing project is never overwritten.
+    #[test]
+    fn a_clone_never_overwrites_an_existing_project() {
+        let root = scratch("collision");
+        fs::create_dir_all(root.join("repo")).expect("the folder should be made");
+
+        match plan_clone("https://github.com/owner/repo", Some(&root.to_string_lossy())) {
+            Plan::Refused(error) => assert!(error.contains("already exists")),
+            Plan::Ready { .. } => panic!("the clone should have been refused"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A local path is refused before `git` is started.
+    #[test]
+    fn a_local_path_is_refused_before_anything_is_started() {
+        let root = scratch("local");
+        match plan_clone("file:///etc", Some(&root.to_string_lossy())) {
+            Plan::Refused(error) => assert!(error.contains("does not look like")),
+            Plan::Ready { .. } => panic!("the clone should have been refused"),
+        }
+        match plan_clone("   ", Some(&root.to_string_lossy())) {
+            Plan::Refused(error) => assert!(error.contains("Enter a repository URL")),
+            Plan::Ready { .. } => panic!("the clone should have been refused"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A folder that is not there is refused.
+    #[test]
+    fn a_destination_that_is_not_a_folder_is_refused() {
+        let missing = scratch("missing").join("nope");
+        match plan_clone("https://github.com/owner/repo", Some(&missing.to_string_lossy())) {
+            Plan::Refused(error) => assert!(error.contains("is not a folder")),
+            Plan::Ready { .. } => panic!("the clone should have been refused"),
+        }
     }
 }

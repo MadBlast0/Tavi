@@ -187,6 +187,24 @@ export const restoreFolder = async (id: string): Promise<DirHandle | null> => {
 }
 
 /**
+ * Asks the user for a folder, and returns the browser's handle for it.
+ *
+ * The handle is what grants the access; the id is what the app remembers it
+ * by, and those are two things, so a folder can be picked without being
+ * remembered — which is what a relink is.
+ */
+export const pickFolderHandle = async (): Promise<DirHandle | null> => {
+  const picker = (window as PickerWindow).showDirectoryPicker
+  if (!picker) return null
+  try {
+    return await picker({ mode: "read" })
+  } catch {
+    // The user dismissed the picker. That is not an error worth surfacing.
+    return null
+  }
+}
+
+/**
  * Asks the user for a folder and remembers it.
  *
  * It returns the folder that was remembered rather than the handle, because
@@ -194,15 +212,25 @@ export const restoreFolder = async (id: string): Promise<DirHandle | null> => {
  * id when the files are read.
  */
 export const pickFolder = async (): Promise<RecentFolder | null> => {
-  const picker = (window as PickerWindow).showDirectoryPicker
-  if (!picker) return null
-  try {
-    const handle = await picker({ mode: "read" })
-    return await rememberFolder(handle)
-  } catch {
-    // The user dismissed the picker. That is not an error worth surfacing.
-    return null
-  }
+  const handle = await pickFolderHandle()
+  if (!handle) return null
+  return rememberFolder(handle)
+}
+
+/**
+ * Puts a new handle in place of a folder's old one, keeping its id.
+ *
+ * A folder that has been moved or renamed is the same project, so the
+ * sessions that were run against it stay attached to it.
+ */
+export const relinkFolder = async (
+  id: string,
+  handle: DirHandle,
+): Promise<RecentFolder | null> => {
+  const db = await openDb()
+  if (!db) return null
+  await run(db, HANDLE_STORE, "readwrite", (s) => s.put(handle, id))
+  return run<RecentFolder>(db, META_STORE, "readonly", (s) => s.get(id))
 }
 
 /* -------------------------------------------------------------------------- */
@@ -250,13 +278,15 @@ export const listProjectFiles = async (
   return out.sort((a, b) => a.path.localeCompare(b.path))
 }
 
-const isProbablyText = (file: File) =>
-  file.type.startsWith("text/") ||
-  /^application\/(json|xml|yaml|x-yaml|javascript|typescript|toml)$/.test(file.type)
-
 /**
  * Reads a file as text for inclusion in a prompt. Binary and oversized files
  * come back as `null` instead of being silently truncated into the model.
+ *
+ * Whether a file is text is decided by **its bytes**, not by the type the
+ * browser reports for it. Chromium reports a `.ts` file as `video/mp2t` — it
+ * is the MPEG transport stream — so a TypeScript source file was being
+ * refused as binary, and every `@` mention of one said it could not be read.
+ * The bytes do not lie about that the way the type does.
  */
 export const readFileText = async (file: {
   handle?: FileHandle;
@@ -265,9 +295,27 @@ export const readFileText = async (file: {
     if (!file.handle) return null
     const handle = await file.handle.getFile()
     if (handle.size > MAX_READ_BYTES) return null
-    if (!isProbablyText(handle)) return null
-    return await handle.text()
+    const bytes = new Uint8Array(await handle.arrayBuffer())
+    if (isText(bytes)) return new TextDecoder().decode(bytes)
+    return null
   } catch {
     return null
+  }
+}
+
+/**
+ * Whether some bytes are text.
+ *
+ * Two tests, and both are ones a text file passes: it decodes as UTF-8, and
+ * it has no null byte in it. A file of images, or of compressed data, fails
+ * both.
+ */
+export const isText = (bytes: Uint8Array): boolean => {
+  if (bytes.includes(0)) return false
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    return true
+  } catch {
+    return false
   }
 }

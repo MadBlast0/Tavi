@@ -440,6 +440,13 @@ that points out of the workspace is refused as well as a `..` that climbs out
 of it. `AI_APP_FS_ROOT`, if it is set, caps what may be granted — it never
 grants anything by itself.
 
+On the desktop the app's own folders are grants too, made through the system
+dialog, so the *app's* file access and the *native* tools are bounded by the
+same thing. On the website a folder is the browser's handle, and the browser
+enforces it. The rules about which files are worth walking for are in
+`src/lib/file-rules.ts` and are read by both, so the model is shown the same
+files on each.
+
 ### Tools are gated per environment
 
 The two native tools are **hidden from the model** when the app runs in a

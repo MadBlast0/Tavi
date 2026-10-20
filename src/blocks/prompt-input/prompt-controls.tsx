@@ -1949,6 +1949,7 @@ function PromptInputFolderSelect({
   value,
   onValueChange,
   onForget,
+  onRelink,
   onOpenFolder,
   onClone,
   label,
@@ -1956,11 +1957,13 @@ function PromptInputFolderSelect({
   icon,
 }: {
   /** The folders this app has been granted access to. */
-  folders: { id: string; name: string }[]
+  folders: { id: string; name: string; missing?: boolean }[]
   value?: string
   onValueChange: (value: string) => void
   /** Takes a folder out of the list. */
   onForget: (id: string) => void
+  /** Points a folder that has moved at its new place. */
+  onRelink: (id: string) => void
   /** Asks the system for a folder. */
   onOpenFolder: () => void
   /** Clones a repository into the projects folder. */
@@ -2069,11 +2072,27 @@ function PromptInputFolderSelect({
               >
                 <FolderOpenIcon />
                 <span className="truncate">{shortFolderName(folder.name)}</span>
-                {folder.id === value ? (
+                {folder.missing ? (
+                  /* The folder has moved, or been renamed, and the app can no
+                     longer reach it. Saying so is better than a project whose
+                     files quietly are not there. */
+                  <span className="ms-auto text-xs text-muted-foreground">
+                    moved
+                  </span>
+                ) : folder.id === value ? (
                   <CheckIcon aria-hidden="true" className="ms-auto size-3.5" />
                 ) : null}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
+                {folder.missing ? (
+                  /* A folder that has moved is still the project the sessions
+                     were run against, so it is pointed at its new place rather
+                     than forgotten. */
+                  <DropdownMenuItem onClick={() => onRelink(folder.id)}>
+                    <FolderOpenIcon />
+                    Relink folder
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   onClick={() => forget(folder.id, folder.name)}
                   className="text-destructive"

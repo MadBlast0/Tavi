@@ -277,24 +277,38 @@ and **side chats**.
 
 ### 8.8 What the desktop app still cannot do
 
-Three things the plan asked for and the app does not have yet:
+One thing the plan asked for and the app does not have:
 
 - **A file is read, never written.** The model can talk about a change and show
   the exact edit, and the app can read the folder it is attached to, but there
   is no write path and no shell. That is deliberate: the authorization gap was
   closed first, and a write path is a separate piece of work with its own
   review.
-- **A folder on the desktop is a browser grant, not a Rust one.** The app picks
-  folders with the File System Access API, which WebView2 supports, and the
-  handle cannot go in `localStorage` and cannot be put in a file. So the
-  *native* tools are bounded by a Rust grant, and the *app's* folder access is
-  bounded by the browser's — two boundaries, in two languages, for one folder.
-  Making them one means a native folder picker and a shared description of
-  which files are worth walking for.
-- **A clone cannot be attached without a second action.** The clone lands in the
-  projects folder and the app says where it is; picking it up as a folder still
-  takes the system picker, because the app's folders are browser grants and the
-  clone is a path.
+
+Two things that used to be on this list and are not any more:
+
+- **The desktop's folders are Rust grants.** The app asks the system for a
+  folder and holds a grant — a canonical path the user chose — so the *native*
+  tools and the *app's* file access are bounded by the same thing, rather than
+  by two boundaries in two languages for one folder. The rules about which
+  files are worth walking for live in `src/lib/file-rules.ts` and are read by
+  both targets, so the model is shown the same files on each.
+- **A folder that has moved can be relinked.** The grant keeps its id, so the
+  sessions that were run against it stay attached to it, and the picker offers
+  to point it at the folder's new place rather than showing a project whose
+  files quietly are not there.
+
+### 8.9 What still needs a machine to check
+
+Three things are right in the code and have not been watched working:
+
+- **The Tauri app running.** The command names are checked by a test, and the
+  Rust behind them is tested, but the IPC round trip, the event channel and
+  the native file dialog have not been exercised together.
+- **A real `git clone`.** Its rules, its destination, its collision guard and
+  its progress are tested; a clone against a real repository has not run.
+- **The packaged app.** It builds — an MSI and an NSIS installer — but it has
+  not been installed and started.
 
 ---
 
@@ -315,3 +329,6 @@ settled, and what each stage closed. The short version:
   stopped, and cleans up after itself when it fails.
 - There is a place to find out where the data is, to take a copy of it, to put
   one back, and to be rid of it.
+- The desktop's folders are grants the app made itself, and a folder that has
+  moved can be pointed at its new place without losing the sessions that were
+  run against it.

@@ -218,6 +218,7 @@ pub fn run() {
             threads::clear_threads,
             workspace::list_workspaces,
             workspace::grant_workspace,
+            workspace::relink_workspace,
             workspace::revoke_workspace,
             workspace::list_workspace_entries,
             workspace::read_workspace_file,
