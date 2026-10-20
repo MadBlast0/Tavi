@@ -1,6 +1,7 @@
 use tauri::AppHandle;
 
 mod appfile;
+mod files;
 mod projects;
 mod provider;
 mod threads;
@@ -193,6 +194,7 @@ pub fn run() {
     let for_state = tracker.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(for_state)
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
@@ -208,6 +210,9 @@ pub fn run() {
             projects::list_projects,
             projects::clone_repository,
             projects::cancel_clone,
+            files::data_directory,
+            files::write_file,
+            files::read_file,
             threads::read_threads,
             threads::write_threads,
             threads::clear_threads,

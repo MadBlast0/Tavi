@@ -102,8 +102,18 @@ export type ThreadStore<E extends object> = {
   /** One thread, by its id. */
   find: (id: string) => (ThreadBase & E) | undefined
   create: (draft: ThreadDraft<E>) => Promise<ThreadBase & E>
+  /**
+   * Puts a thread back exactly as it was — the same id, the same everything.
+   *
+   * This is what an import uses. A thread restored under a new id would be a
+   * different thread, and importing the same backup twice would make two
+   * copies of every conversation in it.
+   */
+  restore: (thread: ThreadBase & E) => Promise<ThreadBase & E>
   save: (id: string | null, draft: ThreadDraft<E>) => Promise<ThreadBase & E>
   remove: (id: string) => Promise<void>
+  /** Removes every thread in this collection. */
+  clear: () => Promise<void>
   rename: (id: string, title: string) => Promise<void>
   togglePin: (id: string) => Promise<void>
   fork: (id: string) => Promise<(ThreadBase & E) | undefined>
@@ -329,6 +339,25 @@ export const createThreadStore = <E extends object>(options: {
     await write(threads)
   }
 
+  /**
+   * Removes every thread in this collection.
+   *
+   * The other collection is untouched: a chat and a code session are separate
+   * things, and clearing one is not a reason to clear the other.
+   */
+  const clear = async () => {
+    await ready()
+    apply([])
+    await write(threads)
+  }
+
+  const restore = async (thread: ThreadBase & E): Promise<ThreadBase & E> => {
+    await ready()
+    apply([thread, ...threads.filter((existing) => existing.id !== thread.id)])
+    await write(threads)
+    return thread
+  }
+
   const rename = async (id: string, title: string) => {
     await ready()
     const trimmed = title.trim()
@@ -398,7 +427,9 @@ export const createThreadStore = <E extends object>(options: {
     find,
     create,
     save,
+    restore,
     remove,
+    clear,
     rename,
     togglePin,
     fork,

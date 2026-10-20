@@ -256,3 +256,47 @@ test("a write waits for the store to be read", async () => {
   assert.equal(chats.list().length, 2);
   assert.ok(chats.find("c-old"), "the thread that was already there should still be there");
 });
+
+/**
+ * A thread put back by an import keeps its id.
+ *
+ * A thread restored under a new id would be a different thread, and importing
+ * the same backup twice would make two copies of every conversation in it.
+ */
+test("a restored thread keeps its id", async () => {
+  const { chats } = stores();
+  const restored = {
+    id: "c-imported",
+    title: "from a backup",
+    createdAt: 1,
+    updatedAt: 1,
+    turns: [aTurn("hello")],
+  };
+
+  await chats.restore(restored);
+  await chats.restore(restored);
+
+  assert.equal(
+    chats.list().length,
+    1,
+    "the same thread should not be added twice",
+  );
+  assert.equal(chats.find("c-imported")?.title, "from a backup");
+});
+
+/**
+ * Clearing one collection leaves the other alone.
+ *
+ * A chat and a code session are separate things, and clearing one is not a
+ * reason to clear the other.
+ */
+test("clearing one store leaves the other alone", async () => {
+  const { chats, sessions } = stores();
+  await chats.create({ turns: [aTurn("hello")] });
+  await sessions.create({ turns: [aTurn("hello")] });
+
+  await chats.clear();
+
+  assert.equal(chats.list().length, 0);
+  assert.equal(sessions.list().length, 1);
+});

@@ -62,6 +62,12 @@ export const saveChat = (
 
 export const deleteChat = (id: string) => chatStore.remove(id)
 
+/** Removes every chat. The code sessions are untouched. */
+export const clearChats = () => chatStore.clear()
+
+/** Puts a chat back exactly as it was, for an import. */
+export const restoreChat = (chat: StoredChat) => chatStore.restore(chat)
+
 export const renameChat = (id: string, title: string) => chatStore.rename(id, title)
 
 export const togglePinChat = (id: string) => chatStore.togglePin(id)

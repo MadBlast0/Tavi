@@ -64,6 +64,12 @@ export const saveSession = (
 
 export const deleteSession = (id: string) => sessionStore.remove(id)
 
+/** Removes every session. The chats are untouched. */
+export const clearSessions = () => sessionStore.clear()
+
+/** Puts a session back exactly as it was, for an import. */
+export const restoreSession = (session: StoredSession) => sessionStore.restore(session)
+
 export const renameSession = (id: string, title: string) =>
   sessionStore.rename(id, title)
 

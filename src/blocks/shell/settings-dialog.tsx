@@ -28,6 +28,7 @@ import {
   type SettingsGroup,
 } from "./settings-sections"
 import { GeneralSettings } from "./settings-general"
+import { PrivacySettings } from "./settings-privacy"
 import { cn } from "@/lib/utils"
 
 /**
@@ -614,6 +615,11 @@ export function SettingsDialog({
                 <>
                   <PaneHeading label={current.label} hidden={tall} />
                   <GeneralSettings />
+                </>
+              ) : current?.id === "privacy" ? (
+                <>
+                  <PaneHeading label={current.label} hidden={tall} />
+                  <PrivacySettings />
                 </>
               ) : current ? (
                 <>
