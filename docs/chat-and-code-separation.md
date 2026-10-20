@@ -1,14 +1,16 @@
 # Separating Chat from Code
 
-**Status:** plan, revision 2. Nothing in it is built yet.
+**Status:** plan, revision 3. Nothing in it is built yet.
 **Decided by:** the maintainer, 2026-10-20. The decisions are recorded in §7 and are
 not to be reopened without saying so here first.
 **Why this document exists:** the app has a Chat surface and a Code surface, and
 they are two views of one thing. This is the plan to make them two things.
 
-> **Revision 2** re-checked every claim in revision 1 against the code and against
-> Claude Desktop's current documentation, and corrected four things that were
-> wrong or incomplete. §10 lists what changed and why.
+> **Revision 3** re-checked every claim against the code, against the repo's own
+> documents — the mock, the master plan, the storage strategy and the README —
+> and against Claude Desktop's current documentation. It corrected seven things
+> that were wrong, found seven more problems, and added §1.1, which says what
+> each of those documents does and does not authorise. §10 lists every change.
 
 ---
 
@@ -67,7 +69,50 @@ the mock's `model`, `effort`, `mode` and `folder` were single values
 was the *conversation* and the *rail*. D4 — the model and the effort remembered
 per side — goes beyond the mock. It is the maintainer's decision, and it matches
 Claude Desktop's "each user's next conversation starts on the model they last
-used", with the two surfaces being separate places.
+used", with the two surfaces being separate places. `Plan_master.md:481` also
+supports the thread half of it — "Conversation state (messages, metadata,
+attachments, **selected model for a conversation if applicable**)" — and
+`:982` puts the *preferred* model in preference state, which is where a
+remembered per-side default belongs.
+
+### 1.1 What the repo's documents do and do not authorise
+
+This matters, because the plan is not self-justifying and the three documents
+in `docs/` disagree about what they are talking about.
+
+| Document | What it has authority over | What it says about Chat vs Code |
+|---|---|---|
+| `docs/mock/shell-layout.html` | The **shape** of the shell — the two rails, the two conversations, the two composers | Directly. It *is* the design: two rails, separate objects, per-side conversations (§1) |
+| `docs/plan/Plan_master.md` | The **request level** — tools, permissions, modes, security, acceptance criteria | **Nothing about surfaces.** An exhaustive search of all 1,649 lines finds no occurrence of *rail*, *sidebar*, *thread list*, *Projects*, *Code mode* or *composer layout*. Its "Chat and Agent modes" are a **tool-policy axis**, not two places in the app. |
+| `docs/storage.md` | **Where data lives** | Says one thread store, one key, global model/effort (§11 lists what changes) |
+| `README.md` | **What is true today** | Says the two rail lists are "kept separate rather than merged" (`README:484-490`), and that the rail is grouped by project (`README:499-505`) |
+
+**The axis collision, stated plainly.** `Plan_master.md` §10.2 says:
+
+> **Chat mode:** should behave like ordinary conversation. … application tools are
+> not enabled by default in Chat mode.
+
+That "Chat mode" is the plan's *request-level* mode, and it maps to the app's
+**agent mode** (`edit`/`plan`/`ask`, `PREF.mode`) — **not** to our Chat
+*surface*. The plan happens to want the same behaviour for both, so the
+requirement lands correctly, but the plan does not know about the surface and
+does not authorise it. §2.2's use of §10.2 is right in substance; this is the
+axis it rests on.
+
+**Two places where the master plan constrains this work rather than supporting
+it**, and the plan has to answer both:
+
+| Constraint | Where | The answer |
+|---|---|---|
+| "Keep [persistence] deferred unless the repository already implements it or the user approves it as a current requirement" | `:987-991` | The repository **does** implement it. Stage 1 changes its shape, which is a schema change, and D3 is the maintainer's decision on the old data. |
+| "If persistence is later added, it requires an explicit schema, **migration strategy, deletion policy, backup/export policy, and a privacy review** for local file content and tool outputs" · R19 | `:991`, `:1481` | The split adds a second schema, so it needs the same five things said out loud. The schema is §4.2, the **deletion policy** is D3, the **migration** is D3's "both spellings go", the **backup/export** policy is Stage 7, and the privacy review is unchanged because the content is the same kind of content. |
+| "Switching modes during an active run has a documented and safe rule" | `:1409` | D6 is that rule, and it matches the plan's own stream rules: "Preserve already received assistant text … but label the run as cancelled/interrupted" (`:725`, and `:492`). |
+
+**So the authority for this plan is: the mock (the shape), the maintainer's
+decision (the split itself), Claude Desktop (the precedent), and
+`Plan_master.md` (the request-level rules the result must satisfy).** The
+master plan does not know the surfaces exist, and this plan fills a gap it
+leaves open rather than contradicting it.
 
 ---
 
@@ -117,6 +162,11 @@ would mean every conversation could edit your files, which is exactly what
 > **Chat mode:** should behave like ordinary conversation. … application tools are
 > not enabled by default in Chat mode. The model should not silently read local
 > files or perform actions.
+
+**That "Chat mode" is the master plan's own request-level mode, not our Chat
+surface** — see §1.1. The rule lands on the right behaviour either way, because
+the plan wants the same thing from a chat that we want from ours: no silent
+filesystem access.
 
 ---
 
@@ -190,6 +240,8 @@ pool (`:601`).
 | **No tools are sent at all.** The live app hand-rolls its `fetch`; the assistant-ui stack that carries the toolkit is not mounted (§9, B2). | `:1223-1238`; `src/assistant.tsx:41` |
 | The Mode picker and the folder picker are rendered **only** in the Code region. | `:1719-1725`, `:1747-1770` |
 | A chat's attachments *are* inlined as text, honestly — a binary file says "[Attached file is not text and was not sent.]" rather than vanishing. | `:621-634`, `:726-728` |
+| **The server takes the system prompt verbatim.** `system` is read from the body and handed to the model unchanged (`server/chat.ts:57`, `:121`). | `server/chat.ts` |
+| **So the server cannot enforce the chat/code rule as revision 2 planned it.** A `variant` field lets the server refuse *tools* in a chat request, but the prose that says "you are helping with a real local repository" still arrives from the client and would still be sent. **The server has to own the system prompt** — see Stage 4. | `server/chat.ts:121`; `prompt-block.tsx:1229` |
 
 ### 3.4 Storage and preferences
 
@@ -374,6 +426,14 @@ ordered so the visible behaviour improves at every step.
 
 **Goal:** chats and code sessions are different objects in different places.
 
+> **This stage is a schema change**, and the master plan asks for that to be
+> said out loud (`:991`, R19 at `:1481`): an explicit schema (§4.2), a
+> **deletion policy** (D3), a **migration** (D3's "both spellings go"), a
+> **backup/export** policy (Stage 7) and a **privacy review** — unchanged,
+> because the content is the same kind of content, in two places. The authority
+> for doing it at all is the maintainer's decision recorded in §7, and the fact
+> that the repository already implements persistence (`:987-991`).
+
 - New `src/lib/threads.ts` — the shared turn types, `titleFor`, `formatWhen`, and
   a small store factory (read, write, subscribe, cap).
 - New `src/lib/chats.ts` — `StoredChat` and the chat store, key `chats.v1`.
@@ -461,27 +521,44 @@ Chat still says Opus. Click "New chat" in Chat — still Opus. Click "New sessio
 in Code — still Sonnet. Pick "Plan" in one project, start a session in another
 — that one starts on the app default.
 
-### Stage 4 — The request is honest about which surface it came from
+### Stage 4 — The server owns the system prompt
 
-**Goal:** a chat is answered as a chat.
+**Goal:** a chat is answered as a chat, and the rule cannot be bypassed.
 
-- `buildSystem(variant, mode, folderName)`:
-  - **Chat** gets its own instruction — a conversation, no tools, only the text
+This stage is bigger than revision 2 planned, because of the finding in §3.3: the
+server takes `system` verbatim from the client, so it cannot enforce anything
+about it. A `variant` field alone would let the server refuse *tools* in a chat
+request while still forwarding a repository system prompt the client supplied.
+
+So the prose moves to the server:
+
+- **The client sends the facts, not the prose.** The body carries
+  `variant: "chat" | "code"`, the agent `mode` (`edit`/`plan`/`ask`), and the
+  `folderName`. It does not send `system` at all.
+- **The server builds the system prompt.**
+  - **Chat** gets a chat instruction — a conversation, no tools, only the text
     and the attachments that were sent with it. It says plainly that the model
     cannot read the machine, so it never implies that it read a file it did not.
-  - **Code** gets the mode's instruction (Edit / Plan / Ask) and, when a folder
-    is attached, the folder paragraph.
-- The body carries `variant: "chat" | "code"`.
-- The server (`server/chat.ts`) validates it: an unknown variant is a `400`,
-  and **a chat request that carries tools is a `400`** — the enforcement of
-  `Plan_master.md` §10.2 and of Claude's "enforced in the app's main process,
-  not just hidden in the UI", where the enforcement belongs. The variant is
-  written into the existing log line; the body is never logged.
-- The compaction request (`:1515-1534`) carries the variant too, so a summary is
-  written with the same framing as the conversation it summarises.
+  - **Code** gets the mode's instruction and, when a folder is attached, the
+    folder paragraph.
+- **The mode definitions move with it.** The Edit / Plan / Ask instructions
+  (`prompt-block.tsx:219-263`) belong to the server now. They are shared
+  vocabulary — `server/providers.ts` already imports from `src/lib/reasoning.ts`
+  — so a module both sides import is the natural home. The **client** keeps the
+  mode's *labels, icons and placeholder*; only the instruction text moves.
+- **The server validates the variant**: an unknown one is a `400`, not a default
+  (the same rule the model check already follows at `server/chat.ts:62-69`).
+- **A chat request that carries tools is a `400`**, enforced where the tools are
+  rehydrated (`server/chat.ts:116`). This is `Plan_master.md` §10.2 and
+  Claude's "enforced in the app's main process, not just hidden in the UI".
+- **The variant is written into the existing log line**; the body is never
+  logged, and neither are the headers nor the key.
+- The compaction request carries the same facts, so a summary is written with
+  the same framing as the conversation it summarises.
 
 **Checked by:** a chat request's system prompt says nothing about a repository;
-a code request's does. The server refuses a chat request with tools.
+a code request's does. A chat request carrying tools is refused. A request with
+an unknown variant is refused rather than defaulted.
 
 ### Stage 5 — Code-only concepts stay in Code
 
@@ -493,7 +570,10 @@ a code request's does. The server refuses a chat request with tools.
   has no folder and no mode; a new session starts with the folder's remembered
   mode and no folder until one is chosen.
 - The `@` menu, the file inlining (`expandUserTurn`, `:698-731`) and the code
-  starters only ever run in Code.
+  starters only ever run in Code. **The inlining is gated by the surface, not
+  only by the folder being absent**: `expandUserTurn` resolves `@path`
+  references against `projectFiles`, so while the folder is still global a chat
+  would carry repository file contents in its message text.
 - A chat's attachments stay a chat's attachments: the composer swaps them on a
   switch, and a chat record never carries a mention path.
 
@@ -508,14 +588,17 @@ folder.
 - The rail's sort control says "Sort chats" / "Sort sessions".
 - The rail's empty state says something on each side — "No chats yet" /
   "No sessions yet" — rather than rendering an empty padded group in Chat and
-  nothing at all in Code.
+  nothing at all in Code. It is **one muted line**, not the vendored `Empty`
+  block: `Empty` carries an icon, a description and a border, and the mock is
+  explicit that the app's empty state is "a bare heading, not an Empty block: no
+  icon, no description, no border" (`shell-layout.html:825-829`).
 - The conversation's empty state is per side: Chat asks a different question
-  than Code. ("What are we working on?" is a code question.) Both are drawn with
-  `src/components/empty` — `Empty`, `EmptyHeader`, `EmptyMedia`, `EmptyTitle`,
-  `EmptyDescription`, `EmptyContent` — which is vendored, unused today, and
-  exactly this shape. Nothing new is invented for it.
-- The rail row shows what differs: the project is already the group heading, so
-  the row shows the model instead.
+  than Code. ("What are we working on?" is a code question.) It stays a bare
+  heading, for the reason above.
+- The rail row shows what differs. The composer's own sessions menu already
+  shows the model beside the title (`prompt-block.tsx:342-343`); the **rail**
+  row does not, and the project is already the group heading — so the rail row
+  gains the model.
 - The pin indicator is visible, not only felt through ordering.
 - The Rename dialog's copy stops promising "the composer's own session list"
   for a chat, which has none.
@@ -526,27 +609,49 @@ folder.
 - **The switch can carry a count** of what is on each side — "3 chats", "2
   sessions" — so the rail says what is behind the switch before you take it.
   `IconSwitchOption` (`src/components/icon-switch/icon-switch.tsx:25-29`) is
-  `{value, label, icon}` with no slot for one, so this is a small extension to
-  that component rather than something drawn around it.
+  `{value, label, icon}` with no slot for one, and `itemClassName` is applied to
+  every item alike, so neither can tell Chat from Code. The addition has to be
+  **generic** — an optional `badge?: ReactNode` on the option — because the
+  theme switch in settings uses the same component, and a Chat-only affordance
+  would leak into it, which is exactly the drift the component's own comment
+  warns against (`icon-switch.tsx:9-13`).
 
 ### Stage 7 — Documentation, and the dead code
 
 - `docs/storage.md` — the parts that change:
+  - **The decision-rule table** (`:13-19`): one "Conversation threads" row
+    becomes two — chats and code sessions, two keys, two caps.
   - **Preferences** (`:28-38`): model and effort become per side; the mode's
-    default becomes per folder.
-  - **What is deliberately not stored** (`:52-63`): still true that the variant
-    is not stored, and now the model and the effort are remembered *per side*,
-    so the paragraph says so.
-  - **Conversation threads** (`:84-95`): one section becomes two — `chats.v1` and
-    `code-sessions.v1`, two shapes, two caps, two retention policies.
+    default becomes per folder; and the row becomes four keys, not one.
+  - **What is deliberately not stored** (`:52-63`): the passage about the
+    composer layout surviving unchanged is the strongest existing statement
+    about the two surfaces — it says it plainly — but the sentence about "the
+    model, the effort and the mode" conflates *how you work* with *which of the
+    two jobs you came to do*, and has to be split for D4 to read correctly.
+  - **Conversation threads** (`:84-95`): one section becomes two, with two
+    shapes, two caps and two retention policies.
   - **The namespace** (`:40-50`): gains the one thing the legacy-migration rule
     does not cover — the old thread key is *deleted*, not moved, and both
-    spellings go. That is the one exception to "a value is moved, never lost".
-  - **The desktop upgrade story** (`:218-228`): item 4's "the key is versioned
-    but there is no migration path" now refers to two keys.
+    spellings go. That is the one exception to "a value is moved, never lost",
+    and the rule has to say so.
+  - **Folder handles** (`:99-114`): the metadata line says "folder name"; after
+    D9 it says a generated id plus a display name, and the section says what
+    happens when two folders share a name.
+  - **A new row for the composer draft** (`:13-19`): the key
+    `prompt-draft:<key>` is not documented anywhere today, and after Stage 2
+    there are two of them.
+  - **Eviction** (`:75-80`): restated per store — two stores are twice the
+    exposure.
+  - **The desktop upgrade story** (`:218-230`): item 1's "move threads and
+    preferences to an app-data file" now has to say whether that is two files or
+    one file with two collections; item 2's export/import covers two stores;
+    item 3's cap is two caps; item 4's "no migration path yet" is now D3.
 - `README.md` — a section on the two surfaces, what each one is, what each one
-  owns, and the per-side model/effort memory. The "Known limitations" list loses
-  nothing and gains the Chat surface's rules if any are still open.
+  owns, and the per-side model/effort memory. Three passages there are also
+  wrong today and are fixed while it is being touched: `:421-423` has a
+  duplicated line, `:644-647` still says the prompt-input block "is not wired
+  up… Kept for reference" when it is the app, and `:85` cites
+  `Plan_master.md` §9.2 for the key-in-memory risk when that rule is §15.3.
 - `src/lib/prefs.ts` — its scope note says "anything larger belongs in
   `sessions.ts`"; it now belongs in `chats.ts` or `sessions.ts`.
 - The dormant assistant-ui stack (B2) is either brought to life or removed. It
@@ -569,6 +674,21 @@ folder.
 | Side chats | Claude's side chat reads a session's context and adds nothing back, and is not saved to disk. A future idea for Code. |
 | Bringing the assistant-ui stack to life | B2. A decision about which runtime the app uses, not about Chat and Code. |
 
+### 6.1 The mock's own bugs — do not carry these across
+
+The mock is the design, but it was written quickly and it has mistakes of its
+own. None of these is intent:
+
+| Mock artefact | Where | Why it is wrong |
+|---|---|---|
+| The palette's action is labelled "New chat" in **both** modes, but it resets the *current* mode's conversation | `shell-layout.html:1180` vs `:1340-1349` | In Code it should say "New session". |
+| The palette shows a timestamp as a keyboard shortcut — "Ctrl 4m" | `:1172` | Mock sloppiness. |
+| The app bar's title falls back to "New chat", and its folder badge to "no folder", in Code too | `:1435-1436` | Mode-agnostic labels. |
+| The account row's per-mode values differ only in case — "Tavi" vs "tavi" — with badges "local" and "main" | `:286`, `:304` | Decorative placeholders. The app's real row shows the machine and the provider key's tier, which are genuinely global. |
+| `PromptInputDictation` with `autoSend: true` | `:1049`, `:1118` | The app does not auto-send. |
+| The mock passes no `draftKey` at all | `:1009-1022` | The app does, and it is shared between the two sides. |
+| The list is called "Recents" | `:621-659` | The app calls it "Chats" and "Sessions"; Claude calls its chat list "recent chats". Three names for one thing — the app's is the one that shipped, so it stays. |
+
 ---
 
 ## 7. Decisions
@@ -581,10 +701,10 @@ quietly reversed later.
 | **D1** | **Each side keeps its own open thread.** Flipping Chat ⇄ Code shows that side's last open thread, or an empty composer if it has none. The other side's thread is untouched. | Claude Desktop. "A Chat is not a Code session, so opening one must not close the other" (mock `:1303`). |
 | **D2** | **Two separate stores.** `tavi.chats.v1` and `tavi.code-sessions.v1`, two types, two caps. | Claude keeps `local-agent-mode-sessions/` and `claude-code-sessions/` apart; the mock says "separate objects, not one list filtered by mode" (`:263`). |
 | **D3** | **The existing threads are deleted.** They were test data; no migration. **Both key spellings go** — `tavi.sessions.v1` and `ai-app.sessions.v1` — because `readStorage` would otherwise move the legacy one back. | The maintainer's call, plus the migration trap in §3.4. |
-| **D4** | **Model and effort are remembered per side.** Chat keeps its own, Code keeps its own; "New chat" and "New session" keep that side's; a thread still records what it used, and opening it restores that. | Claude: "each user's next conversation starts on the model they last used"; "The session continues on the model it was using." |
+| **D4** | **Model and effort are remembered per side.** Chat keeps its own, Code keeps its own; "New chat" and "New session" keep that side's; a thread still records what it used, and opening it restores that. | Claude: "each user's next conversation starts on the model they last used"; "The session continues on the model it was using." `Plan_master.md:481` supports the thread half, and `:982` puts the *preferred* model in preference state — which is where a per-side default belongs. The mock did **not** do this (§1). |
 | **D5** | **One composer, two animated regions.** The morph does not change. | The maintainer's call, and the mock's structure (`:888-891`). What changes is that the shared chrome is bound to the active side's values. |
 | **D6** | **Switching variants while a reply is streaming aborts it** and keeps the partial reply, marked stopped. | One composer, one stream. Parallel streams need a per-thread runtime, which is a much larger change; recorded in §6. |
-| **D7** | **The Chat surface gets its own system instruction**, and no tools — enforced in the server, not only hidden in the composer. | `Plan_master.md` §10.2, and Claude's "enforced in the app's main process, not just hidden in the UI". |
+| **D7** | **The server owns the system prompt.** The client sends the facts — the variant, the agent mode, the folder name — and the server writes the prose. A chat gets a chat instruction; a chat request that carries tools is refused. | `Plan_master.md` §10.2, and Claude's "enforced in the app's main process, not just hidden in the UI". It also has to be this way: the server takes `system` verbatim today, so it cannot enforce anything about a prompt it did not write. |
 | **D8** | **The agent mode (Edit / Plan / Ask) and the folder are Code-only**, living on the session record. The default mode for a new session is remembered **per folder**. | A chat has no repository and no permission model. Claude remembers a permission mode per folder; Plan applies to the session only. |
 | **D9** | **A folder's identity is a generated id, not its directory name.** The session records the id and the display name separately. | Two folders with the same directory name currently collide: the second pick overwrites the first's handle and the Code rail merges their sessions. Claude's project identity is the directory path. The grouping becomes permanent once the two surfaces are apart, so it has to be right. |
 | **D10** | **The switch stays in the rail**, not in the composer. | Claude puts Chat-vs-Cowork in the message box because they are the same job, and makes Code a tab because a code session owns a folder and a working tree. Ours is a tab-equivalent switch, so app chrome is the right place. |
@@ -628,33 +748,62 @@ mistaken for consequences of it.
 | **B5** | The rail's sort reorders the threads inside a project group but not the groups themselves. | `sidebar-nav.tsx:449` | Low |
 | **B6** | `servedModel` is written and never read; `createSession` is imported and never used; `c = pick(2)` is computed and never used; five exported composer primitives are used nowhere. | `prompt-block.tsx:899`, `:43`, `:529`; `prompt-controls.tsx:55`, `:120`, `:171`, `:610`, `:655` | Low |
 | **B7** | A comment describes a dictation overlay that no longer exists. | `prompt-block.tsx:1711-1717` vs `prompt-controls.tsx:1689-1698` | Low |
-| **B8** | The Rename dialog promises the name appears "in the rail and in the composer's own session list" — the second half is false in Chat. | `thread-context-menu.tsx:184-186` | Low |
+| **B8** | The Rename dialog promises the name appears "in the rail and in the composer's own session list" — and the second half is **true today**, because the composer's menu lists every thread. It becomes false the moment the stores are split, because the menu is Code-only. Not a pre-existing bug; a **consequence** of the split that Stage 6 has to catch. | `thread-context-menu.tsx:184-186` | Low, and only after Stage 1 |
 | **B9** | **A folder's identity is its directory name.** `RecentFolder.id` and `.name` are both `handle.name`, and the IndexedDB handle store is keyed by it. Two folders with the same directory name are the same folder to this app: the second pick **overwrites the first's handle**, and the Code rail merges their sessions into one group. | `fs-access.ts:60-64`, `:112`, `:115` | **High**, and it becomes permanent once the grouping is permanent. Fixed by D9. |
 | **B10** | **Changing the draft key leaks the draft sideways.** `PromptInput` restores from `draftKey` in one effect and writes to `draftKey` in the next. On a key change the write effect runs with the *old* text and the *new* key, so the outgoing side's text is written over the incoming side's saved draft. | `prompt-input.tsx:293-301` | Medium — and the split would trip it immediately. |
 | **B11** | **The composer's attachments, mentions and queued messages are shared** between the two surfaces, in the `PromptInput` context. | `prompt-input.tsx:255-256`, `:282` | Medium |
 | **B12** | **The context dial shows the wrong thread's usage after a switch.** `usage` is one piece of state, reset on open and on new, and it is not stored on the thread — so the dial's numbers belong to whichever thread answered last, not to the one on screen. Claude's rule is "context usage is per session". | `prompt-block.tsx:897`, `:1589-1596` | Medium |
+| **B13** | **The server cannot enforce the chat/code rule as planned, because it takes `system` verbatim.** The prose that says "you are helping with a real local repository" arrives from the client and is forwarded unchanged. A `variant` field lets the server refuse *tools* in a chat request; it does not stop the wrong prompt. **The server has to own the system prompt.** | `server/chat.ts:57`, `:121`; `prompt-block.tsx:1229` | **High** — fixed by Stage 4 |
+| **B14** | **The chat route is network-reachable and unauthenticated.** `server.listen(PORT)` binds every interface, and only `/api/projects/clone` is loopback-guarded — and `isLoopback` even accepts an empty remote address. A new "a chat carries no tools ⇒ 400" rule therefore lands on an open route, where anyone can post a request with tools under a `variant: "code"`. | `server/chat.ts:307`, `:163-171`, `:208-212` | Medium–High. The route should bind loopback, or the rule needs a defence that does not depend on the caller being honest. |
+| **B15** | **The model id is never validated against the catalogue on the chat route.** `modelCapabilities` is consulted only to gate reasoning serialisation, and `openrouter(modelName)` is called with whatever string arrived, so an unknown id reaches the provider and fails there. | `server/chat.ts:120` vs `server/models.ts:158-163` | Low |
+| **B16** | **The tray's pending-intent slot holds one intent.** `PENDING` is a `Mutex<Option<Intent>>`, so a "New chat" followed quickly by a "New session" before the webview takes it drops the first. | `src-tauri/src/tray.rs:56`, `:151` | Low |
+| **B17** | **A restored thread carries less context than the original request.** Attachment text is inlined at up to 400 KB but truncated to 20 000 characters on store, and the `@`-mentioned folder files are not stored at all — only their paths — so a restored Code session loses its file context unless the folder is re-granted. | `prompt-block.tsx:750` vs `:615-630`, `:758-761` | Low, pre-existing |
+| **B18** | **"New session" already means something else.** The app menu's View ▸ Split view has "New session on right" and "New session below" — a split pane, not a Code session. A File ▸ New session has to be distinguishable from them. | `app-menu.tsx:100-101` | Low |
+| **B19** | **The README contradicts itself about tools.** `:618-619` says "Agent mode has no tool execution. Modes change the system prompt only", while `:343-385` documents five working tools and `DesktopToolGate` as live. And `:644-647` says the prompt-input block "is not wired up… Kept for reference" when it is the app surface. | `README.md:618-619` vs `:343-385`; `README.md:644-647` | Medium — the docs are quoted in review, so they have to be right |
 
 ---
 
-## 10. What changed in revision 2
+## 10. What changed, and why
+
+### 10.1 Revision 3 — after the full document and code audit
 
 | Change | Why |
 |---|---|
-| **The draft swap is now explicit and owned by the app** (§4.4, §5 Stage 2), instead of "change the draft key". | B10: changing the key alone overwrites the other side's draft. The `PromptInput` root supports a controlled `value`, so the block can own the text. |
-| **Attachments, mentions and the queue are called out as per-side state** (§3.2, §4.5). | B11: they live in the shared `PromptInput` context and leak today. |
-| **A folder gets a real identity** — D9, and Stage 1. | B9: the folder's id *is* its directory name, so same-named folders collide and merge. The grouping becomes permanent under D2, so it has to be right first. |
+| **The server owns the system prompt** (Stage 4, D7, B13). The client sends the facts — variant, mode, folder name — and the server writes the prose. | The server takes `system` verbatim from the client, so it cannot enforce anything about a prompt it did not write. Revision 2's plan — a `variant` field plus a tools check — would have left the repository system prompt arriving from the client and being forwarded. |
+| **A new §1.1 says what each document in `docs/` has authority over**, and states the axis collision: the master plan's "Chat mode" is its request-level tool policy, **not** our Chat surface. The master plan contains no notion of a rail, a thread list or two surfaces at all. | Without this the plan quietly leans on a document that does not contain the thing. It also records where the master plan *constrains* the work (§16.2, R19, `:1409`) and how the plan answers each. |
+| **The mode's instruction text moves to the server**; the client keeps the labels, icons and placeholder. | A rule that can be bypassed by the client is not a rule. |
+| **`expandUserTurn` is gated by the surface**, not only by the folder being absent. | It resolves `@path` references against `projectFiles`, so while the folder is global a chat would carry repository file contents in its message text. |
+| **The rail row shows the model** — restated as *the rail row*, because the composer's sessions menu already shows it (`prompt-block.tsx:342-343`). | Revision 2 implied neither did. |
+| **B8 reclassified**: the Rename dialog's promise is true today and becomes false *because of* the split. | It is a consequence, not a pre-existing bug, and Stage 6 has to catch it. |
+| **Stage 7 now names twelve passages in `docs/storage.md`** rather than three, including the composer draft key — which is documented nowhere today — and the app-data file question. | The document says "a single JSON array" and "one key"; a split has to answer all of it. |
+| **§6.1 lists the mock's own bugs**, so the implementer does not copy them. | The mock labels its palette action "New chat" in both modes, shows a timestamp as a keyboard shortcut, and gives the account row per-mode values that differ only in case. |
+| **The empty states are a bare heading and a plain line, not the vendored `Empty` block.** | The mock is explicit: "The app's empty state is a bare heading, not an Empty block: no icon, no description, no border" (`shell-layout.html:825-829`). |
+| **New bugs B13–B19**, including the open chat route (B14), which the new server rule depends on. | Found by the audit of `server/`, `src-tauri/src/tray.rs` and the README. |
+| **D4 and D8 now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
+
+### 10.2 Revision 2 — after the first correction pass
+
+| Change | Why |
+|---|---|
+| **The draft swap is now explicit and owned by the app** (§4.4, Stage 2), instead of "change the draft key". | Changing the key alone overwrites the other side's draft. The `PromptInput` root supports a controlled `value`, so the block can own the text. |
+| **Attachments, mentions and the queue are called out as per-side state** (§3.2, §4.5). | They live in the shared `PromptInput` context and leak today. |
+| **A folder gets a real identity** — D9, and Stage 1. | The folder's id *is* its directory name, so same-named folders collide and merge. The grouping becomes permanent under D2, so it has to be right first. |
 | **The old store's deletion now covers both key spellings** — D3, §3.4. | `readStorage` moves the legacy `ai-app.sessions.v1` across on read, so deleting only the current spelling would resurrect it. |
 | **The account row is recorded as correctly global.** | Revision 1 listed it as a gap because the mock has one per mode. The mock's values were placeholder data; there is one provider connection and one plan tier. |
 | **The context dial's usage is per thread** (§4.3, B12). | Claude: "context usage is per session". |
 | **The agent mode's default is remembered per folder** — D8. | Claude remembers a permission mode per folder; Plan applies to the session only. |
 | **The switch's placement is now argued, not assumed** — D10. | Claude puts Chat-vs-Cowork in the message box (same job) and makes Code a tab (different job). Ours is a tab-equivalent, so the rail is the right place. |
 | **The reference table gained the storage layout, the enforcement rule, the session-row metadata and the per-folder mode memory.** | Claude's `local-agent-mode-sessions/` vs `claude-code-sessions/`, "enforced in the app's main process, not just hidden in the UI", the git branch on a session row, and `~/.claude/projects/<project>/`. |
-| **New decisions D9 and D10; new bugs B9–B12; new edge cases.** | |
-| **The per-side empty states use the vendored `src/components/empty` primitive**, not new markup. | It is already in the tree, unused, and is exactly an empty state with a title and a description. |
 | **The mock's per-mode set is narrower than revision 1 implied** — its model, effort, mode and folder were single values (§1). | D4 goes beyond the mock. It is the maintainer's decision and it matches Claude's per-surface behaviour, but the plan should say where it departs from the repo's own design. |
 | **The command palette is confirmed not mounted**, not merely unused (§6). | `src/components/command/command.tsx` exports `CommandDialog` and nothing imports it. Worth knowing before a palette is planned on top of it. |
-| **The switch can carry a count**, at the cost of extending `IconSwitchOption` (Stage 6). | `IconSwitch` has no slot for a badge, so this is a change to a shared component rather than something drawn around it. |
+| **The switch can carry a count**, at the cost of a generic `badge` field on `IconSwitchOption` (Stage 6). | `IconSwitch` has no slot for one and is shared with the theme switch, so the field has to be generic. |
 | **§4.2 explains why we do *not* store one store per project,** even though Claude does. | `localStorage` has no directories and a session's folder can change. A `folder` field is the honest equivalent. |
+| **New decisions D9 and D10; new bugs B9–B12; new edge cases.** | |
+
+### 10.3 Revision 1 — the first plan
+
+Written from three code audits (the prompt-input block, the shell and storage
+layer, and the server and rendering layer) and Claude Desktop's documentation.
 
 ---
 
