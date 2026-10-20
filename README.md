@@ -373,6 +373,12 @@ is told. So a request that carries no surface is refused, a request that
 carries its own system prompt is refused, and a chat that carries tools is
 refused. A rule the client could ignore is not a rule.
 
+**A folder is forgotten from the folder it belongs to.** Right-click a folder in
+the Code composer's picker and its own sub-menu carries "Forget folder".
+Forgetting takes the folder out of the picker and nothing else: the sessions
+that ran against it keep their history, keep the project they were run against,
+and stay in the rail.
+
 ## Tools
 
 All tools are browser-side, so the filesystem ones can reach Rust and also work

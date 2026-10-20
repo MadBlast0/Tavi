@@ -200,3 +200,63 @@ The budget control is not started. Anthropic's manual thinking needs
 `budget_tokens`, and the app does not currently collect one; the adapter refuses
 `thinking.type: "enabled"` with an explanation rather than sending a mode it
 cannot satisfy.
+
+---
+
+## 8. What is left over from separating Chat from Code
+
+**Status:** the separation is built — two stores, two composers, two lists, and a
+server that writes the system prompt. These are the things that were noticed
+while it was built and are not part of it.
+
+### 8.1 The chat route is open to the network
+
+`server.listen(PORT)` binds every interface, and only `/api/projects/clone` is
+loopback-guarded — and `isLoopback` accepts an empty remote address. So the
+route that now refuses a chat carrying tools, and refuses a request carrying its
+own system prompt, can be posted to from anywhere on the network.
+
+The rules are worth having either way, but they are not a boundary until the
+route is one. Binding the loopback interface is the small fix; the larger one is
+a token on the route.
+
+### 8.2 The model id is never checked against the catalogue
+
+`openrouter(modelName)` is called with whatever string arrived. The catalogue is
+consulted only to decide whether a reasoning effort can be serialised, so an
+unknown model reaches the provider and fails there.
+
+### 8.3 The tray's pending intent holds one
+
+`PENDING` is a `Mutex<Option<Intent>>`. A "New chat" followed quickly by a "New
+session" before the webview takes either overwrites the first.
+
+### 8.4 A restored thread carries less context than the original
+
+Attachment text is inlined into the request at up to 400 KB and truncated to
+20 000 characters on the way into storage, and the `@`-mentioned folder files
+are not stored at all — only their paths. A thread that is closed and opened
+again therefore has less in it than the thread that was answered.
+
+### 8.5 The composer's variant region can get stuck
+
+`VariantRegion`'s unstick timer only runs while the region is active, so a region
+removed within 550 ms of entering relies on the exit animation alone.
+
+### 8.6 Some small things
+
+- `servedModel` is written and never read.
+- `codeStarters` computes a third file it never uses.
+- Five exported composer primitives are used nowhere.
+- A comment in the composer still describes a dictation overlay that was removed.
+
+### 8.7 What is not started
+
+Each of these was deliberately left out of the separation and is its own piece of
+work: **parallel sessions**, so several run at once with their own panes;
+**restoring the last open thread per side across a reload**; the rail's
+**per-side row order and hidden set**, which is what the mock's Customize panel
+exists for; the **command palette**, which must list only the active side's
+threads; **search** over threads; **archive**; Code's **diff, terminal, file and
+browser panes**; **chat tools**, which the server is already the place to refuse;
+and **side chats**.
