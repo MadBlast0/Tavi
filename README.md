@@ -152,9 +152,8 @@ small as it can be.
 
 Your last pick is remembered. Model, effort and mode are restored on load, and
 a stored model that has left the catalogue is replaced with one the picker
-names. See [Appendix A of
-`docs/tavi-implementation-prompt.md`](docs/tavi-implementation-prompt.md#appendix-a--existing-storage-architecture-reference)
-for where each kind of data lives on the web and desktop targets.
+names. See [`docs/storage.md`](docs/storage.md) for where each kind of data
+lives on the web and desktop targets.
 
 Two things are deliberately *not* remembered, because they are questions about
 what you are doing now rather than preferences:
@@ -368,9 +367,8 @@ first time the desktop app runs — and the old copy is only removed once the ne
 one has been read back.
 
 Everything can be exported to a file and put back again, and removed outright,
-from Settings → Privacy. [Appendix A of
-`docs/tavi-implementation-prompt.md`](docs/tavi-implementation-prompt.md#appendix-a--existing-storage-architecture-reference)
-covers the platform paths in full.
+from Settings → Privacy. [`docs/storage.md`](docs/storage.md) covers the
+platform paths in full.
 
 ## The two surfaces
 

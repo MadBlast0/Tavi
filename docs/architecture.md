@@ -1,9 +1,11 @@
 # Architecture
 
-Where Tavi's parts are, what each one is responsible for, and what is being
-changed. This is the map the implementation plan in
-`docs/tavi-implementation-prompt.md` asks for: current behaviour, intended
-behaviour, and the gaps between them, kept apart.
+Where Tavi's parts are, what each one is responsible for, and what has been
+changed. This is the map the implementation plan asked for: current behaviour,
+intended behaviour, and the gaps between them, kept apart. It began as the map
+for the brief the durable storage, the workspace grants and the Rust provider
+path were built from; that brief is gone, and this is what it left behind,
+together with `docs/storage.md` for where the data lives.
 
 ---
 

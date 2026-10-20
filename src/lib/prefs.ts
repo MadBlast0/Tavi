@@ -9,8 +9,8 @@
  * Scope note — this holds *preferences*, not data. Preferences are things the
  * user picked that would be trivial to re-enter (a model, an effort level).
  * Anything larger belongs in `chats.ts` or `sessions.ts`, and anything the user
- * would be upset to lose belongs in `fs-access.ts`. See Appendix A of
- * `docs/tavi-implementation-prompt.md` for where each lands on each platform.
+ * would be upset to lose belongs in `fs-access.ts`. See `docs/storage.md` for
+ * where each lands on each platform.
  *
  * A preference that belongs to one side of the app rather than to both is
  * keyed with the side on the end — `model.chat`, `model.code` — because Chat

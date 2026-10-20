@@ -314,9 +314,11 @@ Three things are right in the code and have not been watched working:
 
 ## 9. What was built against the plan
 
-The plan in `docs/tavi-implementation-prompt.md` was carried out in seven
-stages, and `docs/architecture.md` has the map, the boundaries that were
-settled, and what each stage closed. The short version:
+The brief that the desktop's durable storage, its workspace grants and the Rust
+provider path were built from has served its purpose and is gone.
+`docs/architecture.md` has the map, the boundaries that were settled, and what
+each stage closed; `docs/storage.md` has where the data lives. The short
+version:
 
 - The conversations moved out of the webview's storage and into the app's own
   file, with the old copy brought across once and only removed once the new one
