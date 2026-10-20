@@ -54,6 +54,7 @@ import {
   type StoredUsage,
 } from "@/lib/threads"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
+import { fetchModels, streamChat, type ChatRequest } from "@/lib/chat"
 import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
@@ -557,42 +558,15 @@ const attachmentText = async (file: PromptFile): Promise<string> => {
  * mode, the folder — and the server writes the prompt, in `server/system.ts`.
  */
 
-/** Posts to the chat route and returns the whole reply as plain text. */
-const askForText = async (body: unknown, signal?: AbortSignal): Promise<string> => {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    signal,
-    body: JSON.stringify(body),
-  })
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(detail?.error ?? `HTTP ${response.status}`)
-  }
-  if (!response.body) throw new Error("No response body")
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
+/** Asks the model for a whole answer, as plain text. */
+const askForText = async (
+  request: ChatRequest,
+  signal?: AbortSignal,
+): Promise<string> => {
   let out = ""
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split("\n")
-    buffer = lines.pop() ?? ""
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue
-      const payload = line.slice(5).trim()
-      if (!payload || payload === "[DONE]") continue
-      try {
-        const event = JSON.parse(payload) as { type?: string; delta?: string }
-        if (event.type === "text-delta" && event.delta) out += event.delta
-      } catch {
-        /* partial JSON, wait for more */
-      }
-    }
-  }
+  await streamChat(request, (event) => {
+    if (event.type === "text-delta" && event.delta) out += event.delta
+  }, signal)
   return out.trim()
 }
 
@@ -1167,8 +1141,7 @@ export function PromptBlock() {
      moved off. */
   React.useEffect(() => {
     let current = true
-    fetch("/api/models")
-      .then((r) => r.json())
+    fetchModels()
       .then((data) => {
         if (!current) return
         const list: Array<{
@@ -1424,11 +1397,13 @@ export function PromptBlock() {
         })
       }
 
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
+      /* The turn is added before the request goes out, because the answer
+         arrives as events and there has to be somewhere to put them. */
+      setStatus("streaming")
+      setTurns((list) => [...list, { id, role: "assistant", text: "", streaming: true }])
+
+      await streamChat(
+        {
           messages: outbound,
           /* The facts, not the prose. The server writes the system prompt, so
              that what a chat is told is a rule the client cannot ignore. */
@@ -1443,65 +1418,31 @@ export function PromptBlock() {
                model's capability and refuses rather than downgrading. */
             ...(effort ? { reasoningEffort: effort } : {}),
           },
-        }),
-      })
-
-      if (!response.ok) {
-        const detail = (await response
-          .json()
-          .catch(() => null)) as { error?: string } | null
-        throw new Error(detail?.error ?? `HTTP ${response.status}`)
-      }
-      if (!response.body) throw new Error("No response body")
-
-      setStatus("streaming")
-      setTurns((list) => [...list, { id, role: "assistant", text: "", streaming: true }])
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue
-          const payload = line.slice(5).trim()
-          if (!payload || payload === "[DONE]") continue
-          let event: {
-            type?: string
-            delta?: string
-            error?: { message?: string }
-            messageMetadata?: { modelId?: string; usage?: PromptTokenUsage }
-          }
-          try {
-            event = JSON.parse(payload)
-          } catch {
-            /* partial JSON, wait for more */
-            continue
-          }
-
-          const metadata = event.messageMetadata
-          if (event.type === "message-metadata" && metadata?.modelId) {
-            setServedModel(metadata.modelId)
-          }
-          /* The provider's own accounting for the turn that just ended. This is
-             what the context dial reads — no estimate is involved. */
-          if (event.type === "finish" && metadata?.usage) {
-            reported = metadata.usage
-            if (stillHere()) setUsage(metadata.usage)
-          }
+        },
+        (event) => {
           if (event.type === "error") {
             throw new Error(event.error?.message ?? "The stream reported an error")
           }
-
+          if (event.type === "message-metadata") {
+            if (event.messageMetadata?.modelId) {
+              setServedModel(event.messageMetadata.modelId)
+            }
+            return
+          }
+          if (event.type === "finish") {
+            /* The provider's own accounting for the turn that just ended. This
+               is what the context dial reads — no estimate is involved. */
+            const usage = event.messageMetadata?.usage
+            if (usage) {
+              reported = usage as PromptTokenUsage
+              if (stillHere()) setUsage(usage as PromptTokenUsage)
+            }
+            return
+          }
           if (event.type === "text-delta" && event.delta) {
             shown += event.delta
             const text = shown
-            if (!stillHere()) continue
+            if (!stillHere()) return
             setTurns((list) =>
               list.map((turn) =>
                 turn.id === id && turn.role === "assistant"
@@ -1510,8 +1451,9 @@ export function PromptBlock() {
               )
             )
           }
-        }
-      }
+        },
+        controller.signal,
+      )
 
       /* Settle the turn from the text that actually arrived, then store it. The
          reply is persisted here as well as on send, because until this point

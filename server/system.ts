@@ -11,26 +11,18 @@
  * This is the same rule Claude's own Chat surface is built on: "these
  * restrictions are enforced in the app's main process, not just hidden in the
  * UI."
+ *
+ * There are two servers: this one, which serves the website, and the Rust one
+ * that serves the desktop app. Both read the same instruction text, out of
+ * `shared/instructions.json`, so a model is told the same thing whichever
+ * surface it was asked on.
  */
 
 import { modeFor } from "../src/lib/modes.ts"
+import instructions from "../shared/instructions.json" with { type: "json" }
 
 /** The two surfaces a request can come from. */
 export type Variant = "chat" | "code"
-
-/**
- * What a chat is told.
- *
- * A chat is a conversation. It has no repository, no tools and no folder: the
- * model can only see the text and the attachments that came with the request,
- * and it says so plainly rather than implying that it read a file it did not.
- */
-const CHAT_INSTRUCTION =
-  "You are having a conversation. You have no tools: you cannot run commands, " +
-  "browse the machine, or read or write any file, and you can only see the text " +
-  "and the attachments that were sent with this request. Answer the question " +
-  "directly. If a question would need a file you were not given, say which file " +
-  "you would need and stop there rather than inventing its contents."
 
 /**
  * What a code session is told about the folder it is pointed at.
@@ -39,10 +31,7 @@ const CHAT_INSTRUCTION =
  * alternative is a model claiming to have edited files it never touched.
  */
 const folderParagraph = (folderName: string): string =>
-  `The user has opened the local folder "${folderName}". File contents inlined ` +
-  `below were read from it before the request was sent. You cannot browse that ` +
-  `folder, run commands, or write to it — say so plainly instead of implying ` +
-  `that you did.`
+  instructions.folder.replace("{name}", folderName)
 
 /**
  * The system prompt for a request.
@@ -58,7 +47,7 @@ export const buildSystemPrompt = (request: {
   /** The folder's name. Code only. */
   folderName?: string | null
 }): string => {
-  if (request.variant === "chat") return CHAT_INSTRUCTION
+  if (request.variant === "chat") return instructions.chat
 
   const parts = [modeFor(request.mode ?? "").instruction]
   if (request.folderName) parts.push(folderParagraph(request.folderName))

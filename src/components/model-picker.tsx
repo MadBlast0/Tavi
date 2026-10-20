@@ -16,6 +16,7 @@ import {
 } from "@/components/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PREF, readPref, sidePref, writePref } from "@/lib/prefs";
+import { fetchKeyStatus, fetchModels } from "@/lib/chat";
 import type { Side } from "@/lib/sides";
 
 import type { KeyStatus } from "./key-types";
@@ -222,18 +223,16 @@ export const ComposerModelPicker = ({
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/models")
-      .then((r) => r.json() as Promise<CatalogResponse>)
+    fetchModels()
       .then((data) => {
         if (cancelled) return;
-        if (!data.models) return setError(data.error ?? "No catalog");
+        if (!data.models) return setError("No catalog");
         setCatalog(data.models);
         setStale(Boolean(data.stale));
       })
       .catch(() => !cancelled && setError("Catalog unreachable"));
 
-    fetch("/api/key")
-      .then((r) => r.json() as Promise<KeyStatus>)
+    fetchKeyStatus()
       .then((s) => !cancelled && setKey(s))
       .catch(() => !cancelled && setKey({ valid: false }));
 

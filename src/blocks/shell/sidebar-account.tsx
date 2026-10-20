@@ -26,6 +26,7 @@ import {
 } from "@/components/dropdown-menu"
 import { SidebarFooter } from "@/components/sidebar"
 import { formatHotkey, useIsApple } from "@/lib/hotkey"
+import { fetchKeyStatus } from "@/lib/chat"
 import { SETTINGS_HOTKEY } from "./settings-dialog"
 
 /**
@@ -127,8 +128,7 @@ export function SidebarAccount({
 
   React.useEffect(() => {
     let cancelled = false
-    fetch("/api/key")
-      .then((response) => response.json())
+    fetchKeyStatus()
       .then((data: KeyStatus) => {
         if (!cancelled) setStatus(data)
       })

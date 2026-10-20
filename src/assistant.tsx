@@ -10,7 +10,6 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 
 import { Thread } from "@/components/thread.aui";
 import { DesktopToolGate } from "@/components/desktop-tool-gate";
-import { authHeaders } from "@/lib/secret";
 import toolkit from "@/toolkit";
 
 /**
@@ -26,13 +25,11 @@ export const Assistant = () => {
     // Runs the follow-up round-trip automatically once a tool round completes,
     // which is what pairs with the server's step limit.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-    // Headers are resolved per request, so a key stored in the OS credential
-    // store is read immediately before use and never held longer than that.
-    // Returns nothing in the browser, where the server falls back to its
-    // environment variable.
+    // No headers: the key is never read into JavaScript. The desktop app's
+    // request is made in Rust, which holds the key itself, and the website's
+    // server has it in its own environment.
     transport: new AssistantChatTransport({
       api: "/api/chat",
-      headers: authHeaders,
     }),
   });
 

@@ -25,6 +25,17 @@ serde = { version = "1", features = ["derive"] }
 # Reading and writing the window's remembered geometry. Already in the tree
 # through Tauri; named here because this crate uses it directly.
 serde_json = "1"
+# The provider request. The key stays on this side of the boundary: it is read
+# from the credential store, used, and never handed to JavaScript. `rustls`
+# rather than the system TLS, so there is nothing to install for the app to
+# make a request.
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "stream",
+  "rustls",
+] }
+# Reading the provider's stream, chunk by chunk.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # OS-native credential store: Windows Credential Manager, macOS Keychain,
 # libsecret on Linux. Chosen over the first-party stronghold vault because that
 # requires a master password just to store an API key.

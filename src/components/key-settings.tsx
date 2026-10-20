@@ -19,9 +19,9 @@ import { Label } from "@/components/label";
 import {
   clearApiKey,
   isKeyStoreAvailable,
-  loadApiKey,
   saveApiKey,
 } from "@/lib/secret";
+import { fetchKeyStatus } from "@/lib/chat";
 
 /**
  * Key entry. The value is held in component state only long enough to submit,
@@ -38,7 +38,11 @@ export const KeySettings = () => {
   useEffect(() => {
     setSupported(isKeyStoreAvailable());
     if (isKeyStoreAvailable()) {
-      loadApiKey().then((key) => setHasKey(Boolean(key)));
+      /* Whether a key exists, never the key. The key is not read into
+         JavaScript at all: Rust holds it and uses it. */
+      fetchKeyStatus()
+        .then((status) => setHasKey(status.valid))
+        .catch(() => setHasKey(false));
     }
   }, []);
 

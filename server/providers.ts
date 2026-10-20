@@ -16,16 +16,15 @@
 
 import {
   availableEffort,
-  readSupport,
   sortByIntensity,
   type CapabilitySource,
   type EffortCapability,
-  type EffortValue,
   type ModelReasoningCapabilities,
   type ModelTarget,
   type SupportStatus,
   type ThinkingModeCapability,
 } from "../src/lib/reasoning.ts";
+import { openRouterCapabilities } from "../src/lib/catalogue.ts";
 
 export type ProviderModel = {
   /** Model id exactly as the provider names it. Never rewritten. */
@@ -107,19 +106,10 @@ const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
  * Verified live against `upstage/solar-mini4`, which publishes all seven:
  * `xhigh` returned 45 reasoning tokens, `max` returned 298.
  *
- * Labels below are presentation only. `intensity` is a coarse cross-provider
- * hint for ordering and is never used to derive or translate a wire value.
+ * The reading of this metadata lives in `src/lib/catalogue.ts`, which the
+ * desktop app uses as well: the effort the picker offers and the effort the
+ * server refuses come out of the same description of the same model.
  */
-const OPENROUTER_LABELS: Record<string, { label: string; intensity: EffortValue["intensity"] }> = {
-  none: { label: "None", intensity: "minimal" },
-  minimal: { label: "Minimal", intensity: "minimal" },
-  low: { label: "Low", intensity: "low" },
-  medium: { label: "Medium", intensity: "medium" },
-  high: { label: "High", intensity: "high" },
-  xhigh: { label: "Extra high", intensity: "maximum" },
-  max: { label: "Max", intensity: "maximum" },
-};
-
 type OpenRouterReasoningMeta = {
   mandatory?: boolean;
   supported_efforts?: string[] | null;
@@ -127,84 +117,6 @@ type OpenRouterReasoningMeta = {
   default_enabled?: boolean;
   supports_max_tokens?: boolean;
 };
-
-const openRouterEffort = (
-  reasoning: OpenRouterReasoningMeta | undefined,
-  parameters: readonly string[],
-  source: CapabilitySource,
-): EffortCapability => {
-  const declared = readSupport(reasoning ? { supported: undefined } : undefined);
-
-  // `supported_parameters` says the gateway accepts the *name*. It does not say
-  // which values are valid, so on its own this stays "supported but unenumerated"
-  // rather than becoming an invented range.
-  const parameterAccepted = parameters.includes("reasoning_effort");
-  const enumerated = reasoning?.supported_efforts;
-
-  let status: SupportStatus;
-  let values: EffortValue[] | undefined;
-  let defaultValue: string | undefined;
-  let defaultKnown = false;
-
-  if (Array.isArray(enumerated)) {
-    status = "supported";
-    // OpenRouter documents this array as descending, highest first. Reversed
-    // here so `order` is ascending, which is what display sorting assumes; the
-    // wire values themselves are untouched. Without this, `xhigh` and `max`
-    // (both "maximum" intensity) would tie and fall back to the provider's
-    // descending positions, rendering Max below Extra high.
-    values = enumerated
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value)
-      .reverse()
-      .map((value, order) => ({
-        value,
-        label: OPENROUTER_LABELS[value]?.label ?? value,
-        order,
-        intensity: OPENROUTER_LABELS[value]?.intensity ?? "unknown",
-      }));
-    if (values.length === 0) {
-      // An empty enumeration is not evidence of support.
-      status = "unknown";
-      values = undefined;
-    }
-    if (typeof reasoning?.default_effort === "string") {
-      defaultValue = reasoning.default_effort;
-      defaultKnown = true;
-    }
-  } else if (parameterAccepted) {
-    // Accepted by the gateway, level set not published for this model.
-    status = "supported";
-  } else if (enumerated === null || reasoning === undefined) {
-    status = declared === "unknown" ? "unknown" : declared;
-  } else {
-    status = "unsupported";
-  }
-
-  return {
-    status,
-    parameterName: parameterAccepted ? "reasoning_effort" : undefined,
-    values,
-    defaultValue,
-    defaultKnown,
-    source,
-  };
-};
-
-/**
- * OpenRouter folds "whether to reason" into the same `reasoning` object as
- * effort, and does not publish a separate thinking *mode*. That is a gateway
- * fact, not a universal one — it is why this adapter records no thinking-mode
- * options rather than inventing `enabled`/`disabled`.
- */
-const openRouterThinkingMode = (
-  source: CapabilitySource,
-): ThinkingModeCapability => ({
-  status: "unknown",
-  defaultKnown: false,
-  canDisable: "unknown",
-  source,
-});
 
 import { anthropicAdapter } from "./providers.anthropic.ts";
 import { openaiAdapter } from "./providers.openai.ts";
@@ -234,55 +146,13 @@ export const openRouterAdapter: ModelProviderAdapter = {
   },
 
   async getModelCapabilities(connection, model) {
-    const raw = (model.raw ?? {}) as {
-      supported_parameters?: string[];
-      reasoning?: OpenRouterReasoningMeta;
-    };
-    const parameters = raw.supported_parameters ?? [];
-    const source: CapabilitySource = {
-      kind: "gateway_metadata",
-      url: OPENROUTER_MODELS_URL,
-      confidence: "high",
-      notes: "OpenRouter catalogue entry for this model slug",
-    };
-
-    const target: ModelTarget = {
+    return openRouterCapabilities(model, {
       connectionId: connection.id,
       providerId: connection.providerId,
       apiProtocol: connection.apiProtocol,
       modelId: model.id,
       gatewayModelId: model.id,
-    };
-
-    const effort = openRouterEffort(raw.reasoning, parameters, source);
-    const reasoningExists = parameters.includes("reasoning");
-
-    return {
-      target,
-      reasoningCapability: reasoningExists ? "supported" : "unknown",
-      effort,
-      thinkingMode: openRouterThinkingMode(source),
-      thinkingBudget: {
-        // `supports_max_tokens` is a genuine per-model signal for a numeric
-        // reasoning budget, but the gateway publishes no bounds for it.
-        status: raw.reasoning?.supports_max_tokens ? "supported" : "unknown",
-        parameterName: raw.reasoning?.supports_max_tokens ? "max_tokens" : undefined,
-        unit: raw.reasoning?.supports_max_tokens ? "tokens" : undefined,
-        semantics: "provider_specific",
-        source,
-      },
-      display: {
-        // `exclude` controls whether reasoning is returned, not whether it runs.
-        summary: parameters.includes("reasoning") ? "supported" : "unknown",
-        thinkingContent: parameters.includes("reasoning") ? "supported" : "unknown",
-        excludeParameter: "exclude",
-        source,
-      },
-      executionMode: { status: "unknown", defaultKnown: false, source },
-      rawMetadata: model.raw,
-      schemaVersion: 2,
-      sources: [source],
-    };
+    });
   },
 
   serializeReasoning(capabilities, preferences) {

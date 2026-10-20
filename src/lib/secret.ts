@@ -3,9 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * Provider API key access.
  *
- * The key lives in the OS credential store and is only ever retrieved
- * immediately before a request. It is never written to local storage, never
- * logged, and never placed in the DOM.
+ * The key lives in the OS credential store. It is written there and cleared
+ * from there, and it is never read back out: the desktop app's provider
+ * request is made in Rust, which reads the key itself. A key in JavaScript is
+ * a key in every script on the page, and there was no reason for it to be
+ * there.
  */
 
 const isDesktop = () =>
@@ -22,27 +24,7 @@ export const saveApiKey = async (key: string) => {
   await invoke("set_api_key", { key });
 };
 
-export const loadApiKey = async (): Promise<string | undefined> => {
-  if (!isDesktop()) return undefined;
-  try {
-    return (await invoke<string | null>("get_api_key")) ?? undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 export const clearApiKey = async () => {
   if (!isDesktop()) return;
   await invoke("clear_api_key");
-};
-
-/**
- * Authorization headers for the chat request.
- *
- * Returning an empty object in the browser lets the server fall back to its
- * environment variable, which is the development path.
- */
-export const authHeaders = async (): Promise<Record<string, string>> => {
-  const key = await loadApiKey();
-  return key ? { Authorization: `Bearer ${key}` } : {};
 };

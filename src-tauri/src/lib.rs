@@ -1,6 +1,7 @@
 use tauri::AppHandle;
 
 mod appfile;
+mod provider;
 mod threads;
 mod tray;
 mod window_state;
@@ -84,13 +85,12 @@ async fn list_installed_fonts() -> Result<Vec<String>, String> {
     Ok(normalize_families(families))
 }
 
-// --- Provider API key, held in the OS credential store -----------------------
-//
-// The key never touches disk in plaintext and never reaches a log. The webview
-// asks for it per request and attaches it as a bearer header to the loopback
-// chat server, which forwards it upstream. See docs/plan §9.2 for the residual
-// risk this accepts.
-
+/// The provider key, held in the OS credential store.
+///
+/// The key never touches disk in plaintext and never reaches a log. It is
+/// read here, used by the provider request, and not handed out: the webview
+/// used to ask for it and send it as a bearer header to a local server, which
+/// put a credential in JavaScript for no reason.
 const KEY_SERVICE: &str = "tavi";
 const KEY_USER: &str = "openrouter-api-key";
 
@@ -142,8 +142,13 @@ fn set_api_key(key: String) -> Result<(), String> {
     entry()?.set_password(&key).map_err(|e| format!("Could not store key: {e}"))
 }
 
-#[tauri::command]
-fn get_api_key() -> Result<Option<String>, String> {
+/// The key, if there is one.
+///
+/// Not a command any more. The webview used to ask for the key and send it to
+/// a local server as a bearer header, which put a credential in JavaScript
+/// for no reason: the provider request is made here, and the key is used
+/// here.
+pub fn get_api_key() -> Result<Option<String>, String> {
     match entry()?.get_password() {
         Ok(key) => Ok(Some(key)),
         // Absent is a normal state, not a failure — unless the key is still
@@ -189,11 +194,15 @@ pub fn run() {
     tauri::Builder::default()
         .manage(for_state)
         .manage(threads::Threads::default())
+        .manage(provider::Cancellations::default())
         .invoke_handler(tauri::generate_handler![
             set_api_key,
-            get_api_key,
             clear_api_key,
             list_installed_fonts,
+            provider::chat,
+            provider::cancel_chat,
+            provider::model_catalogue,
+            provider::key_status,
             threads::read_threads,
             threads::write_threads,
             threads::clear_threads,

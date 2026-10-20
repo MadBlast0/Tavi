@@ -13,33 +13,12 @@ import {
   type ProviderConnection,
   type ProviderModel,
 } from "./providers.ts";
+import { projectModel, type SlimModel } from "../src/lib/catalogue.ts";
 import type { ModelReasoningCapabilities } from "../src/lib/reasoning.ts";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
-/**
- * What the browser receives.
- *
- * The upstream catalogue is several megabytes and carries descriptions,
- * benchmarks and provider links the interface never renders, so it is projected
- * down. `capabilities` is the full normalised profile: the reasoning controls are
- * several distinct facets, and collapsing them here is what previously made
- * effort and thinking look interchangeable.
- */
-export type SlimModel = {
-  id: string;
-  name: string;
-  provider: string;
-  contextLength: number | null;
-  free: boolean;
-  supportsTools: boolean;
-  supportsReasoning: boolean;
-  capabilities: ModelReasoningCapabilities;
-  inputModalities: string[];
-  outputModalities: string[];
-  promptPrice: number;
-  completionPrice: number;
-};
+export type { SlimModel };
 
 type CacheEntry = { models: SlimModel[]; fetchedAt: number };
 
@@ -65,32 +44,11 @@ const deriveProvider = (name: string, id: string) => {
 const project = (
   provider: ProviderModel,
   capabilities: ModelReasoningCapabilities,
-): SlimModel => {
-  const raw = (provider.raw ?? {}) as {
-    context_length?: number;
-    architecture?: { input_modalities?: string[]; output_modalities?: string[] };
-    pricing?: { prompt?: string; completion?: string };
-    supported_parameters?: string[];
-  };
-
-  const promptPrice = toNumber(raw.pricing?.prompt);
-  const completionPrice = toNumber(raw.pricing?.completion);
-
-  return {
-    id: provider.id,
-    name: provider.displayName,
-    provider: deriveProvider(provider.displayName, provider.id),
-    contextLength: raw.context_length ?? null,
-    free: promptPrice === 0 && completionPrice === 0,
-    supportsTools: (raw.supported_parameters ?? []).includes("tools"),
-    supportsReasoning: capabilities.reasoningCapability !== "unsupported",
+): SlimModel =>
+  projectModel(
+    { id: provider.id, displayName: provider.displayName, raw: provider.raw },
     capabilities,
-    inputModalities: raw.architecture?.input_modalities ?? ["text"],
-    outputModalities: raw.architecture?.output_modalities ?? ["text"],
-    promptPrice,
-    completionPrice,
-  };
-};
+  );
 
 const fetchFor = async (connection: ProviderConnection): Promise<SlimModel[]> => {
   const adapter = adapterFor(connection.providerId);
