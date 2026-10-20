@@ -48,3 +48,14 @@ export const PREF = {
  * keeps it inside the one namespace everything else lives in.
  */
 export const sidePref = (name: string, side: Side): string => `${name}.${side}`;
+
+/**
+ * A preference that belongs to one folder rather than to the app.
+ *
+ * The agent mode is remembered per project, the way a permission mode is
+ * remembered per folder: the way you work in one repository is not the way you
+ * work in another, and a plan you chose for a big change is not a plan you
+ * want for a small one.
+ */
+export const folderPref = (name: string, folderId: string): string =>
+  `${name}.${folderId}`;

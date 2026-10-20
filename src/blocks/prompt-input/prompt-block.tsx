@@ -54,7 +54,11 @@ import {
   type StoredTurn,
   type StoredUsage,
 } from "@/lib/threads"
-import { PREF, readPref, sidePref, writePref } from "@/lib/prefs"
+import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
+import {
+  MODES as MODE_DEFINITIONS,
+  type AgentMode,
+} from "@/lib/modes"
 import type { Side } from "@/lib/sides"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
@@ -211,62 +215,33 @@ import {
 } from "./use-prompt-files"
 
 /**
- * Each mode carries the system prompt that is actually sent with the request,
- * so switching modes changes how the model behaves rather than only how the
- * button reads. The descriptions state what the model is told to do.
+ * The modes, with their icons.
+ *
+ * The definitions — the labels, the descriptions, the placeholders and the
+ * instructions — live in `@/lib/modes`, because the server writes the system
+ * prompt and needs the instructions. The icons are the composer's, and an icon
+ * is a React node.
  */
-type ModeDefinition = PromptOption & { instruction: string; placeholder: string }
+const MODE_ICONS: Record<AgentMode, React.ReactNode> = {
+  /* "edit", not "code": the Code layout already owns that word, and a mode
+     that repeats its container's name reads as a duplicate control. */
+  edit: <CodeIcon />,
+  plan: <ListChecksIcon />,
+  /* A speech bubble with a question mark, not a bare bubble: the plain
+     MessageCircleIcon belongs to the Chat layout, and two meanings must not
+     share a glyph. */
+  ask: <MessageCircleQuestionMarkIcon />,
+}
 
-const MODES: ModeDefinition[] = [
-  {
-    /* "edit", not "code": the Code layout already owns that word, and a mode
-       that repeats its container's name reads as a duplicate control. */
-    value: "edit",
-    label: "Edit",
-    icon: <CodeIcon />,
-    description: "Proposes file edits and commands",
-    placeholder: "Describe a change to make",
-    instruction:
-      "You are helping with a real local repository. You have no tools: you cannot " +
-      "run commands, browse the folder, or write files, and you can only see the files " +
-      "inlined with the request. Describe the commands you would run rather than " +
-      "implying you ran them. When you propose a change, give the exact edit as a " +
-      "unified diff or a complete file body, and name every path involved. Prefer the " +
-      "smallest change that fully solves the problem, and say so plainly if something " +
-      "is ambiguous rather than guessing.",
-  },
-  {
-    value: "plan",
-    label: "Plan",
-    icon: <ListChecksIcon />,
-    description: "Investigates, then proposes steps before acting",
-    placeholder: "What should we plan?",
-    instruction:
-      "Do not propose edits yet. Investigate only the code and files you were given, " +
-      "then reply with an ordered plan: which files to touch, what changes in each, " +
-      "and the order to apply them. Name anything you could not verify from the " +
-      "material provided.",
-  },
-  {
-    value: "ask",
-    label: "Ask",
-    /* A speech bubble with a question mark, not a bare bubble: the plain
-       MessageCircleIcon belongs to the Chat layout, and two meanings must not
-       share a glyph. */
-    icon: <MessageCircleQuestionMarkIcon />,
-    description: "Answers without editing anything",
-    placeholder: "Ask about the codebase",
-    instruction:
-      "Answer the question directly and do not propose edits. If the answer depends " +
-      "on code you were not shown, say which file you would need and stop there " +
-      "rather than inventing its contents.",
-  },
-]
-
-const modeFor = (value: string) => MODES.find((mode) => mode.value === value) ?? MODES[0]
+const MODES: PromptOption[] = MODE_DEFINITIONS.map((mode) => ({
+  value: mode.value,
+  label: mode.label,
+  icon: MODE_ICONS[mode.value],
+  description: mode.description,
+}))
 
 const placeholders: Record<string, string> = Object.fromEntries(
-  MODES.map((mode) => [mode.value, mode.placeholder]),
+  MODE_DEFINITIONS.map((mode) => [mode.value, mode.placeholder]),
 )
 
 type Variant = "chat" | "code"
@@ -561,22 +536,14 @@ const attachmentText = async (file: PromptFile): Promise<string> => {
 }
 
 /**
- * The system prompt actually sent for a mode. The folder line is explicit that
- * the model can read what is inlined but cannot browse or write, because the
- * alternative is a model claiming to have edited files it never touched.
+ * The system prompt is not written here.
+ *
+ * It used to be: the composer built it and sent it as prose, and the server
+ * passed it on. That made a rule about what a chat may be told a rule the
+ * client could ignore, and the client is the part of the system a bug is most
+ * likely to be in. The composer now sends the facts — the variant, the agent
+ * mode, the folder — and the server writes the prompt, in `server/system.ts`.
  */
-const buildSystem = (modeValue: string, folderName: string | null) => {
-  const parts = [modeFor(modeValue).instruction]
-  if (folderName) {
-    parts.push(
-      `The user has opened the local folder "${folderName}". File contents inlined ` +
-        `below were read from it before the request was sent. You cannot browse that ` +
-        `folder, run commands, or write to it — say so plainly instead of implying ` +
-        `that you did.`,
-    )
-  }
-  return parts.join("\n\n")
-}
 
 /** Posts to the chat route and returns the whole reply as plain text. */
 const askForText = async (body: unknown, signal?: AbortSignal): Promise<string> => {
@@ -1249,9 +1216,29 @@ export function PromptBlock() {
   React.useEffect(() => {
     writePref(sidePref(PREF.effort, variant), effort || undefined)
   }, [effort, variant])
+
+  /**
+   * The agent mode is remembered per project.
+   *
+   * The way you work in one repository is not the way you work in another: a
+   * plan you chose for a large change is not a plan you want for a small one.
+   * So the mode you pick is kept against the folder, and a new session in that
+   * folder starts on it — while a session you are opening keeps the mode it
+   * was run with, because a conversation continues in the way it started.
+   */
   React.useEffect(() => {
-    writePref(PREF.mode, mode)
-  }, [mode])
+    if (activeSessionId) return
+    if (!folderId) {
+      setMode(readPref(PREF.mode) ?? "edit")
+      return
+    }
+    setMode(readPref(folderPref("mode", folderId)) ?? readPref(PREF.mode) ?? "edit")
+  }, [folderId, activeSessionId])
+
+  React.useEffect(() => {
+    if (folderId) writePref(folderPref("mode", folderId), mode)
+    else writePref(PREF.mode, mode)
+  }, [mode, folderId])
 
   /* The draft is the side's, so it is saved against the side and restored into
      the side. A half-written chat is waiting in the chat composer, and a
@@ -1328,7 +1315,26 @@ export function PromptBlock() {
       }[] = []
 
       for (const turn of history) {
-        if (turn.role === "summary") continue
+        /* The summary stands for every message above it, so it is sent as what
+           it is. Dropping it would mean the model never sees the part of the
+           conversation that was compacted away — which is the opposite of what
+           compaction is for. */
+        if (turn.role === "summary") {
+          outbound.push({
+            id: turn.id,
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text:
+                  "Summary of the conversation so far, standing in for the " +
+                  "messages it replaces:\n\n" +
+                  turn.text,
+              },
+            ],
+          })
+          continue
+        }
         if (turn.role === "assistant") {
           outbound.push({
             id: turn.id,
@@ -1350,7 +1356,12 @@ export function PromptBlock() {
         signal: controller.signal,
         body: JSON.stringify({
           messages: outbound,
-          system: buildSystem(mode, folder?.name ?? null),
+          /* The facts, not the prose. The server writes the system prompt, so
+             that what a chat is told is a rule the client cannot ignore. */
+          variant: write.side,
+          ...(write.side === "code"
+            ? { mode: write.mode, folder: write.folderName }
+            : {}),
           config: {
             ...(model ? { modelName: model } : {}),
             /* One dial: `none` is the "do not reason" position on it, not a
@@ -1717,6 +1728,10 @@ export function PromptBlock() {
             ],
           },
         ],
+        /* The same facts as any other request, so a summary is written with
+           the same framing as the conversation it summarises. */
+        variant,
+        ...(variant === "code" ? { mode, folder: folder?.name } : {}),
         config: { modelName: model },
       })
       if (!summary) return

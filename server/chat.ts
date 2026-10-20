@@ -21,6 +21,7 @@ import {
   listProjects,
 } from "./projects.ts";
 import { adapterFor, type OpenRouterProviderOptions } from "./providers.ts";
+import { buildSystemPrompt, type Variant } from "./system.ts";
 
 /**
  * The Tauri window loads a static Vite bundle, so there is no server colocated
@@ -47,14 +48,72 @@ type ChatConfig = {
 async function handleChat(request: Request): Promise<Response> {
   const body = (await request.json()) as {
     messages: UIMessage[];
-    system?: string;
+    /**
+     * Which surface the request came from.
+     *
+     * The server writes the system prompt, so this is what decides what the
+     * model is told. It is required, and an unknown one is refused rather than
+     * defaulted: a request that did not say where it came from cannot be given
+     * a prompt that is right for either.
+     */
+    variant?: Variant;
+    /** The agent mode. Code only. */
+    mode?: string;
+    /** The folder's name. Code only. */
+    folder?: string;
     tools?: FrontendTools;
     config?: ChatConfig;
+    /**
+     * The client used to send the system prompt as prose.
+     *
+     * It is refused now. The server writes the prompt, and a request that
+     * brings its own would be a request that can say anything — which is
+     * exactly what the surface is supposed to prevent.
+     */
+    system?: string;
     // The client may also merge these at the top level rather than inside
     // `config`; both are accepted so the wiring choice does not matter.
     reasoningEffort?: string;
   };
-  const { messages, system, tools } = body;
+  const { messages, tools, variant, mode, folder } = body;
+
+  if (typeof body.system === "string") {
+    console.log("[chat] rejected: request carried its own system prompt");
+    return Response.json(
+      { error: "The system prompt is written by the server." },
+      { status: 400 },
+    );
+  }
+
+  if (variant !== "chat" && variant !== "code") {
+    console.log("[chat] rejected: request carried no surface");
+    return Response.json(
+      {
+        error:
+          "No surface selected. Say whether this is a chat or a code session.",
+      },
+      { status: 400 },
+    );
+  }
+
+  /**
+   * A chat cannot carry tools.
+   *
+   * The whole point of the surface is that a conversation does not reach the
+   * machine, and a request that arrives with tools attached is a request that
+   * is trying to. The check is here rather than in the composer because a rule
+   * the client can ignore is not a rule.
+   */
+  if (variant === "chat" && tools) {
+    console.log("[chat] rejected: a chat carried tools");
+    return Response.json(
+      { error: "A chat cannot carry tools. Start a code session instead." },
+      { status: 400 },
+    );
+  }
+
+  // The system prompt is written here, from the facts the client sent.
+  const system = buildSystemPrompt({ variant, mode, folderName: folder });
 
   // There is deliberately no fallback here. The model has to be the one the
   // picker is showing; substituting a default would stream from a model the
@@ -107,9 +166,11 @@ async function handleChat(request: Request): Promise<Response> {
   const applied = Object.keys(reasoningFields).length
     ? JSON.stringify(reasoningFields)
     : "provider default";
-  // Logs the resolved model and the fields actually serialised. No key, no
-  // headers, no request body.
-  console.log(`[chat] model=${modelName} reasoning=${applied}`);
+  // Logs the resolved model, the surface it came from and the fields actually
+  // serialised. No key, no headers, no request body.
+  console.log(
+    `[chat] surface=${variant} model=${modelName} reasoning=${applied}`,
+  );
 
   // AssistantChatTransport forwards system messages and any frontend tools the
   // provider registered, so both have to be rehydrated here.
