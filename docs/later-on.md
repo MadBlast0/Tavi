@@ -209,22 +209,33 @@ cannot satisfy.
 server that writes the system prompt. These are the things that were noticed
 while it was built and are not part of it.
 
-### 8.1 The chat route is open to the network
+### 8.1 The website's chat route is open to the network
 
 `server.listen(PORT)` binds every interface, and only `/api/projects/clone` is
 loopback-guarded — and `isLoopback` accepts an empty remote address. So the
-route that now refuses a chat carrying tools, and refuses a request carrying its
+route that refuses a chat carrying tools, and refuses a request carrying its
 own system prompt, can be posted to from anywhere on the network.
 
+This is the **website's** route now. The desktop app does not use it: the
+desktop makes its provider request in Rust, so there is no local port and no
+endpoint another process can post to. What is left is a question about the
+website, and the answer is the one any website's own backend has to work out —
+who is allowed to spend this account's key.
+
 The rules are worth having either way, but they are not a boundary until the
-route is one. Binding the loopback interface is the small fix; the larger one is
-a token on the route.
+route is one. Binding the loopback interface is the small fix, and it makes a
+development server a development server; the larger one is a session.
 
 ### 8.2 The model id is never checked against the catalogue
 
 `openrouter(modelName)` is called with whatever string arrived. The catalogue is
 consulted only to decide whether a reasoning effort can be serialised, so an
 unknown model reaches the provider and fails there.
+
+**On the desktop this is now checked**: the effort is refused unless the model
+publishes it, and a model that is not in the catalogue refuses every effort. The
+model id itself is still sent as it arrives, because the provider is the one
+that knows what it has.
 
 ### 8.3 The tray's pending intent holds one
 
@@ -249,6 +260,9 @@ removed within 550 ms of entering relies on the exit animation alone.
 - `codeStarters` computes a third file it never uses.
 - Five exported composer primitives are used nowhere.
 - A comment in the composer still describes a dictation overlay that was removed.
+- The assistant-ui surface, its thread components and the toolkit beside them
+  are not mounted. The native tools in the toolkit now take a workspace and a
+  path inside it, but nothing binds a workspace to a session yet.
 
 ### 8.7 What is not started
 
@@ -260,3 +274,44 @@ exists for; the **command palette**, which must list only the active side's
 threads; **search** over threads; **archive**; Code's **diff, terminal, file and
 browser panes**; **chat tools**, which the server is already the place to refuse;
 and **side chats**.
+
+### 8.8 What the desktop app still cannot do
+
+Three things the plan asked for and the app does not have yet:
+
+- **A file is read, never written.** The model can talk about a change and show
+  the exact edit, and the app can read the folder it is attached to, but there
+  is no write path and no shell. That is deliberate: the authorization gap was
+  closed first, and a write path is a separate piece of work with its own
+  review.
+- **A folder on the desktop is a browser grant, not a Rust one.** The app picks
+  folders with the File System Access API, which WebView2 supports, and the
+  handle cannot go in `localStorage` and cannot be put in a file. So the
+  *native* tools are bounded by a Rust grant, and the *app's* folder access is
+  bounded by the browser's — two boundaries, in two languages, for one folder.
+  Making them one means a native folder picker and a shared description of
+  which files are worth walking for.
+- **A clone cannot be attached without a second action.** The clone lands in the
+  projects folder and the app says where it is; picking it up as a folder still
+  takes the system picker, because the app's folders are browser grants and the
+  clone is a path.
+
+---
+
+## 9. What was built against the plan
+
+The plan in `docs/tavi-implementation-prompt.md` was carried out in seven
+stages, and `docs/architecture.md` has the map, the boundaries that were
+settled, and what each stage closed. The short version:
+
+- The conversations moved out of the webview's storage and into the app's own
+  file, with the old copy brought across once and only removed once the new one
+  had been read back.
+- The Rust file commands stopped defaulting to the home directory. They need a
+  grant now, and a grant is a path the user chose.
+- The desktop app talks to the provider from Rust. The key is read there, used
+  there, and never handed to JavaScript, and there is no local port.
+- The clone runs on the machine the app is on, reports what it is doing, can be
+  stopped, and cleans up after itself when it fails.
+- There is a place to find out where the data is, to take a copy of it, to put
+  one back, and to be rid of it.

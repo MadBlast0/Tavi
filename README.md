@@ -9,28 +9,47 @@ and the Vercel AI SDK, with live model discovery and a selectable model.
 ┌──────────────────────────────────────────────────────┐
 │ Tauri window (Rust shell)                            │
 │  ├─ Webview: React + assistant-ui Thread              │
-│  │    · tools execute here (Tauri invoke)            │
-│  │    · model picker + theme toggle live here        │
+│  │    · the composer, the rail and the conversations  │
+│  │    · no provider key, ever                        │
 │  └─ src-tauri/  Rust commands                        │
-│       · list_directory / read_text_file (path-confined)│
-│       · set/get/clear_api_key (OS credential store)  │
+│       · chat — makes the provider request            │
+│       · model catalogue, key standing                 │
+│       · conversations in the app's own file           │
+│       · workspace grants — what the tools may reach   │
+│       · projects — running git                        │
+│       · set/clear_api_key (OS credential store)       │
 └───────────────────────────┬──────────────────────────┘
-                            │ HTTP loopback
-                  ┌─────────▼──────────┐
-                  │ Node chat server   │  :8787
-                  │ server/chat.ts     │
-                  │  · /api/chat       │
-                  │  · /api/models     │
-                  │  · /api/key        │
-                  └─────────┬──────────┘
                             │ HTTPS
                        OpenRouter
 ```
 
-The chat backend is a separate process because the Tauri window loads a static
-bundle with no server behind it. Vite proxies `/api` to it in development, and
-`pnpm tauri dev` starts both. The same chat route can later deploy as a
-serverless function, which is what makes a web build cheap.
+The desktop app talks to the provider from Rust, not from JavaScript. The key
+is read from the OS credential store, used, and never handed out; there is no
+local port and no local endpoint for another process to post to.
+
+The website has no Rust, so it has a server of its own:
+
+```
+┌───────────────────────────┐
+│ Browser                   │
+│  └─ fetch /api/…          │
+└─────────┬─────────────────┘
+          │ HTTP
+┌─────────▼─────────────────┐
+│ Node chat server  :8787   │
+│  server/chat.ts           │
+│  · /api/chat  /api/models  │
+│  · /api/key   /api/projects│
+└─────────┬─────────────────┘
+          │ HTTPS
+     OpenRouter
+```
+
+The two read the same instruction text, out of `shared/instructions.json`, and
+the same request shape, so a model is told the same thing and asked the same
+way whichever surface the request came from. Vite proxies `/api` to the server
+in development, and `pnpm tauri dev` starts both. The same chat route can later
+deploy as a serverless function, which is what makes a web build cheap.
 
 ## Prerequisites
 
@@ -69,20 +88,21 @@ nobody else has.
 
 ## Provider key
 
-Two supported paths; the header wins if both are present.
+Two supported paths; the desktop app's own wins if both are present.
 
 | Path | Where | Notes |
 |---|---|---|
-| **In-app** | Key icon in the top-right bar | Stored in the OS credential store — Windows Credential Manager, macOS Keychain, or libsecret. Desktop only. |
+| **In-app** | Settings → Platform → API keys | Stored in the OS credential store — Windows Credential Manager, macOS Keychain, or libsecret. Desktop only. |
 | **Environment** | `.env.local` → `OPENROUTER_API_KEY` | Development and web target. |
 
-The key is never written to disk in plaintext, never placed in local storage, and
-never logged. The webview reads it from the credential store immediately before
-each request and attaches it as a bearer header to the loopback server.
+The key is never written to disk in plaintext, never placed in local storage,
+and never logged. On the desktop it is also never read into JavaScript: Rust
+takes it from the credential store, makes the request, and hands back the
+answer. There is no command that gives it out.
 
-> Residual risk: in the desktop app the key exists briefly in webview JS memory
-> per request. That is inherent to the process split — see
-> `docs/plan/Plan_master.md` §15.3.
+> The key on the web target lives in the server's environment, and never
+> reaches the browser. The web target has no credential store, so there is
+> nowhere else for it to be.
 
 ## Configuration
 
@@ -332,17 +352,25 @@ to the thing it describes.
 
 | Data | Where |
 |---|---|
+| Conversations (chats and code sessions) | The app's own file on the desktop, `localStorage` on the web. Capped at 50 each |
 | Preferences (model and effort per side, agent mode per folder, rail open) | `localStorage` via `src/lib/prefs.ts` |
-| Chats | `localStorage` via `src/lib/chats.ts`, capped at 50 |
-| Code sessions | `localStorage` via `src/lib/sessions.ts`, capped at 50 |
 | Composer drafts | `localStorage`, one per side |
 | Folder handles | IndexedDB via `src/lib/fs-access.ts` — handles cannot go in `localStorage` |
-| API key | OS credential store, through Rust. Never web storage |
+| API key | OS credential store, through Rust. Never web storage, never JavaScript |
 
-Browser storage is evictable, and that is fine on the web target but not for an
-installed app. [Appendix A of
+The conversations are in the app's own data directory on the desktop, in one
+file written by Rust, with the previous one kept beside it. That is the change
+that makes an installed app different from a website: browser storage is
+evictable, and a conversation is worth more than the tidiness of a folder that
+the browser may clear. The website has no such directory, so it keeps them in
+browser storage, and the conversations that were there are brought across the
+first time the desktop app runs — and the old copy is only removed once the new
+one has been read back.
+
+Everything can be exported to a file and put back again, and removed outright,
+from Settings → Privacy. [Appendix A of
 `docs/tavi-implementation-prompt.md`](docs/tavi-implementation-prompt.md#appendix-a--existing-storage-architecture-reference)
-covers the platform paths and what should move into an app-data file.
+covers the platform paths in full.
 
 ## The two surfaces
 
@@ -359,7 +387,7 @@ stores, with separate lists.
 | Owns a project folder | no | yes |
 | Owns an agent mode (Edit / Plan / Ask) | no | yes |
 | Files in context | attachments only | the folder's files and `@` mentions, inlined at send time |
-| Tools | none — the server refuses a chat that carries any | the toolkit, scoped to the folder (not built) |
+| Tools | none — the server refuses a chat that carries any | the toolkit, bounded by a grant on the folder (not wired into this surface) |
 | System prompt | a conversation | the mode's instruction, and the folder |
 | Model and effort | remembered for the Chat side | remembered for the Code side |
 
@@ -383,16 +411,34 @@ and stay in the rail.
 
 ## Tools
 
-All tools are browser-side, so the filesystem ones can reach Rust and also work
-in a future web build.
+The app's live chat path carries no tools. A conversation is a conversation: the
+model sees the text and the attachments that came with it, and it says so
+plainly rather than implying that it read a file it did not.
+
+The toolkit in `src/toolkit.tsx` is a second path, kept for the assistant-ui
+surface, and it is not mounted. Its two native tools have been moved onto the
+same boundary the rest of the app uses:
 
 | Tool | Runs | Purpose |
 |---|---|---|
 | `current_time` | webview | ISO timestamp |
 | `evaluate_expression` | webview | Arithmetic. Recursive-descent parser; never uses `eval` or dynamic function construction. |
 | `fetch_url` | webview | Fetches and strips markup, truncated to 4000 chars. **CORS-limited** — see below. |
-| `list_directory` | Tauri | Lists a directory |
-| `read_text_file` | Tauri | Reads a UTF-8 file, capped in size |
+| `list_workspace_entries` | Tauri | Lists a folder inside the workspace the session is attached to |
+| `read_workspace_file` | Tauri | Reads a file from inside it, capped in size |
+
+### The native tools are bounded by a grant
+
+A path the model names is not a permission. The app holds a **grant** — a
+canonical path the user chose — and the native tools work only inside one.
+There is no default root and no fallback to the home directory: a machine with
+no grants has no folders the model can reach.
+
+The model may name a file *inside* a workspace. It may not name a workspace and
+it may not name a path. The path is resolved before it is opened, so a link
+that points out of the workspace is refused as well as a `..` that climbs out
+of it. `AI_APP_FS_ROOT`, if it is set, caps what may be granted — it never
+grants anything by itself.
 
 ### Tools are gated per environment
 
@@ -418,17 +464,15 @@ For unrestricted fetching in the desktop build, the fix is to move the request
 into Rust (a `tauri-plugin-http` command) so CORS does not apply. Not implemented
 yet.
 
-The filesystem tools are confined to a single root, resolved with `canonicalize`
-so traversal sequences and symlink escapes are rejected. Narrow it by setting
-`AI_APP_FS_ROOT`; it defaults to your home directory.
-
 Native tools require the desktop app and say so plainly in the browser rather
 than failing opaquely.
 
 ## Model selection
 
-The composer rail carries a model picker that reads `/api/models` — OpenRouter's
-public catalog, projected to a slim shape and cached for 15 minutes.
+The composer rail carries a model picker that reads the catalogue — OpenRouter's
+public catalog, projected to a slim shape and cached for 15 minutes. On the
+website it comes from the server; on the desktop it comes from Rust, and it is
+read by the same code either way, so the picker offers the same models.
 
 - Free-only by default, with a reveal-all toggle (zero prompt *and* completion
   pricing, not a naming convention).
@@ -535,8 +579,9 @@ so tool support is intermittent.
   Two that show up in Cursor, Zed and Kimi Code are left out on purpose. Archive
   is the reversible option, and it needs somewhere to read archived threads and a
   way back out of it, which would be a second list rather than a menu item. Move
-  to project needs a project to move to, and `GET /api/projects` returns nothing,
-  so the picker would open empty. An empty picker is worse than no picker.
+  to project needs a project to move to, and the only ones there are the
+  repositories that have been cloned, so the picker would open on a list that is
+  usually empty. An empty picker is worse than no picker.
 - **Code's thread list is grouped by project, and projects are usually
   empty.** A session records the folder it was run against, so that is what the
   grouping uses. `GET /api/projects` currently returns an empty list because
@@ -622,11 +667,12 @@ so tool support is intermittent.
   files are called and where they live. Only `local` has an entry, because only
   `local` has a filesystem behind it.
 - **Effort levels come from OpenRouter's `supported_efforts`.** That is per
-  model and accurate, but it is the *gateway's* view, translated into its own
-  vocabulary: `minimal` is sent to Claude as `low`, and `xhigh` maps down to
-  `high` for Gemini. A model served direct from another provider would need an
-  adapter beside the others in `server/providers.ts` before its real levels could
-  be trusted.
+  model and accurate, and the values are sent exactly as the gateway publishes
+  them — nothing is translated, downgraded or substituted. A level the model
+  does not publish is refused with the list of the ones it does, rather than
+  being sent and failing there. A model served direct from another provider
+  would need an adapter beside the others in `server/providers.ts` before its
+  real levels could be trusted.
 - **There is no "ultracode" effort level.** Claude Code has a toggle by that
   name, but its own docs describe it as a session setting that orchestrates
   subagents, not an effort value — and `ultrathink` is a prompt keyword
@@ -639,9 +685,11 @@ so tool support is intermittent.
 - **Vision and audio models are listed but not usable yet.** Image attachments
   are accepted and shown, but only text is inlined into the prompt — a non-text
   attachment says so in place rather than being dropped silently.
-- **`pnpm tauri build` will not work yet.** The shipping frontend is static
-  with no server behind it. The chat server needs to become a sidecar, or the
-  transport needs to point at a hosted route.
+- **Code cannot write.** It reads the folder you give it, inlines the files you
+  mention, and talks about the change. There is no write path and no shell, so
+  nothing the model says can change your files. The native tools are bounded by
+  a grant: a folder you chose, and a path inside it that is resolved before it
+  is opened. A model cannot name a path on the machine.
 - **The model is always the picker's.** There is no server-side fallback, so a
   request with no selection is refused rather than silently served by a model
   you did not choose. The composer pre-selects the first free model in the

@@ -34,8 +34,7 @@ pub async fn data_directory(app: AppHandle) -> Result<String, String> {
 /// The path comes from the system dialog, so it is a path they picked, and the
 /// write is theirs to make. Nothing here is read from the app: this is the
 /// escape hatch, and it does not need to know what it is writing.
-#[tauri::command]
-pub async fn write_file(path: String, contents: String) -> Result<(), String> {
+fn write_to(path: &str, contents: &str) -> Result<(), String> {
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
         return Err("No file was chosen.".to_string());
@@ -53,8 +52,7 @@ pub async fn write_file(path: String, contents: String) -> Result<(), String> {
 /// The file is read as it is. What is in it is the caller's business, and a
 /// backup that is read and then refused is still a file the user could read
 /// themselves.
-#[tauri::command]
-pub async fn read_file(path: String) -> Result<String, String> {
+fn read_from(path: &str) -> Result<String, String> {
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
         return Err("No file was chosen.".to_string());
@@ -63,9 +61,19 @@ pub async fn read_file(path: String) -> Result<String, String> {
         .map_err(|e| format!("Could not read {}: {e}", target.display()))
 }
 
+#[tauri::command]
+pub async fn write_file(path: String, contents: String) -> Result<(), String> {
+    write_to(&path, &contents)
+}
+
+#[tauri::command]
+pub async fn read_file(path: String) -> Result<String, String> {
+    read_from(&path)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{read_file, write_file};
+    use super::{read_from, write_to};
     use std::fs;
     use std::path::PathBuf;
 
@@ -79,18 +87,14 @@ mod tests {
     #[test]
     fn a_file_is_written_and_read_back() {
         let path = scratch("round-trip");
-        write_file(path.to_string_lossy().to_string(), "hello".to_string())
-            .expect("the write should work");
-        assert_eq!(
-            read_file(path.to_string_lossy().to_string()).expect("the read should work"),
-            "hello"
-        );
+        write_to(&path.to_string_lossy(), "hello").expect("the write should work");
+        assert_eq!(read_from(&path.to_string_lossy()).expect("the read should work"), "hello");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
     fn an_empty_path_is_refused() {
-        assert!(write_file("   ".to_string(), "hello".to_string()).is_err());
-        assert!(read_file("   ".to_string()).is_err());
+        assert!(write_to("   ", "hello").is_err());
+        assert!(read_from("   ").is_err());
     }
 }

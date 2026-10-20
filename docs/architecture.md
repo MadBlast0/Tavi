@@ -19,20 +19,20 @@ behaviour, and the gaps between them, kept apart.
 │    └─ Shell                  src/blocks/shell/              │
 │         └─ the rail, the title bar, the tray bridge         │
 │                                                              │
-│  Storage: localStorage (threads, prefs) + IndexedDB         │
-│           (folder handles)                                   │
+│  Storage: the app's own file (desktop) or localStorage (web) │
+│           + IndexedDB (folder handles)                      │
 └───────────────┬──────────────────────────────┬───────────────┘
                 │ Tauri IPC                    │ HTTP /api/*
                 ▼                              ▼
 ┌───────────────────────────────┐  ┌──────────────────────────┐
 │ Rust (src-tauri)              │  │ Node chat server         │
-│  · window state, tray         │  │  server/chat.ts          │
-│  · OS credential store        │  │  · system prompt         │
-│  · fonts                     │  │  · model catalogue       │
-│  · file reads (tools)        │  │  · clone                 │
-└───────────────────────────────┘  └────────────┬─────────────┘
-                                               │ HTTPS
-                                               ▼
+│  · the provider request       │  │  server/chat.ts          │
+│  · the conversations file     │  │  · system prompt         │
+│  · the workspace grants       │  │  · model catalogue       │
+│  · git, for the clones        │  │  · clone                 │
+│  · the OS credential store    │  └────────────┬─────────────┘
+│  · window state, tray, fonts  │               │ HTTPS
+└───────────────────────────────┘               ▼
                                         OpenRouter
 ```
 
@@ -43,19 +43,20 @@ assistant-ui scaffolding next to it — `src/assistant.tsx`,
 `AssistantSurface`. It is a second chat path that the live app does not take.
 
 **There is one live chat request.** `src/blocks/prompt-input/prompt-block.tsx`
-posts to `/api/chat` with `fetch` and reads the reply itself: a stream of
+posts to the server with `fetch` and reads the reply itself: a stream of
 `data:` lines carrying `text-delta`, `message-metadata`, `finish` and `error`
 events. It does not use the AI SDK's message-stream protocol, and it sends no
-tools.
+tools. `src/lib/chat.ts` chooses between the two servers — the Node one for the
+website, the Rust one for the desktop — and the composer does not know which.
 
 **The folder is a browser grant.** `src/lib/fs-access.ts` uses the File System
 Access API and keeps directory handles in IndexedDB (`tavi-fs`). This is how
 folders are picked and read, on the website and in the Tauri webview alike,
 because WebView2 exposes the same API.
 
-**The Rust file commands are not on the live path.** `list_directory` and
-`read_text_file` are called only by `src/toolkit.tsx`, which is dead code. The
-running app reads a folder through the browser handle.
+**The native tools are bounded by a grant.** The Rust file commands take a
+workspace and a path inside it. A path the model names is not a permission, so
+there is no default root and no fallback to the home directory.
 
 ---
 
@@ -63,22 +64,28 @@ running app reads a folder through the browser handle.
 
 | Data | Where | Key |
 |---|---|---|
-| Chats | `localStorage` | `tavi.chats.v1` |
-| Code sessions | `localStorage` | `tavi.code-sessions.v1` |
+| Chats | the app's own file on the desktop, `localStorage` on the web | `tavi.chats.v1` / `threads.json` |
+| Code sessions | the same file, the same way | `tavi.code-sessions.v1` / `threads.json` |
 | Preferences (model, effort per side; mode per folder) | `localStorage` | `tavi.model.<side>`, `tavi.effort.<side>`, `tavi.mode.<folderId>` |
 | Composer drafts | `localStorage` | `prompt-draft:<side>` (not namespaced) |
 | Folder handles | IndexedDB `tavi-fs` | stores `handles`, `recent-folders` |
+| Workspace grants | the app's own file | `workspaces.json` |
 | API key | OS credential store | service `tavi`, user `openrouter-api-key` |
 | Window geometry | app-data file | `window-state.json` |
 
 `src/lib/threads.ts` holds the vocabulary both thread stores share and the
 factory that builds them, so a chat and a code session cannot drift apart.
-Each store is capped at 50 records; a write that fails on quota is retried with
-the newest 5.
+Each store is capped at 50 records.
 
-**What this means on the desktop:** the conversations are in the *webview's*
-storage, not in the app's data directory. Clearing site data, or a browser
-under pressure, takes them. That is the first gap below.
+`src/lib/thread-repository.ts` is where the two stores meet the world: the
+browser's storage on the website, and the app's own file on the desktop. The
+conversations that were in the webview's storage are brought across the first
+time the app runs on the desktop, and the old copy is only removed once the
+durable one has been read back.
+
+**What this means on the desktop:** the conversations are in the app's data
+directory, written by Rust, with the previous file kept beside it. Clearing
+site data, or a browser under pressure, cannot take them.
 
 ---
 
@@ -107,36 +114,37 @@ proposals or from what the code already does.
 
 | | Gap | What is happening | Fixed by |
 |---|---|---|---|
-| G1 | **Desktop conversations are not durable.** | They live in the webview's `localStorage`. Clearing site data, or eviction, takes them. The app-data directory does not contain the conversations. | Stage 2 |
-| G2 | **The Rust file commands default to the whole home directory.** | `AI_APP_FS_ROOT` is unset, so `fs_root()` falls back to `$HOME`. There is no per-workspace grant. | Stage 3 |
-| G3 | **The packaged desktop app cannot chat.** | The Tauri bundle loads a static Vite build; the chat server is a development process. | Stage 4 |
-| G4 | **The provider key reaches JavaScript.** | `get_api_key` returns the key to the webview, which sends it as a bearer header to the loopback server. | Stage 4 |
-| G5 | **The chat route is unauthenticated and binds every interface.** | `server.listen(PORT)` with no host, no secret. Another machine on the network can post to it. | Stage 4 (desktop: the route does not exist) and Stage 5 (web: loopback by default) |
-| G6 | **The clone flow is minimal.** | A URL, a fixed destination, no progress, no cancel, no retry, and a half-finished clone is left on disk. | Stage 5 |
-| G7 | **The model id is never checked against the catalogue.** | Whatever string arrives is sent to the provider and fails there. | Stage 4 |
+| G1 | ~~**Desktop conversations are not durable.**~~ | They lived in the webview's `localStorage`. Clearing site data, or eviction, took them. | **Stage 2** — one app-data file, written by Rust, with the old copy brought across once and only removed once the new one has been read back. |
+| G2 | ~~**The Rust file commands default to the whole home directory.**~~ | `AI_APP_FS_ROOT` was unset, so `fs_root()` fell back to `$HOME`. There was no per-workspace grant. | **Stage 3** — a grant is a canonical path the user chose; there is no default root, and the commands refuse without one. |
+| G3 | ~~**The packaged desktop app cannot chat.**~~ | The Tauri bundle loads a static Vite build; the chat server was a development process. | **Stage 4** — Rust makes the provider request. There is no server behind the desktop app at all. |
+| G4 | ~~**The provider key reaches JavaScript.**~~ | `get_api_key` returned the key to the webview, which sent it as a bearer header to the loopback server. | **Stage 4** — the key is read in Rust, used there, and there is no command that hands it out. |
+| G5 | ~~**The chat route is unauthenticated and binds every interface.**~~ | `server.listen(PORT)` with no host and no secret. | **Stage 4** for the desktop — the route does not exist there. The website's server still has no accounts, so it is a website's own problem; see `docs/later-on.md`. |
+| G6 | ~~**The clone flow is minimal.**~~ | A URL, a fixed destination, no progress, no cancel, no retry, and a half-finished clone left on disk. | **Stage 5** — the destination is confirmed, progress is reported, a clone can be stopped, and a failure cleans up after itself. |
+| G7 | ~~**The model id is never checked against the catalogue.**~~ | Whatever string arrived was sent to the provider and failed there. | **Stage 4** — the effort is checked against what the model publishes, and a level that cannot be verified is refused. |
 
 ---
 
 ## 5. The stages
 
-Each stage leaves the app working, and each is a commit.
+Each stage left the app working, and each is a commit.
 
-| Stage | What it does | Closes |
+| Stage | What it did | Closes |
 |---|---|---|
 | 1 | This map, and the boundaries above. | — |
 | 2 | **Durable desktop storage.** Rust owns an app-data file of threads; the frontend talks to a repository instead of to `localStorage`; the existing `localStorage` threads are imported once and only removed after the durable write is verified. | G1 |
-| 3 | **Workspace grants.** Rust keeps a grant store; the file commands require a grant and fail closed without one; the grant is what a folder *is* on the desktop. | G2 |
-| 4 | **Rust owns the provider call.** The model catalogue, the system prompt, the chat request and the stream all move into Rust for the desktop. The key never enters JavaScript. The web server is hardened. | G3, G4, G5, G7 |
-| 5 | **A professional clone flow.** The destination is shown and editable, progress is reported, a clone can be cancelled, a failure cleans up after itself, and the result can be attached as a grant. | G6 |
-| 6 | **The UI that goes with it.** Storage and privacy settings, export and import, the no-workspace empty state, and honest error and cancel states. | — |
-| 7 | **The tests, the docs, and the README.** | — |
+| 3 | **Workspace grants.** Rust keeps a grant store; the file commands require a grant and fail closed without one; the grant is what a folder *is* for the native tools. | G2 |
+| 4 | **Rust owns the provider call.** The model catalogue, the system prompt, the chat request and the stream all moved into Rust for the desktop. The key never enters JavaScript. The catalogue is read by the same code on both targets. | G3, G4, G5, G7 |
+| 5 | **A proper clone flow.** The destination is shown and confirmed, progress is reported, a clone can be cancelled, a failure cleans up after itself, and it runs in Rust on the desktop. | G6 |
+| 6 | **The UI that goes with it.** Storage and privacy settings: where the data is, what leaves the machine, export, import, and delete. The provider key can be set from the settings. | — |
+| 7 | **The tests and the docs.** | — |
 
 ---
 
 ## 6. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
-- **Shell commands.** Not built, not planned, and not in the model`'s hands.
+- **Shell commands.** Not built, not planned, and not in the model's hands.
 - **A hosted API.** There are no accounts.
 - **Several provider connections.** OpenRouter only, for now; the other adapters stay in the web path.
 - **A database.** B6.
+- **The assistant-ui surface.** `src/assistant.tsx`, `src/components/thread.aui.tsx` and the toolkit beside it are not mounted. They are the second chat path, kept for the toolkit and its native tools, and the app does not take them.

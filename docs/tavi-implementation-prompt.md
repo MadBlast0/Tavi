@@ -352,6 +352,17 @@ For every recommendation, distinguish current observed implementation from propo
 
 # Repository-specific review: Tavi as it exists today
 
+> **This is a snapshot from before the work.** It was a read-only review of
+> `C:\Storage\Coding\Tavi` on 2026-10-20, and it records what was true then.
+> Several of the gaps it found have since been closed: the conversations are
+> in the app's own file, the native tools are bounded by a grant rather than
+> by the home directory, the desktop app makes its provider request in Rust,
+> and the clone runs on the machine the app is on. `docs/architecture.md` has
+> what is true now, and `docs/later-on.md` has what is still open.
+>
+> The section is kept as it was written, because it is the record of what the
+> plan was written against.
+
 This section was added after a read-only review of `C:\Storage\Coding\Tavi` on 2026-10-20. It is authoritative for tailoring this prompt to the current repository. It does not claim these features have been implemented; it records observed code/docs and identifies proposed work. Do not edit the repository as part of reviewing this prompt.
 
 ## Observed repository facts
@@ -503,10 +514,11 @@ behind `invoke`.
 | The data is… | Store it in | Because |
 |---|---|---|
 | A preference the user picked and could re-type | `localStorage` | Synchronous, needed on first paint |
-| **Chats** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
-| **Code sessions** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
+| **Chats** | the app's own file (desktop), `localStorage` (web) | See "Threads" below |
+| **Code sessions** | the app's own file (desktop), `localStorage` (web) | See "Threads" below |
 | **Composer drafts** | `localStorage` | One per side, and small enough to be worth keeping |
 | A folder handle the browser granted | IndexedDB | Handles cannot go in `localStorage` |
+| A folder the native tools may reach | the app's own file | A grant, so a path the model names is not a permission |
 | An API key or other secret | OS credential store, via Rust | Never any web storage |
 | A regenerated cache | Cache dir / temp, never persisted | Wipe is harmless |
 
@@ -620,14 +632,22 @@ stores, with separate shapes and separate caps:
 | Grouped by | nothing; the list is flat | the project it was run against |
 | Id prefix | `c-` | `s-` |
 
-Both are a single JSON array in `localStorage`, capped at 50, with attachment
-text captured at send time so a restored thread keeps its context.
+Each is a single JSON array, capped at 50, with attachment text captured at send
+time so a restored thread keeps its context.
+
+**Where the array lives is `src/lib/thread-repository.ts`'s business.** The
+website keeps it in `localStorage`; the desktop app keeps it in the app's own
+data directory, in one file with two collections, written by Rust. The
+conversations that were in the webview's storage are brought across the first
+time the app runs on the desktop, and the old copy is only removed once the
+durable one has been read back.
 
 - **Website:** fine as-is at this size. If threads grow to include full file
   contents, move to IndexedDB — the 5 MB `localStorage` ceiling would be hit
   by roughly one long thread with attachments.
-- **Desktop:** same today, with the same eviction caveat. Moving to a file in
-  the app-data directory is the correct end state.
+- **Desktop:** the app's own file, with the previous one kept beside it. The
+  write is atomic, and a file this build does not understand is refused rather
+  than replaced.
 
 **The composer's drafts are per side too**, and they are not namespaced: the
 key is `prompt-draft:chat` and `prompt-draft:code`. A half-written chat is
@@ -763,21 +783,31 @@ directly — treat them as implementation detail. The practical consequences:
 
 ## What to change for a shipping desktop app
 
-1. **Move threads and preferences to an app-data file**, written from Rust, so
+1. ~~**Move threads and preferences to an app-data file**, written from Rust, so
    uninstall/reinstall is a deliberate choice rather than a side effect and
    "clear browser data" cannot silently wipe a user's work. One file with two
    collections, rather than two files, so the app-data directory does not
-   become a place where half the state is and half is not.
-2. **Add an export/import** for threads. Until the desktop app owns its storage,
-   a user has no way to back up or move their conversations. It has to cover
-   both stores, or the export is only half of somebody's work.
-3. **Bound the thread stores.** The web cap is 50 threads each; the desktop
-   file needs an explicit size policy instead of relying on a browser quota.
+   become a place where half the state is and half is not.~~
+   **Done.** The conversations are in `threads.json` in the app-data directory,
+   written by Rust, with the previous file kept beside it. The preferences are
+   still in `localStorage` — they are small, and the composer needs the model
+   during its first render, where a promise is useless.
+2. ~~**Add an export/import** for threads. Until the desktop app owns its
+   storage, a user has no way to back up or move their conversations. It has to
+   cover both stores, or the export is only half of somebody's work.~~
+   **Done.** Settings → Privacy exports both collections to a JSON file and
+   imports one back, adding what is not already here.
+3. ~~**Bound the thread stores.** The web cap is 50 threads each; the desktop
+   file needs an explicit size policy instead of relying on a browser quota.~~
+   **Done.** The cap is 50 each, on both targets, and the list is newest first
+   so the conversation in use is never the one the cap drops.
 4. **Decide the upgrade story** for a schema change to the stored shape. The
    keys are versioned (`tavi.chats.v1`, `tavi.code-sessions.v1`), and the
    one-time changes that have already happened — the retired thread store, the
    model and the effort splitting per side — live in `src/lib/migrations.ts`.
-   There is no general migration path yet.
+   There is no general migration path yet, and the app-data file has a version
+   of its own: a file this build does not understand is refused rather than
+   replaced, which is safe but not a migration.
 
 None of this is needed for the web target, and none of it should block it.
 
