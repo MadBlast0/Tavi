@@ -17,9 +17,9 @@
  *   back on the next read.
  */
 
-import { forgetStorage, readStorage, writeStorage } from "@/lib/storage"
-import { PREF, sidePref } from "@/lib/prefs"
-import { SIDES } from "@/lib/sides"
+import { forgetStorage, readStorage, writeStorage } from "./storage.ts"
+import { PREF, sidePref } from "./prefs.ts"
+import { SIDES } from "./sides.ts"
 
 /**
  * The single store the app used to keep, before chats and code sessions were

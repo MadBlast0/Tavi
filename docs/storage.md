@@ -15,6 +15,7 @@ behind `invoke`.
 | A preference the user picked and could re-type | `localStorage` | Synchronous, needed on first paint |
 | **Chats** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
 | **Code sessions** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
+| **Composer drafts** | `localStorage` | One per side, and small enough to be worth keeping |
 | A folder handle the browser granted | IndexedDB | Handles cannot go in `localStorage` |
 | An API key or other secret | OS credential store, via Rust | Never any web storage |
 | A regenerated cache | Cache dir / temp, never persisted | Wipe is harmless |
@@ -102,6 +103,12 @@ takes it all. That is acceptable for preferences and acceptable for threads on
 the web target, but it is *not* acceptable for a desktop app, where the user
 installed software and expects it to remember. That is the case for moving to
 an app-data file — see "What to change for desktop".
+
+Two stores are twice the exposure: the two are evicted independently, so a
+browser under pressure may take one and leave the other. They are also capped
+independently, so a long run of code sessions can push a chat out of the cap
+without a single chat being lost — the two lists do not compete for the same
+fifty slots.
 
 ---
 

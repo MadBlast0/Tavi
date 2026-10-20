@@ -26,8 +26,8 @@
  * the app had before it was renamed, belong to `storage.ts`.
  */
 
-import { readStorage, writeStorage } from "@/lib/storage";
-import type { Side } from "@/lib/sides";
+import { readStorage, writeStorage } from "./storage.ts";
+import type { Side } from "./sides.ts";
 
 export const readPref = (name: string): string | undefined => readStorage(name);
 

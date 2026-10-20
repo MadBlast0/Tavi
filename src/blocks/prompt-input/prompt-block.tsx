@@ -41,12 +41,14 @@ import {
 import {
   findChat,
   listChats,
+  onChatsChanged,
   saveChat,
   type StoredChat,
 } from "@/lib/chats"
 import {
   findSession,
   listSessions,
+  onSessionsChanged,
   saveSession,
   type StoredSession,
 } from "@/lib/sessions"
@@ -987,10 +989,10 @@ export function PromptBlock() {
         setActiveBySide((current) =>
           current[side] === null ? current : { ...current, [side]: null },
         )
-        if (side === "code") {
-          setFolderId(undefined)
-          setMode(readPref(PREF.mode) ?? "edit")
-        }
+        /* The folder and the agent mode are left alone.
+           The folder is the side's, not the thread's: it is what the composer
+           is pointed at, and a new session starts where the last one was left.
+           The mode is settled by the effect below, which knows the folder. */
         return
       }
 
@@ -1515,6 +1517,9 @@ export function PromptBlock() {
     const base = {
       turns: await toStoredTurns(next, projectFiles),
       model: write.model || undefined,
+      /* The name as well as the id, so a thread says what answered it in the
+         words a person reads. */
+      modelName: write.model ? realNames[write.model] : undefined,
       effort: write.effort || undefined,
       usage: write.usage ?? undefined,
     }
@@ -1680,6 +1685,32 @@ export function PromptBlock() {
     loadThread(variant, activeBySide[variant])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant])
+
+  /**
+   * A thread that is deleted while it is open stops being open.
+   *
+   * The rail's context menu can delete the thread the composer is showing, and
+   * the composer has to notice: a conversation that no longer exists is not a
+   * conversation. The stores say so themselves, so the composer listens to
+   * them rather than to the rail.
+   */
+  const loadThreadRef = React.useRef(loadThread)
+  loadThreadRef.current = loadThread
+  React.useEffect(() => {
+    const check = () => {
+      const side = variant
+      const id = activeBySide[side]
+      if (!id) return
+      const record = side === "chat" ? findChat(id) : findSession(id)
+      if (!record) loadThreadRef.current(side, null)
+    }
+    const stopChats = onChatsChanged(check)
+    const stopSessions = onSessionsChanged(check)
+    return () => {
+      stopChats()
+      stopSessions()
+    }
+  }, [variant, activeBySide])
 
   /* The composer text is mirrored into a ref, because the idle rotation has to
      know whether the box is empty before it turns the starters over, and

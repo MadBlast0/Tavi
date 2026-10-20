@@ -32,10 +32,14 @@ import {
   SidebarMenuItem,
 } from "@/components/sidebar"
 import { useComposerVariant } from "@/blocks/prompt-input/composer-variant"
-import { useThreadBridge } from "@/blocks/prompt-input/thread-bridge"
+import {
+  useNewThread,
+  useThreadBridge,
+} from "@/blocks/prompt-input/thread-bridge"
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
 import { listChats, onChatsChanged } from "@/lib/chats"
+import { listRecentFolders } from "@/lib/fs-access"
 import {
   listSessions,
   onSessionsChanged,
@@ -262,14 +266,23 @@ function sortThreads(sessions: RailThread[], sort: Sort) {
  * The key is the folder's id and the heading is its name: the id is what
  * identifies a folder, and the name is what a person reads. Two projects whose
  * directories share a name are two groups, not one.
+ *
+ * The name comes from the recents list where the app has one, so a folder that
+ * has been renamed on disk is called by its new name rather than by the name
+ * that was recorded when the session was run.
  */
-function groupByProject(sessions: RailThread[]) {
+function groupByProject(sessions: RailThread[], folderNames: Record<string, string>) {
   const groups = new Map<string, { name: string; threads: RailThread[] }>()
   for (const session of sessions) {
     const key = session.folder || NO_FOLDER
     const bucket = groups.get(key)
     if (bucket) bucket.threads.push(session)
-    else groups.set(key, { name: session.folderName || NO_FOLDER, threads: [session] })
+    else {
+      groups.set(key, {
+        name: (session.folder && folderNames[session.folder]) || session.folderName || NO_FOLDER,
+        threads: [session],
+      })
+    }
   }
   return [...groups.entries()]
 }
@@ -374,18 +387,10 @@ function ThreadRow({
     <ThreadContextMenu thread={thread}>
       <SidebarMenuButton
         size="sm"
-        className={THREAD}
+        className={cn(THREAD, "h-auto min-h-7 py-1")}
         isActive={active}
         onClick={() => onOpen(thread.id)}
-        title={
-          /* The row is one line, so the model and the project live in the
-             tooltip rather than in a second line of text. The title is still
-             first, because it is what the row shows and what a long one is
-             truncated from. */
-          [thread.title, thread.model, thread.folderName]
-            .filter(Boolean)
-            .join(" · ")
-        }
+        title={thread.title}
       >
         {/* The pin says this thread is one to come back to. It is drawn rather
             than only felt through ordering, because a pin you cannot see is a
@@ -407,7 +412,15 @@ function ThreadRow({
             className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+        {/* The title, and under it the model that answered it. Two lines,
+            because the model is the one thing that differs between the
+            threads in a list and the list does not say it anywhere else. */}
+        <span className="flex min-w-0 flex-1 flex-col items-start">
+          <span className="min-w-0 max-w-full truncate">{thread.title}</span>
+          <span className="min-w-0 max-w-full truncate text-[0.6875rem] leading-tight text-sidebar-foreground/50">
+            {thread.modelName ?? thread.model ?? "No model"}
+          </span>
+        </span>
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
@@ -430,6 +443,7 @@ function ThreadRow({
 export function SidebarNav() {
   const { variant } = useComposerVariant()
   const bridge = useThreadBridge()
+  const newThread = useNewThread()
   /* The two lists, kept apart.
      A chat is not a code session, so the rail is not one list drawn twice: it
      is two lists, and the switch says which of them you are looking at. */
@@ -439,6 +453,7 @@ export function SidebarNav() {
       title: chat.title,
       updatedAt: chat.updatedAt,
       model: chat.model,
+      modelName: chat.modelName,
       pinnedAt: chat.pinnedAt,
       side: "chat" as const,
     })),
@@ -449,6 +464,7 @@ export function SidebarNav() {
       title: session.title,
       updatedAt: session.updatedAt,
       model: session.model,
+      modelName: session.modelName,
       folder: session.folder,
       folderName: session.folderName,
       pinnedAt: session.pinnedAt,
@@ -466,6 +482,27 @@ export function SidebarNav() {
   const sort = sortByMode[variant]
 
   /**
+   * The names of the folders this app has been granted.
+   *
+   * Read from the recents list, so a folder that has been renamed on disk is
+   * called by its new name. The session record keeps the name it was run with,
+   * which is what a session that belongs to a folder nobody has picked any more
+   * still shows.
+   */
+  const [folderNames, setFolderNames] = React.useState<Record<string, string>>({})
+
+  React.useEffect(() => {
+    const refresh = () => {
+      void listRecentFolders().then((folders) =>
+        setFolderNames(Object.fromEntries(folders.map((f) => [f.id, f.name]))),
+      )
+    }
+    refresh()
+    window.addEventListener("focus", refresh)
+    return () => window.removeEventListener("focus", refresh)
+  }, [])
+
+  /**
    * The projects, with their sessions, in the order the reader chose.
    *
    * The groups are ordered by the same rule as the threads inside them: a list
@@ -473,7 +510,7 @@ export function SidebarNav() {
    * their own.
    */
   const codeGroups = React.useMemo(() => {
-    const groups = groupByProject(sessions).map(
+    const groups = groupByProject(sessions, folderNames).map(
       ([key, group]) =>
         [key, { name: group.name, threads: sortThreads(group.threads, sort) }] as const,
     )
@@ -483,7 +520,7 @@ export function SidebarNav() {
       if (!first || !other) return 0
       return compareThreads(first, other, sort)
     })
-  }, [sessions, sort])
+  }, [sessions, sort, folderNames])
 
   /* The composer writes threads whenever a message is sent, and it writes them
      straight to the store rather than through here. So this listens to the
@@ -498,6 +535,7 @@ export function SidebarNav() {
           title: chat.title,
           updatedAt: chat.updatedAt,
           model: chat.model,
+          modelName: chat.modelName,
           pinnedAt: chat.pinnedAt,
           side: "chat" as const,
         })),
@@ -508,6 +546,7 @@ export function SidebarNav() {
           title: session.title,
           updatedAt: session.updatedAt,
           model: session.model,
+          modelName: session.modelName,
           folder: session.folder,
           folderName: session.folderName,
           pinnedAt: session.pinnedAt,
@@ -527,7 +566,11 @@ export function SidebarNav() {
   }, [])
 
   function onNew() {
-    bridge.functions.current?.reset(variant)
+    /* Through the same path the tray and the menu take, so that a queued
+       tray intent is answered by what the user has just done instead of
+       firing straight afterwards and switching the surface out from under
+       them. */
+    newThread(variant)
   }
 
   function onOpen(id: string) {

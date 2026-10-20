@@ -16,7 +16,7 @@ import {
   type ThreadBase,
   type ThreadDraft,
   type ThreadStore,
-} from "@/lib/threads"
+} from "./threads.ts"
 
 /** What a code session carries that a chat does not. */
 export type SessionExtra = {

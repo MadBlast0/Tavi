@@ -576,8 +576,17 @@ an unknown variant is refused rather than defaulted.
 - The folder and the mode are not global. They live on the session record, and
   the composer reads them from the session it has open.
 - `newSession` clears everything it should and nothing it should not: a new chat
-  has no folder and no mode; a new session starts with the folder's remembered
-  mode and no folder until one is chosen.
+  has no folder and no mode; a new session keeps the folder the composer is
+  pointed at and takes that folder's remembered mode.
+  **This is a change from what this document originally said**, which was that
+  a new session starts with no folder. The reason is the line below: a mode
+  remembered per folder is unreachable if every new session throws its folder
+  away, because there would be no folder to remember it against. It is also
+  what Claude Desktop does — the environment and the project folder are
+  controls in the composer, and they persist across sessions, because somebody
+  working in a repository does not want to pick it again for every session.
+  A session still records the folder it was run against, and opening a session
+  shows that folder rather than the last one.
 - The `@` menu, the file inlining (`expandUserTurn`, `:698-731`) and the code
   starters only ever run in Code. **The inlining is gated by the surface, not
   only by the folder being absent**: `expandUserTurn` resolves `@path`
@@ -611,7 +620,10 @@ folder.
 - The Rename dialog's copy stops promising "the composer's own session list",
   which the composer does not have and never again will.
 - The group order in Code follows the sort the user chose, not insertion order.
-- Pinned threads rise to the top of the list in both surfaces.
+- Pinned threads rise to the top of the list they are in: the top of the list
+  in Chat, and the top of their project group in Code — where the group
+  heading is above it, and a pinned session cannot be above its own project
+  without the grouping being a lie.
 - **The switch can carry a count** of what is on each side — "3 chats", "2
   sessions" — so the rail says what is behind the switch before you take it.
   `IconSwitchOption` (`src/components/icon-switch/icon-switch.tsx:25-29`) is

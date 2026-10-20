@@ -15,7 +15,7 @@ import {
   type ThreadBase,
   type ThreadDraft,
   type ThreadStore,
-} from "@/lib/threads"
+} from "./threads.ts"
 
 /** A chat carries nothing beyond the fields every thread has. */
 export type ChatExtra = Record<never, never>
