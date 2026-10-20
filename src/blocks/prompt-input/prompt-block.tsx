@@ -1187,24 +1187,36 @@ export function PromptBlock() {
           )
         )
         /* The server deliberately has no default, so something must be selected
-           for the composer to be usable at all. The restored preference wins
-           if it is still in the catalogue; otherwise the first free model is
-           named in the picker and can be changed — a visible selection, never a
-           substitution made behind the user's back.
-
-           A model that has since left the *free* pool is still accepted if it
-           exists in the full catalogue, so a paid model the user picked is not
-           silently swapped out from under them. */
-        setModel((current) => {
-          if (current && list.some((m) => m.id === current)) return current
-          return pool[0]?.id ?? current
-        })
+           for the composer to be usable at all. Which side that selection
+           belongs to is settled below, once the catalogue is in state. */
       })
       .catch(() => {})
     return () => {
       current = false
     }
   }, [])
+
+  /**
+   * The side you are on always has a model.
+   *
+   * The restored choice wins if it is still in the catalogue; otherwise the
+   * first free model is named in the picker and can be changed — a visible
+   * selection, never a substitution made behind the user's back.
+   *
+   * It is reconciled per side, so switching to a side that has not chosen one
+   * yet picks for that side and leaves the other side's choice alone. A model
+   * that has since left the *free* pool is still accepted if it exists in the
+   * full catalogue, so a paid model the user picked is not silently swapped out
+   * from under them.
+   */
+  React.useEffect(() => {
+    if (realModels.length === 0) return
+    setModel((current) => {
+      if (current && realModels.some((m) => m.value === current)) return current
+      if (current && realNames[current]) return current
+      return realModels[0]?.value ?? current
+    })
+  }, [realModels, realNames, variant])
 
   /* Persist the picks. Written declaratively so every path that changes them —
      the picker, opening a thread, the restore fallback — is covered once. The
@@ -1346,7 +1358,19 @@ export function PromptBlock() {
         outbound.push({
           id: turn.id,
           role: "user",
-          parts: [{ type: "text", text: await expandUserTurn(turn.message, projectFiles) }],
+          parts: [
+            {
+              type: "text",
+              /* The folder's files are inlined only in Code. A chat has no
+                 repository, and a chat that carried the contents of somebody's
+                 working tree would be a conversation about their files without
+                 their having asked for that. */
+              text: await expandUserTurn(
+                turn.message,
+                write.side === "code" ? projectFiles : [],
+              ),
+            },
+          ],
         })
       }
 
@@ -1821,7 +1845,10 @@ export function PromptBlock() {
         {empty ? (
           <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
             <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">
-              What are we working on?
+              {/* Each side asks its own question. "What are we working on?" is
+                  a code question, and it would be a strange thing to read over
+                  an empty chat. */}
+              {variant === "code" ? "What are we working on?" : "What can I help with?"}
             </h1>
           </div>
         ) : (
@@ -1999,7 +2026,11 @@ export function PromptBlock() {
             {empty ? (
         <PromptInputSuggestions suggestions={suggested} className="pt-3" />
       ) : null}
-            {fileMenu.length > 0 ? (
+            {/* The @ menu lists the files in the folder this session is
+                pointed at, so it belongs to Code. A chat has no folder, and a
+                chat that could mention files in one would be a conversation
+                about somebody's working tree without their having asked. */}
+            {variant === "code" && fileMenu.length > 0 ? (
               <PromptInputMenu trigger="@" items={fileMenu} label="Files" />
             ) : null}
             <PromptInputMenu trigger="/" items={commands} />

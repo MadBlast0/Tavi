@@ -6,6 +6,7 @@ import {
   ClockIcon,
   FolderIcon,
   ListFilterIcon,
+  PinIcon,
   PlusIcon,
   ShapesIcon,
   SlidersHorizontalIcon,
@@ -226,23 +227,29 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "za", label: "Name (Z to A)" },
 ]
 
+/**
+ * How two threads are ordered by the reader's choice.
+ *
+ * The comparison is separated from the sort so that the project groups can be
+ * ordered by the same rule as the threads inside them.
+ */
+function compareThreads(a: RailThread, b: RailThread, sort: Sort) {
+  if (sort === "newest") return b.updatedAt - a.updatedAt
+  if (sort === "oldest") return a.updatedAt - b.updatedAt
+  /* `numeric` so "Session 2" sorts before "Session 10", and base-case so a
+     capitalised title is not exiled to the top of its own group. */
+  const direction = sort === "az" ? 1 : -1
+  return (
+    direction *
+    a.title.localeCompare(b.title, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  )
+}
+
 function sortThreads(sessions: RailThread[], sort: Sort) {
-  const sorted = [...sessions]
-  if (sort === "newest") sorted.sort((a, b) => b.updatedAt - a.updatedAt)
-  else if (sort === "oldest") sorted.sort((a, b) => a.updatedAt - b.updatedAt)
-  else {
-    /* `numeric` so "Session 2" sorts before "Session 10", and base-case so a
-       capitalised title is not exiled to the top of its own group. */
-    const direction = sort === "az" ? 1 : -1
-    sorted.sort(
-      (a, b) =>
-        direction *
-        a.title.localeCompare(b.title, undefined, {
-          numeric: true,
-          sensitivity: "base",
-        }),
-    )
-  }
+  const sorted = [...sessions].sort((a, b) => compareThreads(a, b, sort))
   /* Pinned threads stay at the top whatever order was chosen, the way every one
      of these apps does it — the pin is a statement about which threads matter,
      not about how to read them. Most-recently-pinned first among themselves. */
@@ -276,10 +283,13 @@ function groupByProject(sessions: RailThread[]) {
  */
 function ThreadListHeading({
   label,
+  sortLabel,
   sort,
   onSortChange,
 }: {
   label: string
+  /** What the list is called in the sort control's own words. */
+  sortLabel: string
   sort: Sort
   onSortChange: (sort: Sort) => void
 }) {
@@ -300,7 +310,11 @@ function ThreadListHeading({
               /* No open-state tint here either: the funnel lights up under the
                  pointer and goes out again when it leaves, rather than staying
                  lit while its menu is up. */
-              <Button variant="ghost" size="icon-xs" aria-label="Sort threads" />
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Sort ${sortLabel}`}
+              />
             }
           >
             {/* Three centred lines narrowing downward — the funnel's triangle
@@ -363,8 +377,25 @@ function ThreadRow({
         className={THREAD}
         isActive={active}
         onClick={() => onOpen(thread.id)}
-        title={thread.title}
+        title={
+          /* The row is one line, so the model and the project live in the
+             tooltip rather than in a second line of text. The title is still
+             first, because it is what the row shows and what a long one is
+             truncated from. */
+          [thread.title, thread.model, thread.folderName]
+            .filter(Boolean)
+            .join(" · ")
+        }
       >
+        {/* The pin says this thread is one to come back to. It is drawn rather
+            than only felt through ordering, because a pin you cannot see is a
+            pin you forget you set. */}
+        {thread.pinnedAt ? (
+          <PinIcon
+            aria-hidden="true"
+            className="size-3 shrink-0 text-sidebar-foreground/50"
+          />
+        ) : null}
         {/* The dot says this thread is answering right now. It is driven by
             the live stream rather than by a flag the row makes up, so it
             appears on exactly one row and only while a reply is in flight —
@@ -433,6 +464,26 @@ export function SidebarNav() {
     code: "newest",
   })
   const sort = sortByMode[variant]
+
+  /**
+   * The projects, with their sessions, in the order the reader chose.
+   *
+   * The groups are ordered by the same rule as the threads inside them: a list
+   * that can be ordered one way should not leave its groups in an order of
+   * their own.
+   */
+  const codeGroups = React.useMemo(() => {
+    const groups = groupByProject(sessions).map(
+      ([key, group]) =>
+        [key, { name: group.name, threads: sortThreads(group.threads, sort) }] as const,
+    )
+    return groups.sort((a, b) => {
+      const first = a[1].threads[0]
+      const other = b[1].threads[0]
+      if (!first || !other) return 0
+      return compareThreads(first, other, sort)
+    })
+  }, [sessions, sort])
 
   /* The composer writes threads whenever a message is sent, and it writes them
      straight to the store rather than through here. So this listens to the
@@ -511,19 +562,20 @@ export function SidebarNav() {
       <SidebarGroup className={GROUP}>
         <ThreadListHeading
           label={variant === "code" ? "Sessions" : "Chats"}
+          sortLabel={variant === "code" ? "sessions" : "chats"}
           sort={sort}
           onSortChange={onSortChange}
         />
       </SidebarGroup>
 
       {variant === "code"
-        ? groupByProject(sessions).map(([project, group]) => (
+        ? codeGroups.map(([project, group]) => (
             <SidebarGroup key={project} className={GROUP}>
               <SidebarGroupLabel className={cn(LABEL, "px-1 text-xs text-sidebar-foreground/60")}>
                 {group.name}
               </SidebarGroupLabel>
               <SidebarMenu>
-                {sortThreads(group.threads, sort).map((thread) => (
+                {group.threads.map((thread) => (
                   <ThreadRow
                     key={thread.id}
                     thread={thread}
@@ -550,6 +602,17 @@ export function SidebarNav() {
               </SidebarMenu>
             </SidebarGroup>
           )}
+
+      {/* An empty list says so. A rail with a heading and nothing under it
+          reads as a list that has failed to load rather than one that has
+          nothing in it yet. */}
+      {(variant === "code" ? sessions.length === 0 : chats.length === 0) ? (
+        <SidebarGroup className={GROUP}>
+          <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
+            {variant === "code" ? "No sessions yet." : "No chats yet."}
+          </p>
+        </SidebarGroup>
+      ) : null}
     </>
   )
 }

@@ -7,19 +7,11 @@ import {
   IconSwitch,
   type IconSwitchOption,
 } from "@/components/icon-switch"
+import { listChats, onChatsChanged } from "@/lib/chats"
+import { listSessions, onSessionsChanged } from "@/lib/sessions"
 
 /** Which of the two composer layouts is in force. */
 export type ComposerVariant = "chat" | "code"
-
-/**
- * The two composer layouts. The selected entry shows its icon and label; the
- * other collapses to just its icon, so the control keeps a stable width and the
- * sliding indicator in `ToggleGroup` does the work of showing which is active.
- */
-const VARIANT_OPTIONS: IconSwitchOption<ComposerVariant>[] = [
-  { value: "chat", label: "Chat", icon: <MessageCircleIcon /> },
-  { value: "code", label: "Code", icon: <CodeXmlIcon /> },
-]
 
 type ComposerVariantContextValue = {
   variant: ComposerVariant
@@ -81,21 +73,48 @@ export function useComposerVariant() {
  * items are fully rounded so the indicator inherits that radius and the
  * highlight is a pill.
  *
- * The switch itself is now `IconSwitch`, shared with the theme switch in
- * settings. That is not tidiness for its own sake — both are the same decision
- * (a few options, one of them in force, the control keeping its size whichever
- * is chosen) with the same animation, and as two hand-written copies they would
- * have started to differ the first time either was touched.
+ * Each option carries a count of what is behind it — how many chats, how many
+ * sessions — so the rail says what is on the other side before you take it.
+ * The counts are read from the two stores and kept up to date by their change
+ * signals, because the composer writes to them directly.
  */
 export function ComposerVariantSwitch({ className }: { className?: string }) {
   const { variant, setVariant } = useComposerVariant()
+  const [counts, setCounts] = React.useState({ chat: 0, code: 0 })
+
+  React.useEffect(() => {
+    const refresh = () =>
+      setCounts({ chat: listChats().length, code: listSessions().length })
+    refresh()
+    const stopChats = onChatsChanged(refresh)
+    const stopSessions = onSessionsChanged(refresh)
+    return () => {
+      stopChats()
+      stopSessions()
+    }
+  }, [])
+
+  const options: IconSwitchOption<ComposerVariant>[] = [
+    {
+      value: "chat",
+      label: "Chat",
+      icon: <MessageCircleIcon />,
+      badge: counts.chat || undefined,
+    },
+    {
+      value: "code",
+      label: "Code",
+      icon: <CodeXmlIcon />,
+      badge: counts.code || undefined,
+    },
+  ]
 
   return (
     <IconSwitch
       aria-label="Composer"
       value={variant}
       onValueChange={setVariant}
-      options={VARIANT_OPTIONS}
+      options={options}
       className={className}
     />
   )

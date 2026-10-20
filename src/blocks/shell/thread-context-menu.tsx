@@ -210,8 +210,7 @@ export function ThreadContextMenu({
           <DialogHeader>
             <DialogTitle>Rename thread</DialogTitle>
             <DialogDescription>
-              The name it is listed under in the rail and in the composer&apos;s
-              own session list.
+              The name it is listed under in the rail.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
