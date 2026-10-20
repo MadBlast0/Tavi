@@ -67,11 +67,6 @@ export type ThreadBase = {
   updatedAt: number
   turns: StoredTurn[]
   model?: string
-  /**
-   * The model's name at the time, so a thread says what answered it in the
-   * words a person reads rather than in a provider's identifier.
-   */
-  modelName?: string
   effort?: string
   usage?: StoredUsage
   /**
@@ -88,7 +83,6 @@ export type ThreadBase = {
 export type ThreadDraft<E extends object> = {
   turns: StoredTurn[]
   model?: string
-  modelName?: string
   effort?: string
   usage?: StoredUsage
 } & E

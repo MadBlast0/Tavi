@@ -205,10 +205,8 @@ test("a thread carries the model and the effort it was run with", () => {
   const chat = chats.create({
     turns: [aTurn("hello")],
     model: "some/model",
-    modelName: "Some Model",
     effort: "high",
   });
   assert.equal(chat.model, "some/model");
-  assert.equal(chat.modelName, "Some Model");
   assert.equal(chat.effort, "high");
 });

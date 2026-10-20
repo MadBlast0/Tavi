@@ -1586,9 +1586,6 @@ export function PromptBlock() {
     const base = {
       turns: await toStoredTurns(next, projectFiles),
       model: write.model || undefined,
-      /* The name as well as the id, so a thread says what answered it in the
-         words a person reads. */
-      modelName: write.model ? realNames[write.model] : undefined,
       effort: write.effort || undefined,
       usage: write.usage ?? undefined,
     }

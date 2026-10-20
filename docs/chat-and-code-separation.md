@@ -195,7 +195,7 @@ the line says so.
 | Pin | `:247` | Pinned rises to the top of the **whole list** in chat, of **its own group** in code | ⚠️ inconsistent |
 | Sort control label | `:294` | `aria-label="Sort threads"` — says "threads" in a list headed "Chats" | ⚠️ |
 | Empty state | `:463-476` / `:449` | Chat renders an empty padded group; Code renders nothing at all | ⚠️ |
-| Row | `:337-367` | Title + timestamp, plus a live pulsing dot and the word "Running" on the thread that is answering right now. No folder, no model, no pin mark, no sign of which surface a thread belongs to | ⚠️ the running indicator arrived with the removal of the composer's sessions menu || "New" row | `:407-409` | Calls `bridge.functions.current?.reset()` directly — **not** `useNewThread`. Does not set the variant, does not drain a queued tray intent | ❌ |
+| Row | `:337-367` | Title + timestamp, plus a live pulsing dot and the word "Running" on the thread that is answering right now. One line, the same 28px as the destination rows above it | ✅ || "New" row | `:407-409` | Calls `bridge.functions.current?.reset()` directly — **not** `useNewThread`. Does not set the variant, does not drain a queued tray intent | ❌ |
 | Account row | `sidebar-account.tsx:109` | One row, showing the provider key's plan badge | ✅ **correctly global** — one provider connection and one plan tier serve both surfaces ("Code sessions use the same provider, endpoint, and credentials"). The mock's differing account values were placeholder data. |
 
 ### 3.2 The composer — `src/blocks/prompt-input/prompt-block.tsx`
@@ -619,9 +619,17 @@ folder.
 - The conversation's empty state is per side: Chat asks a different question
   than Code. ("What are we working on?" is a code question.) It stays a bare
   heading, for the reason above.
-- The rail row shows what differs. The project is already the group heading, so
-  the row gains the model — it is the one piece of metadata the old composer
-  sessions menu carried that the rail still does not.
+- **The rail row shows nothing but the title.** An earlier draft put the model
+  that answered the thread under it, on the argument that it was the one piece
+  of metadata the composer's sessions menu carried and the rail did not. The
+  maintainer does not want it: the rail is a list of places to go, and a row that
+  says which model answered it is a row answering a question nobody asked. The
+  thread still records the model it was run with — that is in the record, and
+  opening the thread restores it — but the list does not say it.
+- **A thread row is the same height as a destination row.** One line, 28px, the
+  same as New, Projects, Artifacts, Scheduled and Customize above it. The rail
+  is one list of rows and a row that is taller than the rest of its own list
+  reads as something else in the list.
 - The pin indicator is visible, not only felt through ordering.
 - The Rename dialog's copy stops promising "the composer's own session list",
   which the composer does not have and never again will.
@@ -734,6 +742,7 @@ quietly reversed later.
 | **D10** | **The switch stays in the rail**, not in the composer. | Claude puts Chat-vs-Cowork in the message box because they are the same job, and makes Code a tab because a code session owns a folder and a working tree. Ours is a tab-equivalent switch, so app chrome is the right place. |
 | **D11** | **A turn's thread is decided when the turn is sent**, and carried through to the reply's write. | The composer can change while a reply is on its way — the user can press "New", or switch to the other surface. Reading the composer's state at the moment of the write is what produced two threads with the same conversation in them (B20). |
 | **D12** | **A reply that arrives late does not touch the composer.** It is kept on the thread it was asked on; the composer is left showing whatever it is showing now. | Otherwise one side's conversation ends up under the other side's composer, and the next message there saves it as a thread of the wrong kind (B20). |
+| **D13** | **A thread row in the rail shows the title and nothing else, and is the same height as a destination row.** | The maintainer's decision, against the earlier draft in this document. The rail is a list of places to go; a row that says which model answered it answers a question nobody asked, and a row taller than the rest of its own list reads as something else in the list. The thread still records the model it was run with — that is what the record is for — but the list does not say it. |
 
 ---
 
@@ -810,6 +819,7 @@ mistaken for consequences of it.
 | **The empty states are a bare heading and a plain line, not the vendored `Empty` block.** | The mock is explicit: "The app's empty state is a bare heading, not an Empty block: no icon, no description, no border" (`shell-layout.html:825-829`). |
 | **New bugs B13–B19**, including the open chat route (B14), which the new server rule depends on. | Found by the audit of `server/`, `src-tauri/src/tray.rs` and the README. |
 | **B20 found by the maintainer: a conversation could cross from one surface to the other.** Fixed by D11 and D12, and by two rules made pure and testable in `src/blocks/prompt-input/thread-writes.ts`. | The write read the thread id from the composer's state *after* an await, and a late reply overwrote which thread the composer had open. Both let one side's conversation end up under the other side's composer, and the next message there saved it as a thread of the wrong kind. |
+| **The rail row grew a second line showing the model, and the row became taller than the rows above it.** The maintainer asked for it to be removed and for the row to be the same height as the destination rows. Fixed by D13. | The model is in the record and is restored when the thread is opened; the list does not need to say it. |
 | **D4** and **D8** now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
 | **The composer's sessions menu is removed**, and the rail takes over what it carried — including the live running indicator, which the rail could not show before. §3.1, §3.5 and B4 are updated. | It was a second view of the same list the rail draws, with a "New chat" item inside the **code-only** footer that did not set the variant. Two lists of the same threads is the thing this whole plan exists to undo. |
 

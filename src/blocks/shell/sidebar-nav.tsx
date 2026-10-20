@@ -387,7 +387,7 @@ function ThreadRow({
     <ThreadContextMenu thread={thread}>
       <SidebarMenuButton
         size="sm"
-        className={cn(THREAD, "h-auto min-h-7 py-1")}
+        className={THREAD}
         isActive={active}
         onClick={() => onOpen(thread.id)}
         title={thread.title}
@@ -412,15 +412,7 @@ function ThreadRow({
             className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
           />
         ) : null}
-        {/* The title, and under it the model that answered it. Two lines,
-            because the model is the one thing that differs between the
-            threads in a list and the list does not say it anywhere else. */}
-        <span className="flex min-w-0 flex-1 flex-col items-start">
-          <span className="min-w-0 max-w-full truncate">{thread.title}</span>
-          <span className="min-w-0 max-w-full truncate text-[0.6875rem] leading-tight text-sidebar-foreground/50">
-            {thread.modelName ?? thread.model ?? "No model"}
-          </span>
-        </span>
+        <span className="min-w-0 flex-1 truncate">{thread.title}</span>
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
@@ -453,7 +445,6 @@ export function SidebarNav() {
       title: chat.title,
       updatedAt: chat.updatedAt,
       model: chat.model,
-      modelName: chat.modelName,
       pinnedAt: chat.pinnedAt,
       side: "chat" as const,
     })),
@@ -464,7 +455,6 @@ export function SidebarNav() {
       title: session.title,
       updatedAt: session.updatedAt,
       model: session.model,
-      modelName: session.modelName,
       folder: session.folder,
       folderName: session.folderName,
       pinnedAt: session.pinnedAt,
@@ -535,7 +525,6 @@ export function SidebarNav() {
           title: chat.title,
           updatedAt: chat.updatedAt,
           model: chat.model,
-          modelName: chat.modelName,
           pinnedAt: chat.pinnedAt,
           side: "chat" as const,
         })),
@@ -546,7 +535,6 @@ export function SidebarNav() {
           title: session.title,
           updatedAt: session.updatedAt,
           model: session.model,
-          modelName: session.modelName,
           folder: session.folder,
           folderName: session.folderName,
           pinnedAt: session.pinnedAt,

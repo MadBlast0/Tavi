@@ -13,8 +13,6 @@ export type RailThread = {
   updatedAt: number
   /** The model that answered it, by id. */
   model?: string
-  /** The same model's name, for display. */
-  modelName?: string
   /** The project a session is grouped under. A chat has none. */
   folder?: string
   /** The project's name — what the rail calls it. */
