@@ -1,6 +1,7 @@
 use tauri::AppHandle;
 
 mod appfile;
+mod projects;
 mod provider;
 mod threads;
 mod tray;
@@ -195,6 +196,7 @@ pub fn run() {
         .manage(for_state)
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
+        .manage(projects::Clones::default())
         .invoke_handler(tauri::generate_handler![
             set_api_key,
             clear_api_key,
@@ -203,6 +205,9 @@ pub fn run() {
             provider::cancel_chat,
             provider::model_catalogue,
             provider::key_status,
+            projects::list_projects,
+            projects::clone_repository,
+            projects::cancel_clone,
             threads::read_threads,
             threads::write_threads,
             threads::clear_threads,

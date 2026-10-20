@@ -17,8 +17,8 @@ import { fetchKeyStatus } from "./key-status.ts";
 import { defaultConnection, getCatalog, modelCapabilities } from "./models.ts";
 import {
   cloneRepository,
-  ensureProjectsRoot,
   listProjects,
+  projectsRoot,
 } from "./projects.ts";
 import { adapterFor, type OpenRouterProviderOptions } from "./providers.ts";
 import { buildSystemPrompt, type Variant } from "./system.ts";
@@ -249,11 +249,12 @@ const server = createServer(async (req, res) => {
   }
 
   /* Where cloned repositories live, so the composer can tell the user before
-     they paste a URL rather than after. */
+     they paste a URL rather than after. The folder is not created here: it is
+     made when a clone is actually started. */
   if (url.pathname === "/api/projects") {
     try {
       sendJson(res, 200, {
-        root: await ensureProjectsRoot(),
+        root: projectsRoot(),
         projects: await listProjects(),
       });
     } catch (error) {
@@ -271,15 +272,15 @@ const server = createServer(async (req, res) => {
       sendJson(res, 403, { error: "Cloning is only available to the local app." });
       return;
     }
-    let body: { url?: string };
+    let body: { url?: string; destination?: string };
     try {
       const raw = await readBody(req);
-      body = JSON.parse(raw.toString("utf8")) as { url?: string };
+      body = JSON.parse(raw.toString("utf8")) as { url?: string; destination?: string };
     } catch {
       sendJson(res, 400, { error: "Could not read the request body." });
       return;
     }
-    const result = await cloneRepository(body.url ?? "");
+    const result = await cloneRepository(body.url ?? "", body.destination);
     sendJson(res, result.ok ? 200 : 400, result);
     return;
   }

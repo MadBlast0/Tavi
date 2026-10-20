@@ -11,7 +11,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -43,7 +44,8 @@ export type ProjectSummary = {
 };
 
 export const listProjects = async (): Promise<ProjectSummary[]> => {
-  const root = await ensureProjectsRoot();
+  const root = projectsRoot();
+  if (!existsSync(root)) return [];
   const entries = await readdir(root, { withFileTypes: true });
   const out: ProjectSummary[] = [];
   for (const entry of entries) {
@@ -100,8 +102,14 @@ const MAX_CLONE_MS = 10 * 60 * 1000;
  * metacharacters is passed to `git` as data rather than interpreted. The
  * destination is derived from a sanitised name and is checked for existence
  * first, so an existing project is never overwritten.
+ *
+ * A clone that fails part way through is removed. The projects folder holds
+ * projects, not the debris of attempts.
  */
-export const cloneRepository = (url: string): Promise<CloneResult> =>
+export const cloneRepository = (
+  url: string,
+  destination?: string,
+): Promise<CloneResult> =>
   (async () => {
     const trimmed = url.trim();
     if (!trimmed) return { ok: false, error: "Enter a repository URL." };
@@ -113,12 +121,18 @@ export const cloneRepository = (url: string): Promise<CloneResult> =>
       };
     }
 
-    const root = await ensureProjectsRoot();
+    const root = destination?.trim()
+      ? path.resolve(destination.trim())
+      : await ensureProjectsRoot();
+    if (!existsSync(root)) {
+      return { ok: false, error: `${root} is not a folder.` };
+    }
+
     const name = projectNameFrom(trimmed);
-    const destination = path.join(root, name);
+    const target = path.join(root, name);
 
     try {
-      const info = await stat(destination);
+      const info = await stat(target);
       if (info.isDirectory()) {
         return {
           ok: false,
@@ -133,7 +147,7 @@ export const cloneRepository = (url: string): Promise<CloneResult> =>
     return new Promise<CloneResult>((resolve) => {
       const child = spawn(
         bin,
-        ["clone", "--depth", "1", "--single-branch", "--", trimmed, destination],
+        ["clone", "--depth", "1", "--single-branch", "--", trimmed, target],
         {
           // No shell: arguments reach git as data, never as a command line.
           shell: false,
@@ -174,9 +188,12 @@ export const cloneRepository = (url: string): Promise<CloneResult> =>
       child.on("close", (code) => {
         clearTimeout(timer);
         if (code === 0) {
-          resolve({ ok: true, name, path: destination });
+          resolve({ ok: true, name, path: target });
           return;
         }
+        // A clone that failed leaves a half-made folder behind. It is not a
+        // project, and the next attempt would refuse to overwrite it.
+        rm(target, { recursive: true, force: true }).catch(() => {});
         const detail = stderr.trim().split("\n").slice(-1)[0];
         resolve({
           ok: false,

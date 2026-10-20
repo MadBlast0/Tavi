@@ -55,6 +55,7 @@ import {
 } from "@/lib/threads"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
 import { fetchModels, streamChat, type ChatRequest } from "@/lib/chat"
+import { cancelClone, cloneRepository, listProjects } from "@/lib/projects"
 import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
@@ -888,10 +889,9 @@ export function PromptBlock() {
 
   React.useEffect(() => {
     let current = true
-    fetch("/api/projects")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { root?: string } | null) => {
-        if (current && data?.root) setProjectsRoot(data.root)
+    listProjects()
+      .then((data) => {
+        if (current && data.root) setProjectsRoot(data.root)
       })
       .catch(() => {})
     return () => {
@@ -899,28 +899,31 @@ export function PromptBlock() {
     }
   }, [])
 
-  /** Clones on the server, which is the only place `git` can run. */
+  /**
+   * Clones the repository.
+   *
+   * `git` runs on this machine — in Rust on the desktop, and in the website's
+   * server on the web. Either way the destination is checked first, so an
+   * existing project is never overwritten.
+   */
   const runClone = React.useCallback(async (url: string) => {
     setCloneState({ phase: "cloning", url })
     try {
-      const response = await fetch("/api/projects/clone", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url }),
+      const result = await cloneRepository(url, undefined, (progress) => {
+        setCloneState((state) =>
+          state.phase === "cloning" ? { ...state, progress } : state,
+        )
       })
-      const result = (await response.json()) as
-        | { ok: true; name: string; path: string }
-        | { ok: false; error: string }
       setCloneState(
         result.ok
-          ? { phase: "done", name: result.name, path: result.path }
-          : { phase: "failed", url, error: result.error },
+          ? { phase: "done", name: result.name ?? "", path: result.path ?? "" }
+          : { phase: "failed", url, error: result.error ?? "The clone failed." },
       )
     } catch {
       setCloneState({
         phase: "failed",
         url,
-        error: "Could not reach the local server to clone. Is the app still running?",
+        error: "Could not reach the machine to clone. Is the app still running?",
       })
     }
   }, [])
@@ -2085,6 +2088,10 @@ export function PromptBlock() {
               state={cloneState}
               onSubmit={(url) => void runClone(url)}
               onChoose={() => void browse()}
+              onCancel={() => {
+                void cancelClone()
+                setCloneState({ phase: "idle" })
+              }}
             />
           </PromptInput>
         </div>

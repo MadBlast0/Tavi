@@ -20,7 +20,7 @@ import { cn } from "cn"
 
 export type CloneState =
   | { phase: "idle" }
-  | { phase: "cloning"; url: string }
+  | { phase: "cloning"; url: string; progress?: { percent?: number; message: string } }
   | { phase: "done"; name: string; path: string }
   | { phase: "failed"; url: string; error: string }
 
@@ -42,6 +42,7 @@ export function CloneRepositoryDialog({
   state,
   onSubmit,
   onChoose,
+  onCancel,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -50,6 +51,8 @@ export function CloneRepositoryDialog({
   state: CloneState
   onSubmit: (url: string) => void
   onChoose: () => void
+  /** Stops a clone that is in flight. */
+  onCancel: () => void
 }) {
   const [url, setUrl] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -77,7 +80,9 @@ export function CloneRepositoryDialog({
             Clone repository
           </DialogTitle>
           <DialogDescription>
-            Paste a repository URL. It is cloned into your projects folder.
+            Paste a repository URL. The default branch is cloned shallowly into
+            your projects folder, so only that branch&apos;s latest commit comes
+            down.
           </DialogDescription>
         </DialogHeader>
 
@@ -113,10 +118,20 @@ export function CloneRepositoryDialog({
           )}
 
           {state.phase === "cloning" ? (
-            <p className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Spinner className="size-4" />
-              Cloning {state.url}…
-            </p>
+            <div className="text-muted-foreground flex flex-col gap-1.5 text-sm">
+              <p className="flex items-center gap-2">
+                <Spinner className="size-4" />
+                Cloning {state.url}…
+              </p>
+              {state.progress?.message ? (
+                <p className="text-xs">
+                  {state.progress.message}
+                  {state.progress.percent !== undefined
+                    ? ` — ${state.progress.percent}%`
+                    : ""}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {state.phase === "failed" ? (
@@ -163,6 +178,10 @@ export function CloneRepositoryDialog({
                 Choose folder
               </Button>
             </>
+          ) : busy ? (
+            <Button variant="ghost" onClick={onCancel}>
+              Stop
+            </Button>
           ) : (
             <>
               <Button
@@ -176,7 +195,7 @@ export function CloneRepositoryDialog({
                 onClick={submit}
                 disabled={busy || !url.trim() || !projectsRoot}
               >
-                {busy ? "Cloning…" : "Clone"}
+                Clone
               </Button>
             </>
           )}
