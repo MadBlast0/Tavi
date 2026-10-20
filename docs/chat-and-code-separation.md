@@ -518,10 +518,22 @@ folder.
 
 ### Stage 7 — Documentation, and the dead code
 
+- `docs/storage.md` — the parts that change:
+  - **Preferences** (`:28-38`): model and effort become per side; the mode's
+    default becomes per folder.
+  - **What is deliberately not stored** (`:52-63`): still true that the variant
+    is not stored, and now the model and the effort are remembered *per side*,
+    so the paragraph says so.
+  - **Conversation threads** (`:84-95`): one section becomes two — `chats.v1` and
+    `code-sessions.v1`, two shapes, two caps, two retention policies.
+  - **The namespace** (`:40-50`): gains the one thing the legacy-migration rule
+    does not cover — the old thread key is *deleted*, not moved, and both
+    spellings go. That is the one exception to "a value is moved, never lost".
+  - **The desktop upgrade story** (`:218-228`): item 4's "the key is versioned
+    but there is no migration path" now refers to two keys.
 - `README.md` — a section on the two surfaces, what each one is, what each one
-  owns, and the per-side model/effort memory.
-- `docs/storage.md` — the two keys, the two record shapes, and the fact that
-  the old `sessions.v1` key is gone.
+  owns, and the per-side model/effort memory. The "Known limitations" list loses
+  nothing and gains the Chat surface's rules if any are still open.
 - `src/lib/prefs.ts` — its scope note says "anything larger belongs in
   `sessions.ts`"; it now belongs in `chats.ts` or `sessions.ts`.
 - The dormant assistant-ui stack (B2) is either brought to life or removed. It
