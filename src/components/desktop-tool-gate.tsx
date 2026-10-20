@@ -18,8 +18,8 @@ export const DesktopToolGate = () => {
   const desktop = isDesktopApp();
 
   useAuiToolOverrides({
-    list_directory: { disabled: !desktop },
-    read_text_file: { disabled: !desktop },
+    list_workspace_entries: { disabled: !desktop },
+    read_workspace_file: { disabled: !desktop },
   });
 
   return null;

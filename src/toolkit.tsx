@@ -9,9 +9,25 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 
-import { listDirectory, readTextFile } from "@/lib/desktop";
-import type { DirEntry, ReadFileResult } from "@/lib/desktop";
+import { listWorkspaceEntries, readWorkspaceFile } from "@/lib/desktop";
+import type { WorkspaceEntry, WorkspaceFile } from "@/lib/desktop";
 import { evaluateExpression } from "@/lib/expression";
+
+/**
+ * The workspace the file tools are bound to.
+ *
+ * The model may name a file inside a workspace. It may not name a workspace,
+ * and it may not name a path: a path the model wrote is not a permission, and
+ * the boundary is the folder the user chose. The app binds the workspace here
+ * when a session opens, and the tools refuse to do anything while there is
+ * none.
+ */
+let boundWorkspace: string | null = null;
+
+/** Binds the file tools to a workspace, or unbinds them with `null`. */
+export const bindWorkspace = (id: string | null) => {
+  boundWorkspace = id;
+};
 
 const formatBytes = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -43,7 +59,7 @@ const DirListRenderer = ({
   result,
 }: {
   args: { path: string };
-  result?: DirEntry[];
+  result?: WorkspaceEntry[];
 }) => {
   if (!result) return <PendingRow label="Listing" path={args.path} />;
   if (result.length === 0) {
@@ -85,7 +101,7 @@ const FilePreviewRenderer = ({
   error,
 }: {
   args: { path: string };
-  result?: ReadFileResult;
+  result?: WorkspaceFile;
   error?: string;
 }) => {
   if (error) return <ErrorRow label="Reading file" message={error} />;
@@ -205,38 +221,54 @@ export default defineToolkit({
     },
   },
 
-  list_directory: {
+  list_workspace_entries: {
     description:
-      "List the files and folders at a path on this machine. Desktop app only.",
+      "List the files and folders in the folder the session is attached to. Desktop app only.",
     parameters: z.object({
-      path: z.string().describe("Absolute directory path to list"),
+      path: z
+        .string()
+        .describe(
+          "Path inside the folder, relative to it. Use an empty string for the folder itself.",
+        ),
     }),
     execute: async ({ path }) => {
       "use client";
+      if (!boundWorkspace) {
+        return {
+          entries: undefined,
+          error: "This session is not attached to a folder.",
+        };
+      }
       try {
-        return { entries: await listDirectory(path), error: undefined };
+        return {
+          entries: await listWorkspaceEntries(boundWorkspace, path),
+          error: undefined,
+        };
       } catch (e) {
         return {
           entries: undefined,
-          error: e instanceof Error ? e.message : "Could not list directory.",
+          error: e instanceof Error ? e.message : "Could not list the folder.",
         };
       }
     },
     render: ({ args, result }) => {
       if (result?.error) {
-        return <ErrorRow label="Listing directory" message={result.error} />;
+        return <ErrorRow label="Listing folder" message={result.error} />;
       }
       return (
-        <DirListRenderer args={args} result={result?.entries as DirEntry[] | undefined} />
+        <DirListRenderer
+          args={args}
+          result={result?.entries as WorkspaceEntry[] | undefined}
+        />
       );
     },
   },
 
-  read_text_file: {
+  read_workspace_file: {
     description:
-      "Read a UTF-8 text file from this machine, optionally capped in size. Desktop app only.",
+      "Read a UTF-8 text file from the folder the session is attached to, optionally capped in size. Desktop app only.",
     parameters: z.object({
-      path: z.string().describe("Absolute file path to read"),
+      path: z.string().describe("Path to the file, relative to the folder"),
       maxBytes: z
         .number()
         .int()
@@ -247,8 +279,17 @@ export default defineToolkit({
     }),
     execute: async ({ path, maxBytes }) => {
       "use client";
+      if (!boundWorkspace) {
+        return {
+          file: undefined,
+          error: "This session is not attached to a folder.",
+        };
+      }
       try {
-        return { file: await readTextFile(path, maxBytes), error: undefined };
+        return {
+          file: await readWorkspaceFile(boundWorkspace, path, maxBytes),
+          error: undefined,
+        };
       } catch (e) {
         return {
           file: undefined,
@@ -259,7 +300,7 @@ export default defineToolkit({
     render: ({ args, result }) => (
       <FilePreviewRenderer
         args={args}
-        result={result?.file as ReadFileResult | undefined}
+        result={result?.file as WorkspaceFile | undefined}
         error={result?.error}
       />
     ),
