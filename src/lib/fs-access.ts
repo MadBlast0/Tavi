@@ -187,6 +187,18 @@ export const restoreFolder = async (id: string): Promise<DirHandle | null> => {
 }
 
 /**
+ * Whether the browser still lets this app reach a folder.
+ *
+ * A folder whose access has been revoked — in the browser's site settings, or
+ * by the operating system — is one this app cannot read any more, and saying
+ * so is better than a project whose files quietly are not there.
+ */
+export const folderIsGranted = async (id: string): Promise<boolean> => {
+  const handle = await restoreFolder(id)
+  return handle !== null
+}
+
+/**
  * Asks the user for a folder, and returns the browser's handle for it.
  *
  * The handle is what grants the access; the id is what the app remembers it

@@ -33,6 +33,7 @@ import {
 } from "./file-rules.ts"
 import {
   forgetFolder,
+  folderIsGranted,
   listProjectFiles,
   listRecentFolders,
   pickFolder,
@@ -83,7 +84,16 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
     }));
   }
   const folders = await listRecentFolders();
-  return folders.map((folder) => ({ id: folder.id, name: folder.name }));
+  /* A folder whose access has been revoked is one this app cannot read, and
+     it is marked so the picker can offer to pick it again. */
+  const grants = await Promise.all(
+    folders.map(async (folder) => ({
+      id: folder.id,
+      name: folder.name,
+      missing: !(await folderIsGranted(folder.id)),
+    })),
+  );
+  return grants;
 };
 
 /**
