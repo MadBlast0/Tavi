@@ -756,3 +756,12 @@ does, so a reader is not misled by two halves of the app disagreeing about
 where a choice is remembered.
 
 Test files and other unused archive data were removed on import.
+
+## Documentation
+
+[`docs/`](docs/) holds two kinds of document, kept apart on purpose: the
+documents in `docs/` describe the app **as it is** — how it is put together
+and where its data lives — and the documents in [`docs/plan/`](docs/plan/)
+describe the app **as it is meant to become**, which is to say what is still
+deferred and what has not been built. [`docs/README.md`](docs/README.md) says
+which is which.

@@ -21,7 +21,7 @@ import path from "node:path";
  *
  * Precedence: an explicit `TAVI_PROJECTS_DIR`, then a marker file written by
  * the installer (which is planned but not built yet), then a per-user default.
- * A settings UI that writes this location is also planned; see docs/later-on.md.
+ * A settings UI that writes this location is also planned; see docs/plan/later-on.md.
  */
 export const projectsRoot = (): string => {
   const override = process.env.TAVI_PROJECTS_DIR?.trim();

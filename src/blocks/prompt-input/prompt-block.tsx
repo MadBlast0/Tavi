@@ -285,7 +285,7 @@ const commands: PromptMenuItem[] = [
  * There is deliberately no state behind this. The value cannot be anything but
  * `local` yet, and a state variable that can only ever hold one value is a lie
  * about how much the app can do. It becomes real state when a remote transport
- * exists - see `docs/later-on.md`.
+ * exists - see `docs/plan/later-on.md`.
  */
 const ENVIRONMENTS: PromptOption[] = [
   {

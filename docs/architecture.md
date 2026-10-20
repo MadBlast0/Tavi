@@ -5,7 +5,8 @@ changed. This is the map the implementation plan asked for: current behaviour,
 intended behaviour, and the gaps between them, kept apart. It began as the map
 for the brief the durable storage, the workspace grants and the Rust provider
 path were built from; that brief is gone, and this is what it left behind,
-together with `docs/storage.md` for where the data lives.
+together with [`storage.md`](storage.md) for where the data lives and
+[`plan/later-on.md`](plan/later-on.md) for what is still deferred.
 
 ---
 
@@ -124,7 +125,7 @@ proposals or from what the code already does.
 | G2 | ~~**The Rust file commands default to the whole home directory.**~~ | `AI_APP_FS_ROOT` was unset, so `fs_root()` fell back to `$HOME`. There was no per-workspace grant. | **Stage 3** — a grant is a canonical path the user chose; there is no default root, and the commands refuse without one. |
 | G3 | ~~**The packaged desktop app cannot chat.**~~ | The Tauri bundle loads a static Vite build; the chat server was a development process. | **Stage 4** — Rust makes the provider request. There is no server behind the desktop app at all. |
 | G4 | ~~**The provider key reaches JavaScript.**~~ | `get_api_key` returned the key to the webview, which sent it as a bearer header to the loopback server. | **Stage 4** — the key is read in Rust, used there, and there is no command that hands it out. |
-| G5 | ~~**The chat route is unauthenticated and binds every interface.**~~ | `server.listen(PORT)` with no host and no secret. | **Stage 4** for the desktop — the route does not exist there. The website's server still has no accounts, so it is a website's own problem; see `docs/later-on.md`. |
+| G5 | ~~**The chat route is unauthenticated and binds every interface.**~~ | `server.listen(PORT)` with no host and no secret. | **Stage 4** for the desktop — the route does not exist there. The website's server still has no accounts, so it is a website's own problem; see `docs/plan/later-on.md`. |
 | G6 | ~~**The clone flow is minimal.**~~ | A URL, a fixed destination, no progress, no cancel, no retry, and a half-finished clone left on disk. | **Stage 5** — the destination is confirmed, progress is reported, a clone can be stopped, and a failure cleans up after itself. |
 | G7 | ~~**The model id is never checked against the catalogue.**~~ | Whatever string arrived was sent to the provider and failed there. | **Stage 4** — the effort is checked against what the model publishes, and a level that cannot be verified is refused. |
 | G8 | **A TypeScript file could not be read.** The browser reports `.ts` as `video/mp2t`, so every `@` mention of a TypeScript file said it could not be read. | Whether a file is text is now decided by its bytes, on both targets. |
