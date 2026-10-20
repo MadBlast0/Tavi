@@ -5,11 +5,14 @@ import {
   ArrowUpIcon,
   CheckIcon,
   CircleHelpIcon,
+  FolderOpenIcon,
+  GitBranchIcon,
   MicIcon,
   SquareIcon,
   PaperclipIcon,
   PlusIcon,
   SearchIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react"
 import { cn } from "cn"
@@ -24,6 +27,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu"
 import {
@@ -1900,6 +1906,163 @@ function PromptInputSelect({
   )
 }
 
+/**
+ * The folder picker.
+ *
+ * Not the generic select, because a folder can be **forgotten**, and
+ * forgetting belongs to *that* folder rather than to whatever happens to be
+ * selected. A row at the foot of the menu saying "Forget" acts on the selected
+ * folder, which is the wrong folder the moment the reader is looking at
+ * another one.
+ *
+ * So every row is a submenu, and right-clicking the row opens it. The submenu
+ * opens on a right-click rather than on a hover, because a submenu that popped
+ * open under the pointer every time the list was swept would be noise, and this
+ * one has a single item in it.
+ *
+ * **Forgetting a folder takes it out of this list and nothing else.** The
+ * sessions that were run against it keep their history, keep the project they
+ * were run against, and stay in the rail — forgetting where to work from is not
+ * the same as throwing the work away.
+ */
+function PromptInputFolderSelect({
+  folders,
+  value,
+  onValueChange,
+  onForget,
+  onOpenFolder,
+  onClone,
+  label,
+  placeholder,
+  icon,
+}: {
+  /** The folders this app has been granted access to. */
+  folders: { id: string; name: string }[]
+  value?: string
+  onValueChange: (value: string) => void
+  /** Takes a folder out of the list. */
+  onForget: (id: string) => void
+  /** Asks the system for a folder. */
+  onOpenFolder: () => void
+  /** Clones a repository into the projects folder. */
+  onClone: () => void
+  label: string
+  placeholder?: string
+  icon?: React.ReactNode
+}) {
+  const context = usePromptInput("PromptInputFolderSelect")
+  const { announce, disabled } = context
+  const current = folders.find((folder) => folder.id === value)
+  const shown = current?.name ?? placeholder ?? label
+
+  /**
+   * Which row's submenu is open.
+   *
+   * One at a time, and only ever opened by a right-click: the submenu belongs
+   * to a row, so two of them open at once would be two answers to the same
+   * question.
+   */
+  const [openFor, setOpenFor] = React.useState<string | null>(null)
+
+  const choose = (id: string) => {
+    if (id !== value) haptic("tick")
+    onValueChange(id)
+    refocus(context.textareaRef.current)
+  }
+
+  const forget = (id: string, name: string) => {
+    setOpenFor(null)
+    onForget(id)
+    announce(`Forgot ${name}.`)
+  }
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  shape="pill"
+                  aria-label={`${label}: ${shown}`}
+                  disabled={disabled}
+                  className="min-w-0"
+                />
+              }
+            />
+          }
+        >
+          <span data-icon="inline-start" className="flex">
+            {icon}
+          </span>
+          <span className="truncate">{shown}</span>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        finalFocus={context.textareaRef}
+        className="min-w-40 max-w-72"
+      >
+        {folders.length === 0 ? (
+          <DropdownMenuLabel>No folders yet</DropdownMenuLabel>
+        ) : (
+          folders.map((folder) => (
+            <DropdownMenuSub
+              key={folder.id}
+              open={openFor === folder.id}
+              onOpenChange={(open) => setOpenFor(open ? folder.id : null)}
+            >
+              <DropdownMenuSubTrigger
+                /* A submenu that opened on a hover would pop open under the
+                   pointer every time the list was swept past. This one is
+                   opened by a right-click, and by the keyboard. */
+                openOnHover={false}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  setOpenFor(folder.id)
+                }}
+                onClick={() => choose(folder.id)}
+                className="[&>[data-icon=inline-end]]:hidden"
+              >
+                <FolderOpenIcon />
+                <span className="truncate">{folder.name}</span>
+                {folder.id === value ? (
+                  <CheckIcon aria-hidden="true" className="ms-auto size-3.5" />
+                ) : null}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem
+                  onClick={() => forget(folder.id, folder.name)}
+                  className="text-destructive"
+                >
+                  <Trash2Icon />
+                  Forget folder
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))
+        )}
+        {folders.length > 0 ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuItem onClick={onOpenFolder}>
+          <FolderOpenIcon />
+          Open folder
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onClone}>
+          <GitBranchIcon />
+          Clone repository
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function PromptInputInset({
   className,
   ...props
@@ -2079,6 +2242,7 @@ export {
   PromptInputEffort,
   PromptInputEffortSlider,
   PromptInputFooter,
+  PromptInputFolderSelect,
   PromptInputInset,
   PromptInputMeta,
   PromptInputMeter,

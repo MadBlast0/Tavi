@@ -8,9 +8,7 @@ import {
   CloudIcon,
   FileSearchIcon,
   FileTextIcon,
-  FolderIcon,
   FolderOpenIcon,
-  GitBranchIcon,
   GitCompareArrowsIcon,
   LightbulbIcon,
   ListChecksIcon,
@@ -23,7 +21,6 @@ import {
   ScaleIcon,
   SquarePenIcon,
   TerminalIcon,
-  Trash2Icon,
 } from "lucide-react"
 
 import {
@@ -159,7 +156,6 @@ import {
   AttachmentTitle,
 } from "@/components/attachment"
 import { Bubble, BubbleContent } from "@/components/bubble"
-import { DropdownMenuItem } from "@/components/dropdown-menu"
 import { Message, MessageContent } from "@/components/message"
 import {
   MessageScroller,
@@ -186,6 +182,7 @@ import {
   PromptInputContextUsage,
   PromptInputDictation,
   PromptInputFooter,
+  PromptInputFolderSelect,
   PromptInputInset,
   PromptInputMeta,
   PromptInputMeter,
@@ -1677,6 +1674,13 @@ export function PromptBlock() {
     setFolderId((current) => (current === id ? undefined : id))
   }
 
+  /**
+   * Takes a folder out of the picker.
+   *
+   * It does not touch the sessions that were run against it. They keep their
+   * history, keep the project they were run against, and stay in the rail —
+   * forgetting where to work from is not the same as throwing the work away.
+   */
   const forget = async (id: string) => {
     await forgetFolder(id)
     setFolders(await listRecentFolders())
@@ -1898,12 +1902,6 @@ export function PromptBlock() {
   const starters = starterPool(variant, folder, projectFiles, starterOffset)
   const suggested = starters.slice(0, STARTER_COUNT)
 
-  const folderOptions: PromptOption[] = folders.map((item) => ({
-    value: item.id,
-    label: item.name,
-    icon: <FolderIcon />,
-  }))
-
   /* The folder picker's copy comes from the environment, so the two controls in
      the footer stay in step. Looked up rather than hardcoded so an environment
      without a story here fails to compile instead of quietly showing "folder". */
@@ -2085,29 +2083,17 @@ export function PromptBlock() {
                       icon={<LaptopIcon />}
                     />
                     {canPick ? (
-                      <PromptInputSelect
+                      <PromptInputFolderSelect
                         label={folderSource.label}
-                        options={folderOptions}
+                        folders={folders}
                         value={folderId}
                         onValueChange={chooseFolder}
+                        onForget={(id) => void forget(id)}
+                        onOpenFolder={() => void browse()}
+                        onClone={() => setCloneOpen(true)}
                         placeholder={folderSource.placeholder}
                         icon={<FolderOpenIcon />}
-                      >
-                        <DropdownMenuItem onClick={() => void browse()}>
-                          <FolderOpenIcon />
-                          Open folder
-                        </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setCloneOpen(true)}>
-                            <GitBranchIcon />
-                            Clone repository
-                          </DropdownMenuItem>
-                        {folder ? (
-                          <DropdownMenuItem onClick={() => void forget(folder.id)}>
-                            <Trash2Icon />
-                            Forget {folder.name}
-                          </DropdownMenuItem>
-                        ) : null}
-                      </PromptInputSelect>
+                      />
                     ) : (
                       <span className="text-muted-foreground me-auto text-xs">
                         Folder access needs a Chromium-based browser
