@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { PREF, readPref, writePref } from "@/lib/prefs";
 
 import type { KeyStatus } from "./key-types";
 import {
@@ -82,31 +83,11 @@ type CatalogResponse = {
 
 type Hovered = { model: SlimModel; top: number; left: number } | null;
 
-const MODEL_KEY = "ai-app.model";
-const EFFORT_KEY = "ai-app.effort";
-
 const EFFORTS = [
   { id: "low", name: "Low" },
   { id: "medium", name: "Medium" },
   { id: "high", name: "High" },
 ] as const;
-
-const readStored = (key: string) => {
-  try {
-    return localStorage.getItem(key) ?? undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const writeStored = (key: string, value: string | undefined) => {
-  try {
-    if (value === undefined) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // Storage unavailable; selection still works for this session.
-  }
-};
 
 const modelLabel = (model: SlimModel) =>
   model.name.replace(/\s*\(free\)$/, "");
@@ -215,10 +196,10 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
   const listRef = useRef<HTMLDivElement>(null);
 
   const [modelId, setModelId] = useState<string | undefined>(() =>
-    readStored(MODEL_KEY),
+    readPref(PREF.model),
   );
   const [effort, setEffort] = useState<string | undefined>(() =>
-    readStored(EFFORT_KEY),
+    readPref(PREF.effort),
   );
 
   useEffect(() => {
@@ -394,7 +375,7 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
                     // `onSelect` would be silently ignored.
                     onClick={() => {
                       setModelId(model.id);
-                      writeStored(MODEL_KEY, model.id);
+                      writePref(PREF.model, model.id);
                     }}
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) =>
                       showDetails(model, e.currentTarget)
@@ -424,7 +405,7 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
                   value={effectiveEffort ?? ""}
                   onValueChange={(next) => {
                     setEffort(next);
-                    writeStored(EFFORT_KEY, next);
+                    writePref(PREF.effort, next);
                   }}
                   aria-label="Reasoning effort"
                   className="flex items-center gap-0.5"

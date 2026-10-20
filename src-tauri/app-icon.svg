@@ -1,0 +1,19 @@
+<!--
+  The Tavi mark.
+
+  The source every platform's icon is generated from, by `pnpm tauri icon
+  src-tauri/app-icon.svg`. It is a vector rather than a picture so it can be
+  scaled to every size the platforms ask for without being resampled, and so
+  the letter is drawn as a shape rather than set in a font — a mark that
+  depends on a font it cannot ship is a mark that changes shape on someone
+  else's machine.
+
+  The tile is the app's own paper and the letter is the app's own ink: the
+  window is near-black on white, and the icon is the same two colours. The
+  letter is drawn a little above the middle, because the bar at the top of a
+  T carries the weight and a shape centred by measurement looks low.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="232" fill="#1C1C1C" />
+  <path d="M277 238 H747 V342 H560 V762 H464 V342 H277 Z" fill="#FFFFFF" />
+</svg>

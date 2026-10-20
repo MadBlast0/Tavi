@@ -27,7 +27,7 @@ delete it on a schedule.
 
 ## Preferences — `localStorage`
 
-`src/lib/prefs.ts`. Model, effort level, mode, and composer layout.
+`src/lib/prefs.ts`. Model, effort level, mode, and whether the rail is open.
 
 - **Website:** `localStorage` for `https://your-host`. Shared across tabs,
   per-origin, per-browser-profile. Roughly 5–10 MB, but we use ~100 bytes.
@@ -36,6 +36,31 @@ delete it on a schedule.
 Why `localStorage` and not IndexedDB: the composer needs the model during its
 first render, before any effect can await. IndexedDB would mean a blank or
 wrong model on every cold start.
+
+### The namespace, and the move out of the old one
+
+Everything the app stores in the browser is under one namespace, so it cannot
+collide with anything else on the origin. The namespace, and the move out of
+the one the app had before it was renamed, belong to `src/lib/storage.ts`.
+
+A value that is only in the old namespace is moved to the new one the first
+time it is read, and the old one is removed afterwards. A rename is not a
+reason to lose someone's chats or their choice of model, and the move never
+overwrites: a value already in the new namespace is the newer one, and it
+wins.
+
+### What is deliberately not stored
+
+The **composer layout** — Chat or Code — is not stored. The app always opens
+in Chat. The model, the effort and the mode are preferences about *how* to
+work and are remembered; which of the two jobs the app starts on is a
+question about what the user came to do, and a fresh start is the honest
+answer to it. Coming back to Code is a click.
+
+The **rail's width** is not stored either, for a different reason: a width
+someone set by dragging is a fit for the window they were looking at, and
+saving it would reopen the app at a width chosen for some other screen. The
+rail's *open* state is stored, because that is a preference and not a fit.
 
 ### What can go wrong, and what we do about it
 
@@ -58,7 +83,7 @@ an app-data file — see "What to change for desktop".
 
 ## Conversation threads
 
-`src/lib/sessions.ts`, key `ai-app.sessions.v1`.
+`src/lib/sessions.ts`, key `tavi.sessions.v1`.
 
 Currently a single JSON array in `localStorage`, capped at 50 threads, with
 attachment text captured at send time so a restored thread keeps its context.
@@ -98,6 +123,14 @@ than leaving stale paths on screen.
 The key is never written to `localStorage`, never logged, never placed in the
 DOM. `server/chat.ts` logs neither headers nor request bodies.
 
+The credential is stored under the service name `tavi`. The app was called
+something else when the key was first entered, and the credential is still
+under that name: it is moved to the current one the first time the app asks
+for it, so the rename does not cost the user their key. The new credential is
+written before the old one is removed — a key that exists in both places is
+one the user has already set, and losing it would be worse than leaving a
+duplicate behind.
+
 Where the OS puts it:
 
 | Platform | Backend |
@@ -114,15 +147,43 @@ web build that needs per-user keys needs a backend session, not browser storage.
 
 ## Where the desktop app actually writes
 
-Tauri resolves these through `app.path()`. The identifier is `com.mad.ai-app`
+Tauri resolves these through `app.path()`. The identifier is `com.mad.tavi`
 (`src-tauri/tauri.conf.json`), so they are namespaced per app and a second app
 with a different identifier cannot read them.
 
 | Kind | Windows | macOS | Linux |
 |---|---|---|---|
-| App data (permanent) | `%APPDATA%\com.mad.ai-app` | `~/Library/Application Support/com.mad.ai-app` | `$XDG_DATA_HOME/com.mad.ai-app`, else `~/.local/share/com.mad.ai-app` |
-| Cache (regenerable) | `%LOCALAPPDATA%\com.mad.ai-app\cache` | `~/Library/Caches/com.mad.ai-app` | `$XDG_CACHE_HOME/com.mad.ai-app`, else `~/.cache/com.mad.ai-app` |
+| App data (permanent) | `%APPDATA%\com.mad.tavi` | `~/Library/Application Support/com.mad.tavi` | `$XDG_DATA_HOME/com.mad.tavi`, else `~/.local/share/com.mad.tavi` |
+| Cache (regenerable) | `%LOCALAPPDATA%\com.mad.tavi\cache` | `~/Library/Caches/com.mad.tavi` | `$XDG_CACHE_HOME/com.mad.tavi`, else `~/.cache/com.mad.tavi` |
 | Temp (per-run) | `%TEMP%` → `…\AppData\Local\Temp` | `$TMPDIR` → `/var/folders/…` | `$TMPDIR`, else `/tmp` |
+
+### Window state — app data
+
+`src-tauri/src/window_state.rs` writes `window-state.json` into the app data
+directory: the window's size and whether it was maximized, so the app opens as
+large as it was left rather than at the size it was configured with.
+
+It is app data and not a preference because it belongs to the installed
+program rather than to the webview's profile: a window that forgets how big it
+was is a window that opens at the wrong size every morning, and the state
+belongs to survive the webview's storage being cleared.
+
+The **position** is not in the file. The window always opens centred on the
+screen, which is the one position that is right on every machine and every
+arrangement of monitors; a remembered position is right on the machine it was
+remembered on and wrong everywhere else.
+
+The file is one small JSON object, written atomically (to a temporary file,
+then moved into place), and a file that is missing, unreadable or malformed
+reads as *no state* — the window then opens at its configured size, which is
+the same as the first time the app is ever run. The file carries the version
+of its own shape, and a file written in a shape this build does not know is
+read as no state as well.
+
+The size in the file is in **logical pixels**, so it means the same apparent
+size on a 4K display at 200% as on a 1080p one at 100%. It is capped at the
+work area of the screen the window opens on, so a size remembered on a large
+display cannot leave the window hanging off a small one.
 
 Rules that follow from this:
 
@@ -140,8 +201,8 @@ webview's profile, not in these directories:
 
 | Platform | Engine | Typical location |
 |---|---|---|
-| Windows | WebView2 | `%LOCALAPPDATA%\{product}\EBWebView\` |
-| macOS | WKWebView | `~/Library/WebKit/com.mad.ai-app/WebsiteData\` |
+| Windows | WebView2 | `%LOCALAPPDATA%\{identifier}\EBWebView\` |
+| macOS | WKWebView | `~/Library/WebKit/com.mad.tavi/WebsiteData\` |
 | Linux | WebKitGTK | `~/.local/share/webkit2/` or a per-app profile |
 
 These paths are engine-version dependent and should not be read or written
@@ -164,6 +225,6 @@ directly — treat them as implementation detail. The practical consequences:
 3. **Bound the thread store.** The web cap is 50 threads; the desktop file
    needs an explicit size policy instead of relying on a browser quota.
 4. **Decide the upgrade story** for a schema change to the stored shape — the
-   key is versioned (`ai-app.sessions.v1`) but there is no migration path yet.
+   key is versioned (`tavi.sessions.v1`) but there is no migration path yet.
 
 None of this is needed for the web target, and none of it should block it.

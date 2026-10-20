@@ -9,7 +9,12 @@
  * `Turn` lives here rather than in the view because it has to be serialisable:
  * the view's version carries `File` objects and streaming flags, neither of
  * which survives a JSON round trip.
+ *
+ * The key this store lives under, and the move out of the key the app used
+ * before it was renamed, belong to `storage.ts`.
  */
+
+import { readStorage, writeStorage } from "@/lib/storage"
 
 export type StoredFile = {
   name: string
@@ -52,10 +57,10 @@ export type StoredSession = {
 
 export type SessionDraft = Omit<StoredSession, "id" | "createdAt" | "updatedAt" | "title">
 
-const KEY = "ai-app.sessions.v1"
+const KEY = "sessions.v1"
 const MAX_SESSIONS = 50
 
-const safeParse = (raw: string | null): StoredSession[] => {
+const safeParse = (raw: string | undefined): StoredSession[] => {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
@@ -74,7 +79,7 @@ const safeParse = (raw: string | null): StoredSession[] => {
 
 const read = (): StoredSession[] => {
   if (typeof localStorage === "undefined") return []
-  return safeParse(localStorage.getItem(KEY))
+  return safeParse(readStorage(KEY))
 }
 
 /**
@@ -99,18 +104,11 @@ export const onSessionsChanged = (listener: () => void): (() => void) => {
 
 const write = (sessions: StoredSession[]) => {
   if (typeof localStorage === "undefined") return
-  let stored = false
-  try {
-    localStorage.setItem(KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS)))
-    stored = true
-  } catch {
+  let stored = writeStorage(KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS)))
+  if (!stored) {
     // Quota exhausted. Dropping the oldest thread is better than losing the
     // session the user is currently looking at.
-    try {
-      const trimmed = sessions.slice(0, Math.min(sessions.length, 5))
-      localStorage.setItem(KEY, JSON.stringify(trimmed))
-      stored = true
-    } catch {}
+    stored = writeStorage(KEY, JSON.stringify(sessions.slice(0, 5)))
   }
   if (stored && typeof window !== "undefined") {
     window.dispatchEvent(new Event(CHANGED))
@@ -230,8 +228,6 @@ export const forkSession = (id: string): StoredSession | undefined => {
   write([fork, ...listSessions()])
   return fork
 }
-
-export const clearSessions = () => write([])
 
 /**
  * "4s", "12m", "3h", "6d", "2mo", "1y" — the units a list of threads needs to

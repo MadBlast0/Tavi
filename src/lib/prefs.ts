@@ -16,40 +16,24 @@
  * and parsing is the caller's business. A corrupt or absent value reads as
  * `undefined` rather than throwing, because a bad preference must never stop
  * the app from starting.
+ *
+ * The namespace these values live under, and the move out of the namespace
+ * the app had before it was renamed, belong to `storage.ts`.
  */
 
-const NAMESPACE = "ai-app"
+import { readStorage, writeStorage } from "@/lib/storage";
 
-/** Prefixed so this app cannot collide with anything else on the origin. */
-const key = (name: string) => `${NAMESPACE}.${name}`
-
-export const readPref = (name: string): string | undefined => {
-  if (typeof localStorage === "undefined") return undefined
-  try {
-    const value = localStorage.getItem(key(name))
-    return value === null ? undefined : value
-  } catch {
-    // Private mode, disabled storage, or a quota error. Treat as absent.
-    return undefined
-  }
-}
+export const readPref = (name: string): string | undefined => readStorage(name);
 
 export const writePref = (name: string, value: string | undefined): void => {
-  if (typeof localStorage === "undefined") return
-  try {
-    if (value === undefined) localStorage.removeItem(key(name))
-    else localStorage.setItem(key(name), value)
-  } catch {
-    // Nothing useful to do. The selection still applies for this session, and
-    // failing to persist a preference must never surface as an error.
-  }
-}
+  writeStorage(name, value);
+};
 
 /** Names, so a typo cannot silently invent a new key. */
 export const PREF = {
   model: "model",
   effort: "effort",
   mode: "mode",
-  variant: "variant",
   font: "font",
+  sidebar: "sidebar",
 } as const
