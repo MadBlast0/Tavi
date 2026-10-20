@@ -37,8 +37,6 @@ export const THEME_STORAGE_KEY = "theme"
 /** Dark, as the app has always defaulted. */
 export const DEFAULT_THEME: ThemePreference = "dark"
 
-export const THEME_PREFERENCES: ThemePreference[] = ["system", "light", "dark"]
-
 const DARK_QUERY = "(prefers-color-scheme: dark)"
 
 function isPreference(value: unknown): value is ThemePreference {

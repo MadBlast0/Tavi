@@ -25,18 +25,14 @@ import {
   type CapabilitySource,
   type EffortCapability,
   type EffortValue,
-  type ModelReasoningCapabilities,
   type ModelTarget,
-  type SupportStatus,
 } from "../src/lib/reasoning.ts";
 import type {
   ModelProviderAdapter,
   ProviderConnection,
   ProviderModel,
-  SerializedReasoning,
 } from "./providers.ts";
 
-const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
 const REASONING_GUIDE = "https://platform.openai.com/docs/guides/reasoning";
 
 /**

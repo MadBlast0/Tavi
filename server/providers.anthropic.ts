@@ -24,7 +24,6 @@ import {
   type CapabilitySource,
   type EffortCapability,
   type EffortValue,
-  type ModelReasoningCapabilities,
   type ModelTarget,
   type SupportStatus,
   type ThinkingBudgetCapability,
@@ -35,7 +34,6 @@ import type {
   ModelProviderAdapter,
   ProviderConnection,
   ProviderModel,
-  SerializedReasoning,
 } from "./providers.ts";
 
 const ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models";

@@ -34,17 +34,14 @@ import {
   type CapabilitySource,
   type EffortCapability,
   type EffortValue,
-  type ModelReasoningCapabilities,
   type ModelTarget,
 } from "../src/lib/reasoning.ts";
 import type {
   ModelProviderAdapter,
   ProviderConnection,
   ProviderModel,
-  SerializedReasoning,
 } from "./providers.ts";
 
-const NIM_MODELS_URL = "https://integrate.api.nvidia.com/v1/models";
 const NIM_DOCS = "https://docs.api.nvidia.com/nim/reference/llm-apis";
 
 const EFFORT_LABELS: Record<string, string> = {

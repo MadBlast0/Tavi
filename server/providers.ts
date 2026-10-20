@@ -198,7 +198,6 @@ const openRouterEffort = (
  * options rather than inventing `enabled`/`disabled`.
  */
 const openRouterThinkingMode = (
-  reasoning: OpenRouterReasoningMeta | undefined,
   source: CapabilitySource,
 ): ThinkingModeCapability => ({
   status: "unknown",
@@ -262,7 +261,7 @@ export const openRouterAdapter: ModelProviderAdapter = {
       target,
       reasoningCapability: reasoningExists ? "supported" : "unknown",
       effort,
-      thinkingMode: openRouterThinkingMode(raw.reasoning, source),
+      thinkingMode: openRouterThinkingMode(source),
       thinkingBudget: {
         // `supports_max_tokens` is a genuine per-model signal for a numeric
         // reasoning budget, but the gateway publishes no bounds for it.
@@ -365,8 +364,6 @@ const ADAPTERS: readonly ModelProviderAdapter[] = [
 
 export const adapterFor = (providerId: string): ModelProviderAdapter | undefined =>
   ADAPTERS.find((adapter) => adapter.id === providerId);
-
-export const knownProviderIds = (): string[] => ADAPTERS.map((a) => a.id);
 
 /** Re-exported for the catalogue projection, which needs the shared vocabulary. */
 export { availableEffort, sortByIntensity };

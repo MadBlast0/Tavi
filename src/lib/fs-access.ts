@@ -222,17 +222,3 @@ export const readFileText = async (entry: ProjectFile): Promise<string | null> =
     return null
   }
 }
-
-/** Folders that expose the API are the only ones this app can honestly read. */
-export const readFilesForPrompt = async (
-  entries: ProjectFile[],
-  { maxFiles = 6, maxCharsPerFile = 12_000 } = {},
-): Promise<{ path: string; text: string }[]> => {
-  const out: { path: string; text: string }[] = []
-  for (const entry of entries.slice(0, maxFiles)) {
-    const text = await readFileText(entry)
-    if (text === null) continue
-    out.push({ path: entry.path, text: text.slice(0, maxCharsPerFile) })
-  }
-  return out
-}

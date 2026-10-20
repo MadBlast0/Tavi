@@ -1,7 +1,6 @@
 import * as React from "react"
 
 const easeOut = "cubic-bezier(0.23, 1, 0.32, 1)"
-const easeInOut = "cubic-bezier(0.77, 0, 0.175, 1)"
 const easeSpring =
   "linear(0, 0.015 2%, 0.0532 4%, 0.1065 6%, 0.1686 8%, 0.2351 10%, 0.3363 13%, 0.4332 16%, 0.5495 20%, 0.648 24%, 0.7287 28%, 0.807 33%, 0.8646 38%, 0.9128 44%, 0.9447 50%, 0.968 57%, 0.9834 65%, 0.9924 74%, 0.9975 85%, 1)"
 
@@ -215,7 +214,6 @@ function useSlidingHighlight(
 
 export {
   duration,
-  easeInOut,
   easeOut,
   easeSpring,
   prefersReducedMotion,
