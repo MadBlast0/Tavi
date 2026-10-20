@@ -61,6 +61,14 @@ runningByMode { chat: false,    code: false }// each side keeps its streaming st
 rail          { chat: {...},    code: {...} } // each side keeps its row order and hidden set
 ```
 
+**What the mock did *not* make per-mode**, and revision 1 got slightly wrong:
+the mock's `model`, `effort`, `mode` and `folder` were single values
+(`shell-layout.html:1295-1298`), shared by both sides. The mock's per-mode set
+was the *conversation* and the *rail*. D4 — the model and the effort remembered
+per side — goes beyond the mock. It is the maintainer's decision, and it matches
+Claude Desktop's "each user's next conversation starts on the model they last
+used", with the two surfaces being separate places.
+
 ---
 
 ## 2. The reference: Claude Desktop
@@ -515,6 +523,11 @@ folder.
   rename or a fork done in the rail appears in it (it does not today).
 - The group order in Code follows the sort the user chose, not insertion order.
 - Pinned threads rise to the top of the list in both surfaces.
+- **The switch can carry a count** of what is on each side — "3 chats", "2
+  sessions" — so the rail says what is behind the switch before you take it.
+  `IconSwitchOption` (`src/components/icon-switch/icon-switch.tsx:25-29`) is
+  `{value, label, icon}` with no slot for one, so this is a small extension to
+  that component rather than something drawn around it.
 
 ### Stage 7 — Documentation, and the dead code
 
@@ -548,7 +561,7 @@ folder.
 | Parallel sessions — several running at once, each with its own panes | Needs a per-thread runtime, not just per-thread data. D6 is the small version of this. |
 | Restoring the last open thread per side across a reload | The app opens in Chat today with nothing open. A small follow-up once D1 has settled. |
 | The rail's per-side row order and hidden set (the mock's `Customize` panel) | The rows are already two sets; the panel behind them is not built. |
-| The command palette | Not built. When it is, it must list the active side's threads only (mock `:1146`). |
+| The command palette | Not built, and confirmed not mounted: `src/components/command/command.tsx` exports `CommandDialog` and nothing imports it. When it is built, it must list the active side's threads only (mock `:1146`). |
 | Search over threads | Claude's session picker has it. It would need to search one store at a time. |
 | Archive | Deliberately absent today (README). It needs somewhere to read archived threads and a way back out, which would be a third state per store. |
 | Diff, terminal, file and browser panes for Code | Claude's Code tab is built around them. A much larger piece of work than the split itself. |
@@ -638,6 +651,9 @@ mistaken for consequences of it.
 | **The reference table gained the storage layout, the enforcement rule, the session-row metadata and the per-folder mode memory.** | Claude's `local-agent-mode-sessions/` vs `claude-code-sessions/`, "enforced in the app's main process, not just hidden in the UI", the git branch on a session row, and `~/.claude/projects/<project>/`. |
 | **New decisions D9 and D10; new bugs B9–B12; new edge cases.** | |
 | **The per-side empty states use the vendored `src/components/empty` primitive**, not new markup. | It is already in the tree, unused, and is exactly an empty state with a title and a description. |
+| **The mock's per-mode set is narrower than revision 1 implied** — its model, effort, mode and folder were single values (§1). | D4 goes beyond the mock. It is the maintainer's decision and it matches Claude's per-surface behaviour, but the plan should say where it departs from the repo's own design. |
+| **The command palette is confirmed not mounted**, not merely unused (§6). | `src/components/command/command.tsx` exports `CommandDialog` and nothing imports it. Worth knowing before a palette is planned on top of it. |
+| **The switch can carry a count**, at the cost of extending `IconSwitchOption` (Stage 6). | `IconSwitch` has no slot for a badge, so this is a change to a shared component rather than something drawn around it. |
 | **§4.2 explains why we do *not* store one store per project,** even though Claude does. | `localStorage` has no directories and a session's folder can change. A `folder` field is the honest equivalent. |
 
 ---
