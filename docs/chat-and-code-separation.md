@@ -172,7 +172,8 @@ filesystem access.
 
 ## 3. Where we are today
 
-Every row below is verified against the code at commit `bea8de3`.
+Every row below is verified against the code. Where a change has already landed,
+the line says so.
 
 ### 3.1 The rail — `src/blocks/shell/sidebar-nav.tsx`
 
@@ -187,8 +188,7 @@ Every row below is verified against the code at commit `bea8de3`.
 | Pin | `:247` | Pinned rises to the top of the **whole list** in chat, of **its own group** in code | ⚠️ inconsistent |
 | Sort control label | `:294` | `aria-label="Sort threads"` — says "threads" in a list headed "Chats" | ⚠️ |
 | Empty state | `:463-476` / `:449` | Chat renders an empty padded group; Code renders nothing at all | ⚠️ |
-| Row | `:337-367` | Title + timestamp only. No folder, no model, no pin mark, no sign of which surface a thread belongs to | ⚠️ |
-| "New" row | `:407-409` | Calls `bridge.functions.current?.reset()` directly — **not** `useNewThread`. Does not set the variant, does not drain a queued tray intent | ❌ |
+| Row | `:337-367` | Title + timestamp, plus a live pulsing dot and the word "Running" on the thread that is answering right now. No folder, no model, no pin mark, no sign of which surface a thread belongs to | ⚠️ the running indicator arrived with the removal of the composer's sessions menu || "New" row | `:407-409` | Calls `bridge.functions.current?.reset()` directly — **not** `useNewThread`. Does not set the variant, does not drain a queued tray intent | ❌ |
 | Account row | `sidebar-account.tsx:109` | One row, showing the provider key's plan badge | ✅ **correctly global** — one provider connection and one plan tier serve both surfaces ("Code sessions use the same provider, endpoint, and credentials"). The mock's differing account values were placeholder data. |
 
 ### 3.2 The composer — `src/blocks/prompt-input/prompt-block.tsx`
@@ -269,13 +269,17 @@ pool (`:601`).
 | 2 | App menu → New chat (`app-menu.tsx`) | Yes → chat | Forces Chat even from Code. No "New session" counterpart |
 | 3 | Tray → New chat (`tray-bridge.tsx:51`) | Yes → chat | |
 | 4 | Tray → New session (`tray-bridge.tsx:52`) | Yes → code | |
-| 5 | Composer sessions menu → "New chat" (`prompt-block.tsx:314`) | **No** | A chat-labelled action inside the **code-only** composer footer |
-| 6 | Rail row click (`sidebar-nav.tsx:412`) | **No** | Opens a session while staying in the Chat composer |
-| 7 | Composer sessions menu row (`prompt-block.tsx:326`) | **No** | Same |
+| 5 | Rail row click (`sidebar-nav.tsx:412`) | **No** | Opens a session while staying in the Chat composer |
 
-Three of the seven set the variant; four do not. The two that do it correctly
+Three of the five set the variant; two do not. The two that do it correctly
 (`useNewThread`, `thread-bridge.tsx:78-94`) are also the only ones that drain a
 pending tray intent.
+
+> **The composer's own sessions menu is gone.** It used to be a sixth and
+> seventh entry point — a "New chat" item and a row of threads inside the Code
+> composer's footer — and it was a second view of the same list the rail draws.
+> It was removed on 2026-10-20; the rail now carries what it carried, and the
+> running indicator came with it (§3.1).
 
 ### 3.6 The leaks, ranked
 
@@ -454,8 +458,6 @@ ordered so the visible behaviour improves at every step.
   an argument.
 - The rail reads the store for the active variant. "Chats" lists chats, flat;
   "Sessions" lists code sessions, grouped by folder.
-- The composer's own sessions menu (`:277`, mounted at `:1776`) lists code
-  sessions. It says "Sessions", and it is Code-only, so that is now true.
 
 **Checked by:** send a message in Chat → it appears under "Chats" and not under
 "Sessions"; send one in Code → the reverse. A chat record has no folder and no
@@ -475,9 +477,7 @@ a thread takes you to that thread's side.
   mentions and queue and loads the incoming side's. Changing `draftKey` alone
   is not enough and is actively harmful — see B10.
 - The rail's "New" row uses `useNewThread(variant)` (`thread-bridge.tsx:78`) so
-  all seven entry points in §3.5 behave the same way.
-- The composer's "New chat" item inside the Code footer becomes "New session",
-  and calls the same thing.
+  every entry point in §3.5 behaves the same way.
 - The app menu gets a "New session" beside "New chat".
 - The context menu's Fork stays on the Code side (it is already keyed on the
   rail's variant, which is now correct by construction) and the fork stays in
@@ -595,15 +595,12 @@ folder.
 - The conversation's empty state is per side: Chat asks a different question
   than Code. ("What are we working on?" is a code question.) It stays a bare
   heading, for the reason above.
-- The rail row shows what differs. The composer's own sessions menu already
-  shows the model beside the title (`prompt-block.tsx:342-343`); the **rail**
-  row does not, and the project is already the group heading — so the rail row
-  gains the model.
+- The rail row shows what differs. The project is already the group heading, so
+  the row gains the model — it is the one piece of metadata the old composer
+  sessions menu carried that the rail still does not.
 - The pin indicator is visible, not only felt through ordering.
-- The Rename dialog's copy stops promising "the composer's own session list"
-  for a chat, which has none.
-- The composer's sessions menu subscribes to the store's change signal, so a
-  rename or a fork done in the rail appears in it (it does not today).
+- The Rename dialog's copy stops promising "the composer's own session list",
+  which the composer does not have and never again will.
 - The group order in Code follows the sort the user chose, not insertion order.
 - Pinned threads rise to the top of the list in both surfaces.
 - **The switch can carry a count** of what is on each side — "3 chats", "2
@@ -722,7 +719,7 @@ quietly reversed later.
 | Delete the open thread | That side opens empty. The other side is untouched. |
 | Delete a thread from the rail's context menu | Removes it from its own store only. |
 | Fork | Stays on its side, in the same store, and is not opened. |
-| Rename from the rail | The composer's sessions menu refreshes. |
+| Rename from the rail | The rail's row redraws itself — it reads the store and the store's change signal. |
 | Pin | Per store. A pinned thread rises to the top of the list in both surfaces. |
 | Storage quota | Each store has its own cap and its own drop-the-oldest fallback. |
 | Reload the app | Both sides open empty, as the app opens in Chat today. Restoring the last open thread per side is future work (§6). |
@@ -744,7 +741,7 @@ mistaken for consequences of it.
 | **B1** | **The compaction summary is never sent.** The turn type says "sent with later requests" and the compact function's comment says "that summary is carried into later requests", but the request builder skips summary turns. Compaction therefore *loses* the summarised content instead of compressing it — the old turns are dropped from the view and the summary never reaches the model either. | `prompt-block.tsx:1206-1207` vs `:609-610` and `:1490-1493` | **High.** A real data-loss bug, independent of the split. |
 | **B2** | **The assistant-ui stack is not mounted.** `src/assistant.tsx`, `src/components/thread.aui.tsx`, `src/toolkit.tsx`, `src/components/assistant-ui/**`, `src/components/model-picker.tsx`, `src/components/model-selector*.tsx`, `src/utils/model-selection.ts` and `src/components/AssistantSurface.tsx` are unreachable from `src/main.tsx`. The live app hand-rolls its `fetch` and its SSE parser, so it sends no tools, renders no reasoning and no tool cards, and has no assistant-ui message tree. Two model pickers read and write the same preference keys from separate in-process state. | `src/App.tsx:27`; `src/components/AssistantSurface.tsx:42` | **High**, and it decides where the tool policy is enforced (the server, not the toolkit). |
 | **B3** | The `VariantRegion` unstick timer only runs while the region is active, so a region removed within 550 ms of entering relies on the exit animation alone. | `prompt-block.tsx:102-123` | Low |
-| **B4** | The composer's sessions menu does not subscribe to the store's change signal, so a rename, pin, fork or delete done in the rail does not appear in it. | `prompt-block.tsx:918` | Medium |
+| **B4** | **The composer's sessions menu did not subscribe to the store's change signal**, so a rename, pin, fork or delete done in the rail did not appear in it. | `prompt-block.tsx:918` (before removal) | **Resolved** — the menu is gone, and the rail, which is the only list, reads the store and subscribes to the signal. |
 | **B5** | The rail's sort reorders the threads inside a project group but not the groups themselves. | `sidebar-nav.tsx:449` | Low |
 | **B6** | `servedModel` is written and never read; `createSession` is imported and never used; `c = pick(2)` is computed and never used; five exported composer primitives are used nowhere. | `prompt-block.tsx:899`, `:43`, `:529`; `prompt-controls.tsx:55`, `:120`, `:171`, `:610`, `:655` | Low |
 | **B7** | A comment describes a dictation overlay that no longer exists. | `prompt-block.tsx:1711-1717` vs `prompt-controls.tsx:1689-1698` | Low |
@@ -779,7 +776,8 @@ mistaken for consequences of it.
 | **§6.1 lists the mock's own bugs**, so the implementer does not copy them. | The mock labels its palette action "New chat" in both modes, shows a timestamp as a keyboard shortcut, and gives the account row per-mode values that differ only in case. |
 | **The empty states are a bare heading and a plain line, not the vendored `Empty` block.** | The mock is explicit: "The app's empty state is a bare heading, not an Empty block: no icon, no description, no border" (`shell-layout.html:825-829`). |
 | **New bugs B13–B19**, including the open chat route (B14), which the new server rule depends on. | Found by the audit of `server/`, `src-tauri/src/tray.rs` and the README. |
-| **D4 and D8 now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
+| **D4** and **D8** now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
+| **The composer's sessions menu is removed**, and the rail takes over what it carried — including the live running indicator, which the rail could not show before. §3.1, §3.5 and B4 are updated. | It was a second view of the same list the rail draws, with a "New chat" item inside the **code-only** footer that did not set the variant. Two lists of the same threads is the thing this whole plan exists to undo. |
 
 ### 10.2 Revision 2 — after the first correction pass
 

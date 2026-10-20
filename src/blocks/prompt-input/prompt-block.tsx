@@ -12,7 +12,6 @@ import {
   FolderOpenIcon,
   GitBranchIcon,
   GitCompareArrowsIcon,
-  HistoryIcon,
   LightbulbIcon,
   ListChecksIcon,
   LaptopIcon,
@@ -40,12 +39,8 @@ import {
   type RecentFolder,
 } from "@/lib/fs-access"
 import {
-  createSession,
-  deleteSession,
-  formatWhen,
   listSessions,
   saveSession,
-  type StoredSession,
   type StoredTurn,
 } from "@/lib/sessions"
 import { PREF, readPref, writePref } from "@/lib/prefs"
@@ -138,7 +133,6 @@ function VariantRegion({
     </AnimatePresence>
   )
 }
-import { cn } from "@/lib/utils"
 
 import {
   Attachment,
@@ -147,15 +141,7 @@ import {
   AttachmentTitle,
 } from "@/components/attachment"
 import { Bubble, BubbleContent } from "@/components/bubble"
-import { Button } from "@/components/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/dropdown-menu"
+import { DropdownMenuItem } from "@/components/dropdown-menu"
 import { Message, MessageContent } from "@/components/message"
 import {
   MessageScroller,
@@ -269,102 +255,6 @@ const placeholders: Record<string, string> = Object.fromEntries(
 )
 
 type Variant = "chat" | "code"
-
-/**
- * Lists threads that actually exist. Clicking one loads it; the running dot is
- * driven by the live stream, not by a hardcoded flag, so it appears on exactly
- * one row and only while a reply is streaming.
- */
-function SessionsMenu({
-  sessions,
-  activeId,
-  runningId,
-  onOpen,
-  onNew,
-  onDelete,
-}: {
-  sessions: StoredSession[]
-  activeId: string | null
-  runningId: string | null
-  onOpen: (id: string) => void
-  onNew: () => void
-  onDelete: (id: string) => void
-}) {
-  const active = sessions.find((session) => session.id === activeId)
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            shape="pill"
-            className="ms-auto"
-          />
-        }
-      >
-        <HistoryIcon data-icon="inline-start" />
-        Sessions
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-48">
-        <DropdownMenuItem onClick={onNew}>
-          <SquarePenIcon />
-          New chat
-        </DropdownMenuItem>
-        {/* Nothing but the actions and the list. This used to carry a heading
-            ("Recent sessions", or "No saved sessions" when empty) and, when
-            empty, a paragraph explaining that threads are saved and survive a
-            reload. All of it repeated what was already on screen: the trigger is
-            called "Sessions", and an empty list is self-evident. The divider does
-            the separating. */}
-        {sessions.length > 0 ? <DropdownMenuSeparator /> : null}
-        {sessions.map((session) => {
-            const running = session.id === runningId
-            return (
-              <DropdownMenuItem
-                key={session.id}
-                onClick={() => onOpen(session.id)}
-                className={cn(session.id === activeId && "bg-accent")}
-              >
-                <span
-                  aria-hidden="true"
-                  className={
-                    running
-                      ? "size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
-                      : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                  }
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{session.title}</span>
-                  <span className="text-muted-foreground block truncate text-xs">
-                    {[session.model, session.folder].filter(Boolean).join(" · ") ||
-                      "No model"}
-                  </span>
-                </span>
-                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                  {running ? "Running" : formatWhen(session.updatedAt)}
-                </span>
-              </DropdownMenuItem>
-            )
-        })}
-        {active && active.turns.length > 0 ? (
-          <>
-            <DropdownMenuLabel>Manage</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => onDelete(active.id)}
-              className="text-destructive"
-            >
-              <Trash2Icon />
-              Delete this thread
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
 
 /*
  * Commands expand to a real instruction at the caret. They do not run anything;
@@ -915,7 +805,6 @@ export function PromptBlock() {
    * change and read once a minute.
    */
   const draftRef = React.useRef("")
-  const [sessions, setSessions] = React.useState<StoredSession[]>([])
   const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null)
   const [canPick, setCanPick] = React.useState(false)
   /* Clone dialog. Opening it is what the folder menu triggers; the URL, the
@@ -1033,11 +922,6 @@ export function PromptBlock() {
      showing folders it cannot read. */
   React.useEffect(() => {
     setCanPick(supportsDirectoryPicker())
-  }, [])
-
-  /* Saved threads. Loaded once and refreshed whenever one is written. */
-  React.useEffect(() => {
-    setSessions(listSessions())
   }, [])
 
   React.useEffect(() => {
@@ -1354,7 +1238,6 @@ export function PromptBlock() {
     })
     activeSessionRef.current = saved.id
     setActiveSessionId(saved.id)
-    setSessions(listSessions())
     return saved
   }
 
@@ -1436,15 +1319,6 @@ export function PromptBlock() {
     )
   }
 
-  const removeSession = (id: string) => {
-    deleteSession(id)
-    setSessions(listSessions())
-    if (activeSessionRef.current === id) {
-      activeSessionRef.current = null
-      setActiveSessionId(null)
-    }
-  }
-
   /* Header "New chat": same as the menu's, and it leaves the thread stored. */
   const reset = () => {
     newSession()
@@ -1466,6 +1340,12 @@ export function PromptBlock() {
   React.useEffect(() => {
     threadBridge.setActiveId(activeSessionId)
   }, [activeSessionId, threadBridge])
+  /* Which thread is answering is state for the same reason. The rail draws the
+     thread list, so a row has to be able to say that this one is working — and
+     it is the live stream that says so, not a flag the row makes up. */
+  React.useEffect(() => {
+    threadBridge.setRunningId(busy ? activeSessionId : null)
+  }, [busy, activeSessionId, threadBridge])
 
   /**
    * The model picker, shared by both variants.
@@ -1773,14 +1653,6 @@ export function PromptBlock() {
                         Folder access needs a Chromium-based browser
                       </span>
                     )}
-                    <SessionsMenu
-                      sessions={sessions}
-                      activeId={activeSessionId}
-                      runningId={busy ? activeSessionId : null}
-                      onOpen={openSession}
-                      onNew={newSession}
-                      onDelete={removeSession}
-                    />
                   </PromptInputFooter>
                 </PromptInputInset>
               </VariantRegion>

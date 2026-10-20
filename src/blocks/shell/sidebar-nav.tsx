@@ -337,10 +337,12 @@ function ThreadListHeading({
 function ThreadRow({
   session,
   active,
+  running,
   onOpen,
 }: {
   session: StoredSession
   active: boolean
+  running: boolean
   onOpen: (id: string) => void
 }) {
   return (
@@ -354,13 +356,24 @@ function ThreadRow({
         onClick={() => onOpen(session.id)}
         title={session.title}
       >
+        {/* The dot says this thread is answering right now. It is driven by
+            the live stream rather than by a flag the row makes up, so it
+            appears on exactly one row and only while a reply is in flight —
+            and on no row at all when nothing is running, which is quieter
+            than a column of grey dots. */}
+        {running ? (
+          <span
+            aria-hidden="true"
+            className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
+          />
+        ) : null}
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
           trigger rather than beside it. */}
       <SidebarMenuBadge className="text-sidebar-foreground/70">
-        {formatWhen(session.updatedAt)}
+        {running ? "Running" : formatWhen(session.updatedAt)}
       </SidebarMenuBadge>
     </ThreadContextMenu>
   )
@@ -454,6 +467,7 @@ export function SidebarNav() {
                     key={session.id}
                     session={session}
                     active={session.id === bridge.activeId}
+                    running={session.id === bridge.runningId}
                     onOpen={onOpen}
                   />
                 ))}
@@ -468,6 +482,7 @@ export function SidebarNav() {
                     key={session.id}
                     session={session}
                     active={session.id === bridge.activeId}
+                    running={session.id === bridge.runningId}
                     onOpen={onOpen}
                   />
                 ))}

@@ -21,8 +21,10 @@ import { useComposerVariant } from "./composer-variant"
  * state-based bridge would either republish in a loop or force memoisation of
  * functions that were never written to be stable.
  *
- * The open thread is state, unlike the handlers: the rail has to redraw the
- * list when it changes, which is the one thing the rail does need to react to.
+ * What the rail has to redraw for is state: the open thread, and the thread
+ * that is streaming. The rail draws the thread list, so it has to know which
+ * one is answering, and it has to know when the answer is in flight — otherwise
+ * a row cannot say "this one is working".
  */
 export type ThreadBridge = {
   /** Start a new thread, leaving whatever is open. */
@@ -35,6 +37,9 @@ type ThreadBridgeValue = {
   functions: React.RefObject<ThreadBridge | null>
   activeId: string | null
   setActiveId: (id: string | null) => void
+  /** The thread with a reply in flight, or null when nothing is streaming. */
+  runningId: string | null
+  setRunningId: (id: string | null) => void
 }
 
 const ThreadBridgeContext = React.createContext<ThreadBridgeValue | null>(null)
@@ -42,10 +47,11 @@ const ThreadBridgeContext = React.createContext<ThreadBridgeValue | null>(null)
 export function ThreadBridgeProvider({ children }: { children: React.ReactNode }) {
   const functions = React.useRef<ThreadBridge | null>(null)
   const [activeId, setActiveId] = React.useState<string | null>(null)
+  const [runningId, setRunningId] = React.useState<string | null>(null)
 
   const value = React.useMemo<ThreadBridgeValue>(
-    () => ({ functions, activeId, setActiveId }),
-    [activeId],
+    () => ({ functions, activeId, setActiveId, runningId, setRunningId }),
+    [activeId, runningId],
   )
 
   return (
