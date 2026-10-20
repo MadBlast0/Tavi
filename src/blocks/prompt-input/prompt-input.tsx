@@ -635,7 +635,7 @@ function PromptInputBody({
       data-layout={context.expanded ? "expanded" : "compact"}
       data-disabled={context.disabled ? "" : undefined}
       className={cn(
-        "group/composer relative flex min-w-0 cursor-text flex-wrap items-center gap-1 rounded-(--composer-radius) bg-background p-2 inset-ring-(length:--hairline) inset-ring-input transition-shadow duration-150 ease-out-cubic data-morphing:overflow-clip data-shake:motion-safe:animate-button-shake motion-reduce:transition-none dark:bg-input/30 forced-colors:border data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "group/composer relative flex min-w-0 cursor-text flex-wrap items-center gap-1 rounded-(--composer-radius) bg-input/30 p-2 transition-shadow duration-150 ease-out-cubic data-morphing:overflow-clip data-shake:motion-safe:animate-button-shake motion-reduce:transition-none forced-colors:border data-disabled:cursor-not-allowed data-disabled:opacity-50",
         className
       )}
       onMouseDown={(event) => {

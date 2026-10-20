@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "chat": "node --env-file-if-exists=.env.local --watch server/chat.ts",
     "build": "tsc && vite build",
-    "test": "node --test server/*.test.ts",
+    "test": "node --test server/*.test.ts src/lib/*.test.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri"

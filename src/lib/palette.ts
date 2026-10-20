@@ -20,7 +20,7 @@ import * as React from "react"
  * The rule that falls out of that, and is worth stating because it looks like
  * an inconsistency otherwise: a preference the inline script reads keeps a
  * plain key, and everything else goes through `prefs.ts` and is namespaced.
- * App font is read only by app code, so it is `ai-app.font`. Theme and palette
+ * App font is read only by app code, so it is `tavi.font`. Theme and palette
  * are both applied as attributes on the root before the bundle loads, so both
  * are plain. The theme's key could have been namespaced years ago and moving
  * it would have discarded the choice of anyone who had already made one; this
@@ -72,25 +72,38 @@ export type Palette = {
  * `Default` is the app's existing token set, unchanged — its swatch is the
  * actual values from `index.css`. Further palettes are added here, each with
  * its own token block in `index.css` keyed on the same id.
+ *
+ * The swatch is a strip, and a strip shows the colours that tell one palette
+ * from another. It is not the whole token set: a palette has to define every
+ * token the base defines — `--panel-border` among them, the faint edge a
+ * floating panel carries — and the test fails one that is missing any of
+ * them, so a new palette cannot leave one of them behind.
  */
 export const PALETTES: Palette[] = [
   {
     id: "default",
     name: "Default",
     // background, secondary, border, muted-foreground, foreground — each
-    // taken from the matching block in index.css.
+    // taken from the matching block in index.css, and each the colour it
+    // actually paints: the border is translucent, so the swatch shows it laid
+    // over the background it is drawn on, which is what a reader sees.
+    //
+    // The panel's own edge is not in the strip. It is a line a pixel wide
+    // and a few percent off the panel's fill, and a bar of that colour
+    // would be indistinguishable from the border's — which is the whole
+    // point of a strip.
     swatch: {
       light: [
         "oklch(1 0 0)",
-        "oklch(0.97 0 0)",
-        "oklch(0.922 0 0)",
+        "oklch(0.95 0 0)",
+        "oklch(0.91 0 0)",
         "oklch(0.556 0 0)",
         "oklch(0.145 0 0)",
       ],
       dark: [
         "oklch(0.145 0 0)",
         "oklch(0.269 0 0)",
-        "oklch(0.439 0 0)",
+        "oklch(0.19 0 0)",
         "oklch(0.708 0 0)",
         "oklch(0.985 0 0)",
       ],

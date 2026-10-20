@@ -147,7 +147,7 @@ type DropdownMenuContentProps = MenuPrimitive.Popup.Props &
   }
 
 const dropdownMenuContentClassName =
-  "relative max-h-(--available-height) max-w-[min(var(--available-width),20rem)] min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto overscroll-none rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-(length:--hairline) forced-colors:border ring-foreground/10 transition-[opacity,scale] duration-150 ease-out-quint outline-none focus-visible:outline-hidden [--dropdown-menu-item-radius:max(calc(var(--radius-sm)*0.5),calc(var(--radius-lg)-0.25rem))] data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:data-instant:transition-none motion-safe:data-starting-style:scale-96 motion-safe:data-[chosen]:data-ending-style:delay-120 motion-reduce:transition-opacity"
+  "relative max-h-(--available-height) max-w-[min(var(--available-width),20rem)] min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto overscroll-none rounded-3xl bg-(--menu-surface) p-1 text-popover-foreground forced-colors:border transition-[opacity,scale] duration-150 ease-out-quint outline-none focus-visible:outline-hidden [--dropdown-menu-item-radius:max(calc(var(--radius-sm)*0.5),calc(var(--radius-lg)-0.25rem))] data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:data-instant:transition-none motion-safe:data-starting-style:scale-96 motion-safe:data-[chosen]:data-ending-style:delay-120 motion-reduce:transition-opacity"
 
 const SIDE_COLLISION_AVOIDANCE = { fallbackAxisSide: "end" } as const
 

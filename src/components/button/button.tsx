@@ -19,8 +19,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        /* An outlined button is a surface, and a surface is the canvas tinted
+           toward the foreground — white in the dark theme, near-black in the
+           light one. The token carries the direction, so the same classes
+           paint the same kind of button in both modes. It used to be a white
+           button with a hairline in the light theme and a tinted one in the
+           dark, which made a light-mode outline button the same colour as the
+           page it sat on. */
         outline:
-          "bg-background inset-ring-border hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/30 dark:inset-ring-input dark:hover:bg-input/50",
+          "bg-input/30 hover:bg-input/50 hover:text-foreground aria-expanded:bg-input/50 aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:

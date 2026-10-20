@@ -1,4 +1,4 @@
-# AI App
+# Tavi
 
 A Tauri v2 desktop chat app built on [assistant-ui](https://www.assistant-ui.com)
 and the Vercel AI SDK, with live model discovery and a selectable model.
@@ -94,16 +94,244 @@ each request and attaches it as a bearer header to the loopback server.
 There is no default model. The server streams only the model the client sends,
 and rejects a request that carries none with `400 No model selected`.
 
-Your last pick is remembered. Model, effort, mode and composer layout are
-restored on load, and a stored model that has left the catalogue is replaced
-with one the picker names. See [`docs/storage.md`](docs/storage.md) for where
-each kind of data lives on the web and desktop targets.
+The window's floor is 600 × 338 logical pixels, set in
+`src-tauri/tauri.conf.json`. Logical pixels are density-independent, so the
+floor is the same apparent size on every display — 600 × 338 of it — rather
+than a count of physical pixels that would mean something different on each
+one. A percentage would be the wrong instrument here: it would move the floor
+with the monitor, so the same app would be allowed to get smaller on a small
+screen than on a large one, which is exactly where the layout needs the room.
+The one thing that can still stop the window reaching its floor is the screen
+itself — the OS will not give a window more room than the display has.
+
+The window opens at 1030 × 579, which is 16:9, and always in the middle of the
+screen. The position is deliberately not remembered: a remembered position is
+right on the machine it was remembered on and wrong on every other one, while
+the middle of the screen is right everywhere. The size *is* remembered, so
+after the first run the app opens as large as it was last left.
+
+### The window on any display
+
+Sizes are in **logical pixels**, which is the unit the app is laid out in and
+the unit that means the same thing on every screen. A 4K display at 200% and a
+1080p one at 100% are the same size in logical pixels and four times the size
+in physical ones, so a window measured in logical pixels is the same *apparent*
+size on both — the title bar, the icons and the text all scale with the
+display's own scaling rather than with its resolution. A count of physical
+pixels would be a window twice the size on the high-density screen and the
+same size everywhere else, which is the opposite of what a window is for.
+
+The window is also never allowed to be bigger than the screen it is on. The
+work area — the screen without the taskbar and any other permanent furniture
+on it — is the ceiling, and Tauri's own `preventOverflow` applies it when the
+window is created. A size remembered on a large display is capped the same
+way when it is restored on a small one, so the app never opens half off the
+screen. The floor is the app's own minimum, and the OS resolves the two
+against each other: a display too small even for the floor gets a window as
+small as it can be.
+
+Your last pick is remembered. Model, effort and mode are restored on load, and
+a stored model that has left the catalogue is replaced with one the picker
+names. See [`docs/storage.md`](docs/storage.md) for where each kind of data
+lives on the web and desktop targets.
+
+Two things are deliberately *not* remembered, because they are questions about
+what you are doing now rather than preferences:
+
+- **Which composer layout the app opens in.** It always opens in Chat, never
+  in the layout it was last left in. The model, the effort and the mode are
+  choices about *how* to work; which of the two jobs the app starts on is a
+  question about what you came to do, and a fresh start is the honest answer
+  to it. Coming back to Code is a click.
+- **Whether the rail is open.** The first time the app is ever run it is
+  closed, so what is on screen is the conversation rather than a list of
+  places to go. After that it is remembered, because the rail is a working
+  tool: someone living in the session list wants it open every morning, and
+  someone who closed it wants it shut. Its *width* is still not remembered, for
+  the reason given above it.
+
+### The system tray
+
+The app has an icon in the system tray for as long as it is running.
+Right-clicking it gives four things:
+
+| Entry | What it does |
+|---|---|
+| **Show app** | Brings the window back, un-minimised and in front |
+| **New chat** | Brings the window back, with an empty Chat composer in it |
+| **New session** | Brings the window back, with an empty Code composer in it |
+| **Exit** | Quits the app |
+
+Clicking the icon itself brings the window back too, which is what a click on
+an icon in the corner of the screen is expected to do.
+
+**Closing the window hides it rather than quitting the app.** The app stays in
+the tray, and the tray is where it is found again; Exit is how the app quits.
+That is the trade a tray icon buys: the app is one click away at all times,
+and it does not go away when its window does.
+
+The menu is native and the app is React, and the two of them cannot both
+decide what a new chat is — which composer is in force and what is in it are
+the app's business. So the native side brings the window forward and sends
+the app a message, and the app puts the right thing in the window. The names
+of those messages are written out in both languages, in
+`src-tauri/src/tray.rs` and `src/blocks/shell/tray-bridge.tsx`, because there
+is no way to share one string across the boundary.
+
+A request is also **kept until the app has taken it**, so a click that arrives
+before the app is listening — which is exactly when someone who has just
+started the app is most likely to click it — is not lost. The app takes it
+when it mounts, and again when the window is next focused, which covers the
+other case: a page that was reloaded has lost its listener without the
+native side knowing.
+
+### The app's name
+
+The app is Tavi, and that is the name in every place a user can see it: the
+window's title, the taskbar button, the Start menu entry, the installer's
+folder, and the icon in the tray.
+
+The **identifier** — `com.mad.tavi` — is a different thing. It is the app's
+identity in the operating system, and the app's data directories are named
+after it. It changed with the name, and changing it moves the webview's
+profile, and with it every stored chat. The app has no migration for that:
+the profile has to be moved before the webview starts, and whether to move it
+is the user's decision, not the app's. On this machine the old directory was
+moved across by hand.
+
+The **icon** is `src-tauri/app-icon.svg` — a vector, so it scales to every
+size the platforms ask for without being resampled, and so the letter is a
+shape rather than a font the app does not ship. Every platform's icons are
+generated from it:
+
+```bash
+pnpm tauri icon src-tauri/app-icon.svg
+```
+
+The command also writes iOS and Android assets, which this desktop app does
+not use; they are deleted after generating.
+
+## Appearance
+
+The app is drawn in two modes — light and dark — and in any number of
+palettes. All three are the same kind of thing: a **theme**, which is a set of
+numbers. What a theme has to provide is written down in `src/index.css`, and
+`src/lib/theme.test.ts` checks that every theme provides it.
+
+### The roles
+
+The app paints itself with a fixed set of roles over those numbers. A theme
+that cannot fill a role has a hole in it, and a hole is a surface that cannot
+be seen.
+
+| Role | Tokens | What it is |
+|---|---|---|
+| the canvas | `--background` | the page the app is drawn on |
+| a panel | `--card`, `--popover`, `--sidebar` | a surface of its own: a card, a menu, the rail |
+| a field | `--input` | a control that takes text, and the faint tint a raised control wears |
+| a fill | `--secondary`, `--muted`, `--accent` | a solid surface: a chip, a row, a hover |
+| a divider | `--border` | the line between two things |
+| a menu | `--menu-surface` | the surface a dropdown and its submenus are drawn on |
+| text | `--foreground`, `--muted-foreground` | and the colour it is on |
+
+### The rules
+
+1. **Nothing is missing.** A theme defines every token the base defines. A
+   token that is absent is not a neutral value.
+2. **A surface is separated from what it sits on.** A fill, a tint or a panel
+   has to differ from the canvas by a visible step, or it is the same colour
+   as the page behind it.
+3. **The two themes have the same shape.** A panel is a step from the canvas,
+   the rail is the same colour as a panel, and the rail's own rows are the
+   same colour as any other fill. The dark theme steps *up* from the canvas
+   and the light theme steps *down* from it — the text is above the canvas
+   in one and below it in the other — but they take the same size of step, so
+   the two modes have the same relationships and only the direction differs.
+4. **Text is readable.** The foreground, and the muted foreground, both have to
+   clear a contrast ratio that makes them readable rather than merely present.
+5. **No hairlines.** Surfaces are separated by their fill, not by an edge drawn
+   around them.
+6. **A menu is a step further from the canvas than the rail is.** A menu floats
+   over the page rather than lying on it, and it is the one surface that can be
+   sitting on the rail — which it is the same colour as. So a menu is drawn on
+   `--menu-surface`, one step further from the canvas than the rail: further
+   *down* in the light theme, further *up* in the dark one, the same step in
+   both directions.
+
+Each rule is a test, so a palette that breaks one fails the build with a
+message naming the theme, the token and the number. The rules are about
+contrast rather than about particular values: a palette is free to be any
+colour it likes, and what it cannot do is make a surface that cannot be seen.
+
+### Menus
+
+Dropdowns, their submenus and the right-click menu are all drawn by one
+component, `src/components/dropdown-menu/dropdown-menu.tsx`, so they are the
+same shape by construction rather than by two files happening to be edited
+together. The context menu is a second component with the same surface.
+
+A menu carries **no shadow and no edge** — an edge around a menu would be a
+hairline, which is what rule 5 is about. It is separated by its fill alone,
+and that fill is the composer's text field's colour: the one surface in the
+app that is already a step further from the canvas than the rail is, and that
+takes the same step in both modes. Measured, a menu is 1.163:1 from the rail
+in the light theme and 1.153:1 in the dark one, and 1.31:1 and 1.27:1 from the
+white of the work area.
+
+The corner radius is `rounded-3xl`, 22 pixels, and it does more of the work
+than it looks: it is what tells you where the menu ends when it is over the
+rail, since the fill alone cannot say much at that contrast.
+
+### The mechanism
+
+A surface is the canvas **tinted toward the foreground** — white in the dark
+theme, near-black in the light one. The tokens carry the direction, so a
+component never has to know which mode it is in, and the same class paints the
+same kind of button in both. A light theme and a dark theme are the same
+shapes with the same relationships and opposite directions, like a photograph
+and its negative.
+
+The light theme did not follow that, and it is what made the two modes look
+like different apps rather than one app in two clothes. Its muted fill was a
+hundredth of a shade from white, so the chips, the composer's field and the
+rail were all the same colour as the page behind them; its card was the canvas;
+and its rail was a different colour from its card, which the dark theme's rail
+was not. The two themes now take the same steps, and the dark theme's are the
+ones the app has always had.
+
+A hairline was tried as well: `--hairline` was defined, and ninety-odd places
+in the app put a one-pixel border around themselves — buttons, cards, fields,
+menus, separators. The edges did not earn their place. The test now forbids
+the variable being defined, so the hairlines cannot come back.
+
+### Adding a palette
+
+Give it an id in `src/lib/palette.ts`, then add two blocks to
+`src/index.css`:
+
+```css
+html:not(.dark)[data-palette="your-id"] { ...light tokens... }
+.dark[data-palette="your-id"] { ...dark tokens... }
+```
+
+The `:not(.dark)` on the light one is not decoration. `[data-palette="x"]` is
+one attribute and `.dark` is one class, so they have the same specificity and
+whichever comes later wins — a light block written after `.dark` overrides the
+dark tokens and the app renders light in both modes. Excluding `.dark` from
+the light selector removes the contest entirely: the two rules can no longer
+both match, so their order stops mattering.
+
+The palette's swatch in `src/lib/palette.ts` shows what the theme looks like,
+and it is not read back off the stylesheet: a swatch has to be drawable for a
+palette that is not currently applied. Keep it in step by hand — a palette
+that ships the wrong strip is noticed immediately, because the strip sits next
+to the thing it describes.
 
 ## Storage
 
 | Data | Where |
 |---|---|
-| Preferences (model, effort, mode, layout) | `localStorage` via `src/lib/prefs.ts` |
+| Preferences (model, effort, mode, rail open) | `localStorage` via `src/lib/prefs.ts` |
 | Conversation threads | `localStorage` via `src/lib/sessions.ts`, capped at 50 |
 | Folder handles | IndexedDB via `src/lib/fs-access.ts` — handles cannot go in `localStorage` |
 | API key | OS credential store, through Rust. Never web storage |
@@ -240,6 +468,12 @@ so tool support is intermittent.
 
 ## Known limitations
 
+- **The application menu is mostly a shape.** File, Edit, View, Go and Help are
+  there with their submenus, so the app has the menu bar the machine expects,
+  but only three of the commands do anything: New chat, Close window and Exit,
+  which are the same three the system tray has. The rest are rendered disabled
+  and say why on hover. A menu that looked complete and did nothing would be
+  a lie about how much of the app exists.
 - **The account row is not an account.** It opens a menu on click and shows
   the two facts this app has about itself — the machine it is running on, and
   the provider key it can reach, including whether that key is on a free tier.
@@ -273,6 +507,32 @@ so tool support is intermittent.
   session and a reload returns it to the default. A width chosen on one screen
   is the wrong width on another, and storing it would reopen the app with the
   work area squeezed for no reason.
+- **The window's remembered size can drift on Linux desktops that draw their own decorations.** The
+  size is measured as the window's content and restored by asking for that
+  content size. On Windows and macOS the two are the same measurement and the
+  round trip is exact. On GNOME with Wayland, asking for a content size of X
+  produces a content size of X plus the height of the decoration, so the
+  window grows a little on every launch. The same drift is in Tauri's own
+  window-state plugin, and the fix needs the decoration extent, which only the
+  platform knows.
+- **The window has no native caption.** The app draws its own title bar: the
+  app's controls on the left, the window's on the right, and the space between
+  them as the region the window is dragged by. That is what puts the two
+  controls in one bar instead of two — the operating system's caption sat above
+  the app's, and the app's own bar was a second strip under it. The caption is
+  gone as a whole, because the icon and the name are part of it and cannot be
+  lifted off on their own; the taskbar still shows the icon. What this costs is
+  Windows' snap layouts — hovering the maximize button no longer offers the
+  half-screen and quadrant choices, since those belong to the caption button
+  that has been replaced. Everything else about the window is unchanged: it
+  resizes from its edges, it still snaps with the keyboard, and a double-click
+  in the drag region maximizes it.
+- **The tray's menu opens on the right button on Windows and macOS, and on the
+  system's own button on Linux.** The tray implementation the app uses does not
+  support choosing which button opens the menu outside Windows and macOS, so
+  on Linux the menu follows the system's convention — and the click that opens
+  it also brings the window forward, which is harmless but is not what happens
+  elsewhere.
 - **The app font can only be listed in the desktop app.** The Appearance
   settings let you pick any font installed on the machine, discovered through the
   OS: DirectWrite on Windows, Core Text on macOS, Fontconfig on Linux. A web page
@@ -368,6 +628,8 @@ and **will be lost on regeneration**:
 |---|---|
 | `src/components/thread.aui.tsx` | `overflow-y-auto` (scrollbar appears only when scrollable); model picker in the composer rail |
 | `src/components/tooltip-icon-button.tsx` | padding derived from size instead of hardcoded |
+| `src/components/button/button.tsx` | the outline variant paints its surface in `--input` rather than in the background, so the same classes work in both modes |
+| `src/blocks/prompt-input/prompt-input.tsx` | the composer's field paints itself in `--input` rather than in the background, and draws no hairline |
 
 The composer surface and scrollbar styling deliberately live in
 `src/index.css` (unlayered, so they beat Tailwind's layered utilities) precisely

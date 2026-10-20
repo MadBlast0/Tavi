@@ -9,6 +9,9 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    --color-focus-ring: var(--ring);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -65,24 +68,102 @@
     }
 }
 
+/* ---------------------------------------------------------------------------
+   The theme's contract.
+
+   A theme is a set of tokens, and the app paints itself with a fixed set of
+   *roles* over those tokens. The roles are what a theme has to provide, and
+   the rules below are what it has to satisfy for the app to look right in
+   both modes.
+
+   | Role | Tokens | What it is |
+   |---|---|---|
+   | the canvas | `--background` | the page the app is drawn on |
+   | a panel | `--card`, `--popover`, `--sidebar` | a surface of its own: a card, a menu, the rail |
+   | a field | `--input` | a control that takes text, and the faint tint a raised control wears |
+   | a fill | `--secondary`, `--muted`, `--accent` | a solid surface: a chip, a row, a hover |
+   | a divider | `--border` | the line between two things |
+   | a menu | `--menu-surface` | the surface a dropdown and its submenus are drawn on |
+   | text | `--foreground`, `--muted-foreground` | and the colour it is on |
+
+   The rules, which `src/lib/theme.test.ts` checks for every theme — the
+   light and dark of the default palette, and both of any palette added
+   later:
+
+   1. **Nothing is missing.** A theme defines every token the base defines.
+      A token that is absent is not a neutral value; it is a hole, and a hole
+      is a surface that cannot be seen.
+   2. **A surface is separated from what it sits on.** A fill, a tint or a
+      panel has to differ from the canvas by a visible step, or it is the
+      same colour as the page behind it.
+   3. **The two themes have the same shape.** A panel is a step from the
+      canvas, the rail is the same colour as a panel, and the rail's own
+      rows are the same colour as any other fill. The dark theme steps *up*
+      from the canvas and the light theme steps *down* from it — the text is
+      above the canvas in one and below it in the other — but they take the
+      same size of step, so the two modes have the same relationships and
+      only the direction differs.
+   4. **Text is readable.** The foreground on the canvas, and the muted
+      foreground on the canvas, both have to clear a contrast ratio that
+      makes them readable rather than merely present.
+   5. **No hairlines.** Surfaces are separated by their fill, not by an edge
+      drawn around them. `--hairline` is asked for in ninety-odd places by
+      the vendored components; because it is not defined, none of them draws
+      anything, and the test forbids it being defined.
+   6. **A menu is a step further from the canvas than the rail is.** A menu
+      does not lie on the canvas — it floats over it — and it is the one
+      surface that can be sitting on the rail, which it is the same colour
+      as. So a menu is drawn on `--menu-surface`, one step further from the
+      canvas than the rail is: further *down* in the light theme, further *up*
+      in the dark one, which is the same relationship in both directions.
+
+      It is the composer's text field's colour, which is the one surface in
+      the app that is a step further from the canvas than the rail is and
+      does the same in both modes. It carries no edge of its own: an edge
+      around a menu is a hairline, and hairlines are what rule 5 is about.
+
+   The mechanism is the same in both modes, and that is the point of it. A
+   surface is the canvas *tinted toward the foreground*: white in the dark
+   theme, near-black in the light one. The tokens carry the direction, so a
+   component never has to know which mode it is in — and a palette only has
+   to supply numbers, not a second set of rules.
+
+   To add a palette: give it an id in `src/lib/palette.ts`, then add
+
+       html:not(.dark)[data-palette="your-id"] { ...light tokens... }
+       .dark[data-palette="your-id"] { ...dark tokens... }
+
+   The `:not(.dark)` on the light one is not decoration. `[data-palette="x"]`
+   is one attribute and `.dark` is one class, so they have the same
+   specificity and whichever comes later wins — a light block written after
+   `.dark`, or after the dark palette block, overrides the dark tokens and the
+   app renders light in both modes. That was verified against this stylesheet
+   rather than assumed. Excluding `.dark` from the light selector removes the
+   contest entirely: the two rules can no longer both match, so their order
+   stops mattering.
+   --------------------------------------------------------------------------- */
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
+    --card: oklch(0.96 0 0);
     --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
+    --popover: oklch(0.96 0 0);
     --popover-foreground: oklch(0.145 0 0);
     --primary: oklch(0.205 0 0);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
+    --secondary: oklch(0.94 0 0);
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
+    --muted: oklch(0.94 0 0);
     --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
+    --accent: oklch(0.94 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
+    --success: oklch(0.205 0 0);
+    --success-foreground: oklch(0.985 0 0);
+    --border: oklch(0.145 0 0 / 0.1);
+    --input: oklch(0.145 0 0 / 0.15);
+    --menu-surface: oklch(0.91 0 0);
     --ring: oklch(0.708 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -90,13 +171,13 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
+    --sidebar: oklch(0.96 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent: oklch(0.94 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-border: oklch(0.145 0 0 / 0.1);
     --sidebar-ring: oklch(0.708 0 0);
 }
 
@@ -116,21 +197,25 @@
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    --success: oklch(0.922 0 0);
+    --success-foreground: oklch(0.205 0 0);
+    --border: oklch(1 0 0 / 0.1);
+    --input: oklch(1 0 0 / 0.15);
+    --menu-surface: oklch(0.26 0 0);
     --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(1 0 0 / 0.1);
     --sidebar-ring: oklch(0.556 0 0);
 }
 
