@@ -260,7 +260,7 @@ export const projectModel = (
 };
 
 /** The target a model is reached through. */
-export const openRouterTarget = (
+const openRouterTarget = (
   source: CatalogueSource,
   modelId: string,
 ): ModelTarget => ({

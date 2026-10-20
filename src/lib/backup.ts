@@ -124,10 +124,6 @@ export const exportConversations = async (): Promise<boolean> => {
   return saveFile(backupFileName(), JSON.stringify(backup, null, 2));
 };
 
-/** How many threads a backup holds. */
-export const backupSize = (backup: Backup): number =>
-  backup.chats.length + backup.sessions.length;
-
 /**
  * Reads a backup file and adds what is in it.
  *
