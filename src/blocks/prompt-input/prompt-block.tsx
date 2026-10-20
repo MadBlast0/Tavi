@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   AlignLeftIcon,
   BugIcon,
+  CircleAlertIcon,
   CodeIcon,
   CloudIcon,
   FileSearchIcon,
@@ -23,19 +24,20 @@ import {
   TerminalIcon,
 } from "lucide-react"
 
+import { supportsDirectoryPicker } from "@/lib/fs-access"
+import { isDesktopApp } from "@/lib/desktop"
+import { bindWorkspace } from "@/toolkit"
 import {
-  forgetFolder,
-  listProjectFiles,
-  listRecentFolders,
-  pickFolder,
-  readFileText,
-  restoreFolder,
-  supportsDirectoryPicker,
-  type DirHandle,
-  type ProjectFile,
-  type RecentFolder,
-} from "@/lib/fs-access"
+  forgetWorkspace,
+  listWorkspaceFiles,
+  listWorkspaces,
+  pickWorkspace,
+  readWorkspaceFile,
+  type Workspace,
+  type WorkspaceFile,
+} from "@/lib/workspace"
 import {
+  chatWriteError,
   findChat,
   listChats,
   onChatsChanged,
@@ -47,6 +49,7 @@ import {
   listSessions,
   onSessionsChanged,
   saveSession,
+  sessionWriteError,
   type StoredSession,
 } from "@/lib/sessions"
 import {
@@ -402,7 +405,7 @@ const chatStarters: Starter[] = [
  * ask the user to paste the code instead - they never name a file that is not
  * there, because a starter that cannot work is worse than no starter at all.
  */
-const codeStarters = (files: ProjectFile[]): Starter[] => {
+const codeStarters = (files: WorkspaceFile[]): Starter[] => {
   /** The file `n` positions ahead, or null when no folder has been walked. */
   const pick = (n: number) => {
     const file = files.length > 0 ? files[n % files.length] : undefined
@@ -479,8 +482,8 @@ const codeStarters = (files: ProjectFile[]): Starter[] => {
  */
 const starterPool = (
   variant: Variant,
-  folder: RecentFolder | null,
-  files: ProjectFile[],
+  folder: Workspace | null,
+  files: WorkspaceFile[],
   offset = 0,
 ): Starter[] => {
   const pool = variant === "code" && folder ? codeStarters(files) : variant === "code" ? codeStarters([]) : chatStarters
@@ -578,7 +581,7 @@ const askForText = async (
  */
 const expandUserTurn = async (
   message: PromptMessage,
-  known: ProjectFile[],
+  known: WorkspaceFile[],
 ): Promise<string> => {
   const blocks: string[] = []
   if (message.text.trim()) blocks.push(message.text.trim())
@@ -596,7 +599,7 @@ const expandUserTurn = async (
   for (const path of paths) {
     const entry = byPath.get(path)
     if (!entry) continue
-    const text = await readFileText(entry)
+    const text = await readWorkspaceFile(entry)
     blocks.push(
       text === null
         ? `--- ${path} ---\n[Could not be read as text, or exceeds the inline size limit.]`
@@ -612,7 +615,7 @@ const expandUserTurn = async (
 }
 
 /** Captures attachment text so a restored thread still carries its context. */
-const toStoredTurns = async (list: Turn[], known: ProjectFile[]): Promise<StoredTurn[]> =>
+const toStoredTurns = async (list: Turn[], known: WorkspaceFile[]): Promise<StoredTurn[]> =>
   Promise.all(
     list.map(async (turn): Promise<StoredTurn> => {
       if (turn.role === "summary") return { id: turn.id, role: "summary", text: turn.text }
@@ -848,10 +851,19 @@ export function PromptBlock() {
   const [usage, setUsage] = React.useState<PromptTokenUsage | null>(null)
   /** Which model the server says it called, so a mismatch can be shown. */
   const [servedModel, setServedModel] = React.useState<string | null>(null)
-  /** Folders this browser has actually granted access to. Empty until one is picked. */
-  const [folders, setFolders] = React.useState<RecentFolder[]>([])
+  /** Folders this app has actually been given access to. Empty until one is picked. */
+  const [folders, setFolders] = React.useState<Workspace[]>([])
   const [folderId, setFolderId] = React.useState<string | undefined>(undefined)
-  const [projectFiles, setProjectFiles] = React.useState<ProjectFile[]>([])
+  const [projectFiles, setProjectFiles] = React.useState<WorkspaceFile[]>([])
+  /**
+   * The last conversation that could not be saved, if there was one.
+   *
+   * The conversation stays on screen either way — losing what the user can see
+   * would be worse than losing what is on disk — but a conversation that is
+   * only on screen is gone the next time the app opens, and that has to be
+   * said rather than discovered.
+   */
+  const [saveError, setSaveError] = React.useState<string | null>(null)
   /**
    * Which slice of the starter pool is on screen. Advances on its own - see the
    * rotation effect - so there is no shuffle control to press.
@@ -929,7 +941,6 @@ export function PromptBlock() {
   }, [])
   const [compacting, setCompacting] = React.useState(false)
   const abortRef = React.useRef<AbortController | null>(null)
-  const dirRef = React.useRef<DirHandle | null>(null)
   const dockRef = React.useRef<HTMLDivElement>(null)
   /**
    * The thread being written, and the side it belongs to.
@@ -1125,11 +1136,13 @@ export function PromptBlock() {
   /* The picker only exists in Chromium; elsewhere the UI says so instead of
      showing folders it cannot read. */
   React.useEffect(() => {
-    setCanPick(supportsDirectoryPicker())
+    /* The desktop asks the system for a folder, which is always there. The
+       website asks the browser, which only some browsers have. */
+    setCanPick(isDesktopApp() || supportsDirectoryPicker())
   }, [])
 
   React.useEffect(() => {
-    void listRecentFolders().then(setFolders)
+    void listWorkspaces().then(setFolders)
   }, [])
 
   /* Real model catalog from the backend, used only in the real app. */
@@ -1295,21 +1308,25 @@ export function PromptBlock() {
     return () => window.clearInterval(id)
   }, [empty])
 
-  /* Re-acquire the picked folder and index its source files. A revoked or
-     missing grant resolves to null, which clears the list rather than leaving
-     stale paths behind. */
+  /* Index the folder's source files. A folder that has gone away, or whose
+     access was refused, resolves to nothing, which clears the list rather than
+     leaving stale paths behind.
+
+     The native tools are bound to the same folder: a tool that could reach
+     anywhere on the machine would not be bounded by anything, and a tool
+     bound to a folder the model cannot name is a tool that can do nothing
+     outside the one the user chose. */
   React.useEffect(() => {
+    bindWorkspace(folderId ?? null)
     if (!folderId) {
-      dirRef.current = null
       setProjectFiles([])
       return
     }
     let cancelled = false
     void (async () => {
-      const handle = await restoreFolder(folderId)
+      const files = await listWorkspaceFiles(folderId)
       if (cancelled) return
-      dirRef.current = handle
-      setProjectFiles(handle ? await listProjectFiles(handle) : [])
+      setProjectFiles(files)
     })()
     return () => {
       cancelled = true
@@ -1556,6 +1573,18 @@ export function PromptBlock() {
          rail highlights it, and switching back to that side finds it. */
       setActiveBySide((current) => ({ ...current, [write.side]: saved.id }))
     }
+
+    /* A write that was refused is not a failure the user can see on their own:
+       the conversation is still on screen, and the rail still lists it, and
+       both are gone the next time the app opens. So it is said out loud. */
+    const failure =
+      write.side === "chat" ? chatWriteError() : sessionWriteError()
+    if (failure) {
+      setStatus("error")
+      setSaveError(failure)
+    } else {
+      setSaveError(null)
+    }
     return saved
   }
 
@@ -1609,12 +1638,12 @@ export function PromptBlock() {
     void persist(settled, captureWrite())
   }
 
-  /* Opens a folder the browser will actually grant us, and keeps it in recents.
+  /* Opens a folder the user will actually grant us, and keeps it in recents.
      Nothing is inserted that this app has not been given access to read. */
   const browse = async () => {
-    const picked = await pickFolder()
+    const picked = await pickWorkspace()
     if (!picked) return
-    setFolders(await listRecentFolders())
+    setFolders(await listWorkspaces())
     setFolderId(picked.id)
   }
 
@@ -1630,8 +1659,8 @@ export function PromptBlock() {
    * forgetting where to work from is not the same as throwing the work away.
    */
   const forget = async (id: string) => {
-    await forgetFolder(id)
-    setFolders(await listRecentFolders())
+    await forgetWorkspace(id)
+    setFolders(await listWorkspaces())
     if (folderId === id) setFolderId(undefined)
   }
 
@@ -1959,6 +1988,18 @@ export function PromptBlock() {
           ref={dockRef}
           className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-3"
         >
+          {saveError ? (
+            <p
+              role="alert"
+              className="text-destructive mb-2 flex items-start gap-2 px-1 text-xs"
+            >
+              <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                {saveError} It is on screen now, but it will be gone the next
+                time the app opens.
+              </span>
+            </p>
+          ) : null}
           <PromptInput
             status={status}
             onSubmit={send}

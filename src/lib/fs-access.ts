@@ -31,22 +31,26 @@ type PickerWindow = Window & {
 export const supportsDirectoryPicker = () =>
   typeof (window as PickerWindow).showDirectoryPicker === "function"
 
-/** Directories worth walking when building the @ file list. */
-const SOURCE_EXTENSIONS = new Set([
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "mdx", "txt",
-  "css", "scss", "html", "yml", "yaml", "toml", "rs", "py", "go", "sql",
-  "sh", "env", "example", "lock",
-])
+/**
+ * Which files are worth walking for.
+ *
+ * The rules live in `src/lib/file-rules.ts`, because the desktop app walks a
+ * folder the same way and the two must agree on what the model can see.
+ */
+import {
+  MAX_READ_BYTES,
+  MAX_WALK_ENTRIES,
+  SKIP_DIRECTORIES,
+  SOURCE_EXTENSIONS,
+} from "./file-rules.ts"
 
-/** Never descend into these; they are large, noisy and never edited by hand. */
-const SKIP_DIRECTORIES = new Set([
-  "node_modules", ".git", "dist", "build", "out", "target", "vendor",
-  ".next", ".nuxt", ".turbo", ".cache", "coverage", "__pycache__",
-  ".venv", "venv", ".idea", ".vscode",
-])
-
-const MAX_WALK_ENTRIES = 4000
-const MAX_READ_BYTES = 400 * 1024
+export {
+  MAX_READ_BYTES,
+  MAX_WALK_DEPTH,
+  MAX_WALK_ENTRIES,
+  SKIP_DIRECTORIES,
+  SOURCE_EXTENSIONS,
+} from "./file-rules.ts"
 
 /* -------------------------------------------------------------------------- */
 /* IndexedDB handle store                                                      */
@@ -254,12 +258,15 @@ const isProbablyText = (file: File) =>
  * Reads a file as text for inclusion in a prompt. Binary and oversized files
  * come back as `null` instead of being silently truncated into the model.
  */
-export const readFileText = async (entry: ProjectFile): Promise<string | null> => {
+export const readFileText = async (file: {
+  handle?: FileHandle;
+}): Promise<string | null> => {
   try {
-    const file = await entry.handle.getFile()
-    if (file.size > MAX_READ_BYTES) return null
-    if (!isProbablyText(file)) return null
-    return await file.text()
+    if (!file.handle) return null
+    const handle = await file.handle.getFile()
+    if (handle.size > MAX_READ_BYTES) return null
+    if (!isProbablyText(handle)) return null
+    return await handle.text()
   } catch {
     return null
   }

@@ -39,7 +39,7 @@ import {
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
 import { listChats, onChatsChanged } from "@/lib/chats"
-import { listRecentFolders } from "@/lib/fs-access"
+import { listWorkspaces } from "@/lib/workspace"
 import {
   listSessions,
   onSessionsChanged,
@@ -472,18 +472,25 @@ export function SidebarNav() {
   const sort = sortByMode[variant]
 
   /**
-   * The names of the folders this app has been granted.
+   * The names of the folders this app has been given access to.
    *
-   * Read from the recents list, so a folder that has been renamed on disk is
-   * called by its new name. The session record keeps the name it was run with,
-   * which is what a session that belongs to a folder nobody has picked any more
-   * still shows.
+   * This is a lookup table, not a list of anything the rail shows. The rail
+   * lists **sessions**, and the groups come from the sessions themselves: the
+   * folder each one was run against is on the session record, and that is what
+   * the groups are built from.
+   *
+   * The table only supplies a group's *name*, so a folder that has been
+   * renamed on disk is called by its new name rather than by the name it was
+   * called when the session was run. A session whose folder this app no
+   * holds — forgotten, or never granted on this machine — falls back to the
+   * name on the session itself, so the group still reads as the project it
+   * was.
    */
   const [folderNames, setFolderNames] = React.useState<Record<string, string>>({})
 
   React.useEffect(() => {
     const refresh = () => {
-      void listRecentFolders().then((folders) =>
+      void listWorkspaces().then((folders) =>
         setFolderNames(Object.fromEntries(folders.map((f) => [f.id, f.name]))),
       )
     }
