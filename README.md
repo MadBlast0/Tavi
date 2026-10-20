@@ -63,10 +63,11 @@ deploy as a serverless function, which is what makes a web build cheap.
 ```bash
 pnpm install
 
-# web target — http://localhost:1420
+# web target — http://localhost:1420, with the chat server behind it
 pnpm dev
 
-# desktop window
+# desktop window — the app talks to the provider from Rust, so it needs
+# nothing but the frontend server
 pnpm tauri dev
 ```
 
@@ -78,8 +79,7 @@ you try to chat. If you would rather keep the key in the environment than in
 the app, copy `.env.example` to `.env.local` and fill it in.
 
 `pnpm dev` starts Vite and the chat server together via `concurrently`.
-`src-tauri/tauri.conf.json` already invokes the same command, so `pnpm tauri dev`
-starts both.
+`pnpm dev:web` starts only Vite, which is all the desktop app needs.
 
 This project uses pnpm and ships `pnpm-lock.yaml`. Do not install with npm: it
 would resolve a different set of versions from the registry and put it in
