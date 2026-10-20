@@ -38,10 +38,19 @@ export const sessionStore: SessionStore = createThreadStore<SessionExtra>({
   key: "code-sessions.v1",
   prefix: "s-",
   signal: "tavi:code-sessions-changed",
+  kind: "sessions",
 })
 
 /** Every session, newest first. */
 export const listSessions = (): StoredSession[] => sessionStore.list()
+
+/**
+ * Loads the sessions from where they are kept.
+ *
+ * Awaited before the app renders, so the rail never shows an empty list for
+ * the moment it takes to read them.
+ */
+export const readySessions = (): Promise<void> => sessionStore.ready()
 
 /** One session, by its id. */
 export const findSession = (id: string): StoredSession | undefined =>
@@ -51,7 +60,7 @@ export const findSession = (id: string): StoredSession | undefined =>
 export const saveSession = (
   id: string | null,
   draft: SessionDraft,
-): StoredSession => sessionStore.save(id, draft)
+): Promise<StoredSession> => sessionStore.save(id, draft)
 
 export const deleteSession = (id: string) => sessionStore.remove(id)
 
@@ -60,8 +69,11 @@ export const renameSession = (id: string, title: string) =>
 
 export const togglePinSession = (id: string) => sessionStore.togglePin(id)
 
-export const forkSession = (id: string): StoredSession | undefined =>
+export const forkSession = (id: string): Promise<StoredSession | undefined> =>
   sessionStore.fork(id)
+
+/** The last write that did not happen, if there was one. */
+export const sessionWriteError = (): string | null => sessionStore.lastError()
 
 /** Listen for sessions changing. Returns an unsubscribe function. */
 export const onSessionsChanged = (listener: () => void): (() => void) =>

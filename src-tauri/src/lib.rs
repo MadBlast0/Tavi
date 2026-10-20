@@ -4,6 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use tauri::AppHandle;
 
+mod threads;
 mod tray;
 mod window_state;
 
@@ -341,6 +342,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(for_state)
+        .manage(threads::Threads::default())
         .invoke_handler(tauri::generate_handler![
             list_directory,
             read_text_file,
@@ -348,6 +350,9 @@ pub fn run() {
             get_api_key,
             clear_api_key,
             list_installed_fonts,
+            threads::read_threads,
+            threads::write_threads,
+            threads::clear_threads,
             tray::take_intent,
             quit_app
         ])

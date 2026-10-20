@@ -41,16 +41,26 @@ type SessionExtra = {
   folderName?: string;
 };
 
-const chats = createThreadStore<Record<never, never>>({
-  key: "chats.v1",
-  prefix: "c-",
-  signal: "tavi:chats-changed",
-});
-
-const sessions = createThreadStore<SessionExtra>({
-  key: "code-sessions.v1",
-  prefix: "s-",
-  signal: "tavi:code-sessions-changed",
+/**
+ * A pair of stores, made fresh for each test.
+ *
+ * A store holds its threads in memory as well as on disk, so a store that
+ * outlived a test would carry the previous test's conversations into the next
+ * one.
+ */
+const stores = () => ({
+  chats: createThreadStore<Record<never, never>>({
+    key: "chats.v1",
+    prefix: "c-",
+    signal: "tavi:chats-changed",
+    kind: "chats",
+  }),
+  sessions: createThreadStore<SessionExtra>({
+    key: "code-sessions.v1",
+    prefix: "s-",
+    signal: "tavi:code-sessions-changed",
+    kind: "sessions",
+  }),
 });
 
 const aTurn = (text: string) => ({
@@ -80,9 +90,10 @@ test("a long title is cut rather than left to run on", () => {
   assert.ok(title.endsWith("…"));
 });
 
-test("a chat goes in the chat store and a session in the session store", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  const session = sessions.create({ turns: [aTurn("hello")] });
+test("a chat goes in the chat store and a session in the session store", async () => {
+  const { chats, sessions } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  const session = await sessions.create({ turns: [aTurn("hello")] });
 
   assert.equal(chats.list().length, 1);
   assert.equal(sessions.list().length, 1);
@@ -90,8 +101,9 @@ test("a chat goes in the chat store and a session in the session store", () => {
   assert.ok(session.id.startsWith("s-"));
 });
 
-test("a chat carries no folder and no mode", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
+test("a chat carries no folder and no mode", async () => {
+  const { chats } = stores();
+  await chats.create({ turns: [aTurn("hello")] });
 
   /* The shape says it too: `ChatDraft` has no `folder` and no `mode`, so a
      caller cannot write one — the compiler refuses it before it is stored.
@@ -103,8 +115,9 @@ test("a chat carries no folder and no mode", () => {
   assert.equal("mode" in stored[0], false);
 });
 
-test("a session carries the folder it was run against, by id and by name", () => {
-  const session = sessions.create({
+test("a session carries the folder it was run against, by id and by name", async () => {
+  const { sessions } = stores();
+  const session = await sessions.create({
     turns: [aTurn("hello")],
     mode: "edit",
     folder: "f-abc",
@@ -115,52 +128,58 @@ test("a session carries the folder it was run against, by id and by name", () =>
   assert.equal(session.mode, "edit");
 });
 
-test("saving a thread in place does not create a second one", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  chats.save(chat.id, { turns: [aTurn("hello"), aTurn("and again")] });
+test("saving a thread in place does not create a second one", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.save(chat.id, { turns: [aTurn("hello"), aTurn("and again")] });
 
   assert.equal(chats.list().length, 1);
   assert.equal(chats.find(chat.id)?.turns.length, 2);
 });
 
-test("a name the user set is not clobbered by the next message", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  chats.rename(chat.id, "My name for it");
-  chats.save(chat.id, { turns: [aTurn("something else entirely")] });
+test("a name the user set is not clobbered by the next message", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.rename(chat.id, "My name for it");
+  await chats.save(chat.id, { turns: [aTurn("something else entirely")] });
 
   assert.equal(chats.find(chat.id)?.title, "My name for it");
 });
 
-test("a thread's name is the first thing said in it, and does not change", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  chats.save(chat.id, { turns: [aTurn("hello"), aTurn("and again")] });
+test("a thread's name is the first thing said in it, and does not change", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.save(chat.id, { turns: [aTurn("hello"), aTurn("and again")] });
   assert.equal(chats.find(chat.id)?.title, "hello");
 });
 
-test("a thread that had nothing said in it takes its name from its first message", () => {
-  const chat = chats.create({ turns: [] });
+test("a thread that had nothing said in it takes its name from its first message", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [] });
   assert.equal(chat.title, "Untitled thread");
-  chats.save(chat.id, { turns: [aTurn("a better first message")] });
+  await chats.save(chat.id, { turns: [aTurn("a better first message")] });
   assert.equal(chats.find(chat.id)?.title, "a better first message");
 });
 
-test("a pin can be set and taken away", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  chats.togglePin(chat.id);
+test("a pin can be set and taken away", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.togglePin(chat.id);
   assert.ok(chats.find(chat.id)?.pinnedAt);
-  chats.togglePin(chat.id);
+  await chats.togglePin(chat.id);
   assert.equal(chats.find(chat.id)?.pinnedAt, undefined);
 });
 
-test("a fork is a separate thread that keeps what it was forked from", () => {
-  const session = sessions.create({
+test("a fork is a separate thread that keeps what it was forked from", async () => {
+  const { sessions } = stores();
+  const session = await sessions.create({
     turns: [aTurn("hello")],
     mode: "plan",
     folder: "f-abc",
     folderName: "MyProject",
   });
-  sessions.togglePin(session.id)
-  const fork = sessions.fork(session.id);
+  await sessions.togglePin(session.id);
+  const fork = await sessions.fork(session.id);
 
   assert.ok(fork);
   assert.notEqual(fork.id, session.id);
@@ -173,40 +192,67 @@ test("a fork is a separate thread that keeps what it was forked from", () => {
   assert.equal(sessions.list().length, 2);
 });
 
-test("forking something that is not there does nothing", () => {
-  assert.equal(sessions.fork("nope"), undefined);
+test("forking something that is not there does nothing", async () => {
+  const { sessions } = stores();
+  assert.equal(await sessions.fork("nope"), undefined);
 });
 
-test("a store keeps its own cap", () => {
+test("a store keeps its own cap", async () => {
+  const { chats } = stores();
   for (let i = 0; i < 55; i++) {
-    chats.create({ turns: [aTurn(`message ${i}`)] });
+    await chats.create({ turns: [aTurn(`message ${i}`)] });
   }
   assert.equal(chats.list().length, 50);
 });
 
-test("the two stores do not compete for the same slots", () => {
+test("the two stores do not compete for the same slots", async () => {
+  const { chats, sessions } = stores();
   for (let i = 0; i < 55; i++) {
-    chats.create({ turns: [aTurn(`chat ${i}`)] });
+    await chats.create({ turns: [aTurn(`chat ${i}`)] });
   }
   assert.equal(chats.list().length, 50);
   assert.equal(sessions.list().length, 0);
 });
 
-test("a thread that is deleted is gone from its own store and not from the other", () => {
-  const chat = chats.create({ turns: [aTurn("hello")] });
-  const session = sessions.create({ turns: [aTurn("hello")] });
+test("a thread that is deleted is gone from its own store and not from the other", async () => {
+  const { chats, sessions } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await sessions.create({ turns: [aTurn("hello")] });
 
-  chats.remove(chat.id);
+  await chats.remove(chat.id);
   assert.equal(chats.list().length, 0);
   assert.equal(sessions.list().length, 1);
 });
 
-test("a thread carries the model and the effort it was run with", () => {
-  const chat = chats.create({
+test("a thread carries the model and the effort it was run with", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({
     turns: [aTurn("hello")],
     model: "some/model",
     effort: "high",
   });
   assert.equal(chat.model, "some/model");
   assert.equal(chat.effort, "high");
+});
+
+/**
+ * A store that has not been read yet must not be written to.
+ *
+ * A write lands on everything the store holds. If the store had not been
+ * loaded, that would be one thread, and the rest of the history would be
+ * gone. So a write waits for the read, and the read happens first.
+ */
+test("a write waits for the store to be read", async () => {
+  const { chats } = stores();
+  globalThis.localStorage.setItem(
+    "tavi.chats.v1",
+    JSON.stringify([
+      { id: "c-old", title: "an old one", createdAt: 1, updatedAt: 1, turns: [] },
+    ]),
+  );
+
+  await chats.create({ turns: [aTurn("hello")] });
+
+  assert.equal(chats.list().length, 2);
+  assert.ok(chats.find("c-old"), "the thread that was already there should still be there");
 });

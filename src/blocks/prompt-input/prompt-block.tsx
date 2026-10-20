@@ -1590,8 +1590,8 @@ export function PromptBlock() {
     const asked = write.id
     const saved =
       write.side === "chat"
-        ? saveChat(asked, base)
-        : saveSession(asked, {
+        ? await saveChat(asked, base)
+        : await saveSession(asked, {
             ...base,
             mode: write.mode,
             folder: write.folderId,
@@ -1636,13 +1636,16 @@ export function PromptBlock() {
     usage,
   })
 
-  const send = (message: PromptMessage) => {
+  const send = async (message: PromptMessage) => {
     const id = `${Date.now()}`
     const next: Turn[] = [...turns, { id: `${id}-user`, role: "user", message }]
     setTurns(next)
     setStatus("submitted")
     const write = captureWrite()
-    void persist(next, write)
+    /* The message is saved before the request goes out. A reply is written to
+       the thread the message was asked on, and that thread has to exist
+       before the reply can arrive. */
+    await persist(next, write)
     void respondReal(`${id}-assistant`, next, write)
   }
 

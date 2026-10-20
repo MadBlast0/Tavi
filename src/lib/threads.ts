@@ -13,7 +13,7 @@
  * identical, and a copy is a copy that will drift.
  */
 
-import { readStorage, writeStorage } from "./storage.ts"
+import { repositoryFor, type ThreadKind } from "./thread-repository.ts"
 
 export type StoredFile = {
   name: string
@@ -92,14 +92,30 @@ export type ThreadStore<E extends object> = {
   key: string
   /** Every thread, newest first. */
   list: () => Array<ThreadBase & E>
+  /**
+   * Loads the threads from where they are kept.
+   *
+   * Every write waits for this, so a write can never land on a store that has
+   * not been read yet and take the rest of the history with it.
+   */
+  ready: () => Promise<void>
   /** One thread, by its id. */
   find: (id: string) => (ThreadBase & E) | undefined
-  create: (draft: ThreadDraft<E>) => ThreadBase & E
-  save: (id: string | null, draft: ThreadDraft<E>) => ThreadBase & E
-  remove: (id: string) => void
-  rename: (id: string, title: string) => void
-  togglePin: (id: string) => void
-  fork: (id: string) => (ThreadBase & E) | undefined
+  create: (draft: ThreadDraft<E>) => Promise<ThreadBase & E>
+  save: (id: string | null, draft: ThreadDraft<E>) => Promise<ThreadBase & E>
+  remove: (id: string) => Promise<void>
+  rename: (id: string, title: string) => Promise<void>
+  togglePin: (id: string) => Promise<void>
+  fork: (id: string) => Promise<(ThreadBase & E) | undefined>
+  /**
+   * The last write that did not happen, if there was one.
+   *
+   * The threads on screen are the ones in memory, and a write that is refused
+   * — a full disk, a browser with no room left — leaves the conversation on
+   * screen and says here that it was not saved. Losing what the user can see
+   * would be worse than losing what is on disk.
+   */
+  lastError: () => string | null
   /** Listen for changes. Returns an unsubscribe function. */
   subscribe: (listener: () => void) => () => void
 }
@@ -170,8 +186,10 @@ export const createThreadStore = <E extends object>(options: {
   signal: string
   /** How many threads are kept. */
   cap?: number
+  /** Which collection this is. */
+  kind: ThreadKind
 }): ThreadStore<E> => {
-  const { key, prefix, signal } = options
+  const { key, prefix, signal, kind } = options
   const cap = options.cap ?? 50
 
   const isThread = (item: unknown): item is ThreadBase & E => {
@@ -184,10 +202,21 @@ export const createThreadStore = <E extends object>(options: {
     )
   }
 
-  const read = (): Array<ThreadBase & E> => {
-    if (typeof localStorage === "undefined") return []
-    const raw = readStorage(key)
-    if (!raw) return []
+  const repository = repositoryFor(kind, key)
+
+  /**
+   * The threads as they are right now.
+   *
+   * They are held here rather than read back on every call, because a write
+   * has to know what else is there: the desktop app writes a file, and two
+   * writes that each read the file and then each write their own version of it
+   * back would lose one of them.
+   */
+  let threads: Array<ThreadBase & E> = []
+  let loaded: Promise<void> | null = null
+  let failure: string | null = null
+
+  const parse = (raw: string): Array<ThreadBase & E> => {
     try {
       const parsed = JSON.parse(raw)
       if (!Array.isArray(parsed)) return []
@@ -197,25 +226,62 @@ export const createThreadStore = <E extends object>(options: {
     }
   }
 
-  const write = (threads: Array<ThreadBase & E>) => {
-    if (typeof localStorage === "undefined") return
-    let stored = writeStorage(key, JSON.stringify(threads.slice(0, cap)))
-    if (!stored) {
-      // Quota exhausted. Dropping the oldest thread is better than losing the
-      // one the user is looking at.
-      stored = writeStorage(key, JSON.stringify(threads.slice(0, 5)))
-    }
-    if (stored && typeof window !== "undefined") {
+  const announce = () => {
+    if (typeof window !== "undefined") {
       window.dispatchEvent(new Event(signal))
     }
   }
 
-  const list = () =>
-    read().sort((a, b) => b.updatedAt - a.updatedAt)
+  const ready = (): Promise<void> => {
+    if (!loaded) {
+      loaded = (async () => {
+        try {
+          /* The conversations that were in the webview's storage are brought
+             across first, so the first read sees everything there is. */
+          await repository.migrate()
+          threads = parse(await repository.read())
+        } catch (error) {
+          /* The conversations could not be read. The store stays empty rather
+             than holding half of them, and the app is told. */
+          failure = error instanceof Error ? error.message : String(error)
+          console.error("[threads] could not be read:", error)
+        }
+        announce()
+      })()
+    }
+    return loaded
+  }
 
-  const find = (id: string) => read().find((thread) => thread.id === id)
+  /**
+   * Takes a new set of threads.
+   *
+   * The list is newest first, and the cap is the size policy: when there are
+   * too many, the least recently used go. A thread that has just been written
+   * to is at the front, so the conversation the user is in is never the one
+   * that is dropped.
+   */
+  const apply = (next: Array<ThreadBase & E>) => {
+    threads = next.slice(0, cap)
+    announce()
+  }
 
-  const create = (draft: ThreadDraft<E>): ThreadBase & E => {
+  /**
+   * Writes the threads out.
+   *
+   * A write that is refused leaves the threads on screen and records why,
+   * rather than throwing away the conversation the user is looking at.
+   */
+  const write = async (next: Array<ThreadBase & E>): Promise<void> => {
+    const written = await repository.write(JSON.stringify(next))
+    failure = written ? null : "The conversation could not be saved."
+  }
+
+  const list = () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt)
+
+  const find = (id: string) => threads.find((thread) => thread.id === id)
+
+  const create = async (draft: ThreadDraft<E>): Promise<ThreadBase & E> => {
+    await ready()
     const now = Date.now()
     const thread = {
       ...draft,
@@ -224,7 +290,8 @@ export const createThreadStore = <E extends object>(options: {
       createdAt: now,
       updatedAt: now,
     } as ThreadBase & E
-    write([thread, ...read()])
+    apply([thread, ...threads])
+    await write(threads)
     return thread
   }
 
@@ -233,8 +300,11 @@ export const createThreadStore = <E extends object>(options: {
    * only ever set while it is still the placeholder, so renaming it by sending
    * the first real message does not clobber anything the user chose.
    */
-  const save = (id: string | null, draft: ThreadDraft<E>): ThreadBase & E => {
-    const threads = read()
+  const save = async (
+    id: string | null,
+    draft: ThreadDraft<E>,
+  ): Promise<ThreadBase & E> => {
+    await ready()
     const now = Date.now()
     const existing = id ? threads.find((thread) => thread.id === id) : undefined
 
@@ -245,28 +315,36 @@ export const createThreadStore = <E extends object>(options: {
         title: existing.title === UNTITLED ? titleFor(draft.turns) : existing.title,
         updatedAt: now,
       } as ThreadBase & E
-      write(threads.map((thread) => (thread.id === id ? next : thread)))
+      apply([next, ...threads.filter((thread) => thread.id !== id)])
+      await write(threads)
       return next
     }
 
     return create(draft)
   }
 
-  const remove = (id: string) => {
-    write(read().filter((thread) => thread.id !== id))
+  const remove = async (id: string) => {
+    await ready()
+    apply(threads.filter((thread) => thread.id !== id))
+    await write(threads)
   }
 
-  const rename = (id: string, title: string) => {
+  const rename = async (id: string, title: string) => {
+    await ready()
     const trimmed = title.trim()
     if (!trimmed) return
-    write(
-      read().map((thread) => (thread.id === id ? { ...thread, title: trimmed } : thread)),
+    apply(
+      threads.map((thread) =>
+        thread.id === id ? { ...thread, title: trimmed } : thread,
+      ),
     )
+    await write(threads)
   }
 
-  const togglePin = (id: string) => {
-    write(
-      read().map((thread) => {
+  const togglePin = async (id: string) => {
+    await ready()
+    apply(
+      threads.map((thread) => {
         if (thread.id !== id) return thread
         if (thread.pinnedAt) {
           const { pinnedAt: _dropped, ...rest } = thread
@@ -275,6 +353,7 @@ export const createThreadStore = <E extends object>(options: {
         return { ...thread, pinnedAt: Date.now() }
       }),
     )
+    await write(threads)
   }
 
   /**
@@ -286,7 +365,8 @@ export const createThreadStore = <E extends object>(options: {
    * Nothing links the two afterwards: a fork is an independent thread, not a
    * live branch.
    */
-  const fork = (id: string): (ThreadBase & E) | undefined => {
+  const fork = async (id: string): Promise<(ThreadBase & E) | undefined> => {
+    await ready()
     const original = find(id)
     if (!original) return undefined
     const now = Date.now()
@@ -300,7 +380,8 @@ export const createThreadStore = <E extends object>(options: {
       // is something you make once and usually leave.
       pinnedAt: undefined,
     } as ThreadBase & E
-    write([forkThread, ...read()])
+    apply([forkThread, ...threads])
+    await write(threads)
     return forkThread
   }
 
@@ -310,5 +391,18 @@ export const createThreadStore = <E extends object>(options: {
     return () => window.removeEventListener(signal, listener)
   }
 
-  return { key, list, find, create, save, remove, rename, togglePin, fork, subscribe }
+  return {
+    key,
+    list,
+    ready,
+    find,
+    create,
+    save,
+    remove,
+    rename,
+    togglePin,
+    fork,
+    lastError: () => failure,
+    subscribe,
+  }
 }
