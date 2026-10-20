@@ -441,6 +441,12 @@ not change them.
   decision about one piece of work, applies to the session only.
 - The dormant `src/components/model-picker.tsx` writes the same pref keys from
   a second place; it is taken out of the picture in Stage 7 (B2).
+- **The effort reconciliation runs per side.** The effect at `:1012-1030` clears
+  an effort level the selected model does not publish, rather than mapping it
+  to a nearby one. With one model and one effort it had a single subject; with
+  two it has one per side, and each side's remembered level is checked against
+  **that side's** model — so switching to Code with an effort Opus does not
+  accept clears Code's effort, and leaves Chat's alone.
 
 **Checked by:** pick Opus in Chat, switch to Code, pick Sonnet, switch back —
 Chat still says Opus. Click "New chat" in Chat — still Opus. Click "New session"
