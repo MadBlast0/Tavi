@@ -15,7 +15,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { PREF, readPref, writePref } from "@/lib/prefs";
+import { PREF, readPref, sidePref, writePref } from "@/lib/prefs";
+import type { Side } from "@/lib/sides";
 
 import type { KeyStatus } from "./key-types";
 import {
@@ -183,7 +184,14 @@ const ModelDetails = ({ hovered }: { hovered: Hovered }) => {
  * registered with assistant-ui's model context, which is what reaches the next
  * request.
  */
-export const ComposerModelPicker = ({ className }: { className?: string }) => {
+export const ComposerModelPicker = ({
+  className,
+  side = "chat",
+}: {
+  className?: string;
+  /** Which side's choice this picker is. */
+  side?: Side;
+}) => {
   const aui = useAui();
 
   const [catalog, setCatalog] = useState<SlimModel[]>([]);
@@ -195,11 +203,20 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
   const [hovered, setHovered] = useState<Hovered>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * The model and the effort are remembered per side.
+   *
+   * Chat and Code are separate places, so the model you chat with and the
+   * model you code with are two choices. This picker is the assistant-ui one,
+   * which is not the surface the app runs on, and it takes the side as a
+   * prop so that it agrees with the live composer rather than writing a
+   * different key from the other side of the app.
+   */
   const [modelId, setModelId] = useState<string | undefined>(() =>
-    readPref(PREF.model),
+    readPref(sidePref(PREF.model, side)),
   );
   const [effort, setEffort] = useState<string | undefined>(() =>
-    readPref(PREF.effort),
+    readPref(sidePref(PREF.effort, side)),
   );
 
   useEffect(() => {
@@ -375,7 +392,7 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
                     // `onSelect` would be silently ignored.
                     onClick={() => {
                       setModelId(model.id);
-                      writePref(PREF.model, model.id);
+                      writePref(sidePref(PREF.model, side), model.id);
                     }}
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) =>
                       showDetails(model, e.currentTarget)
@@ -405,7 +422,7 @@ export const ComposerModelPicker = ({ className }: { className?: string }) => {
                   value={effectiveEffort ?? ""}
                   onValueChange={(next) => {
                     setEffort(next);
-                    writePref(PREF.effort, next);
+                    writePref(sidePref(PREF.effort, side), next);
                   }}
                   aria-label="Reasoning effort"
                   className="flex items-center gap-0.5"

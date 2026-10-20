@@ -13,7 +13,8 @@ behind `invoke`.
 | The data is… | Store it in | Because |
 |---|---|---|
 | A preference the user picked and could re-type | `localStorage` | Synchronous, needed on first paint |
-| Conversation threads | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
+| **Chats** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
+| **Code sessions** | `localStorage` (small) → IndexedDB (large) | See "Threads" below |
 | A folder handle the browser granted | IndexedDB | Handles cannot go in `localStorage` |
 | An API key or other secret | OS credential store, via Rust | Never any web storage |
 | A regenerated cache | Cache dir / temp, never persisted | Wipe is harmless |
@@ -27,7 +28,19 @@ delete it on a schedule.
 
 ## Preferences — `localStorage`
 
-`src/lib/prefs.ts`. Model, effort level, mode, and whether the rail is open.
+`src/lib/prefs.ts`. Model, effort level, agent mode, app font, and whether the
+rail is open.
+
+The model and the effort are remembered **per side**: `tavi.model.chat` and
+`tavi.model.code`, `tavi.effort.chat` and `tavi.effort.code`. Chat and Code
+are separate places, and the model you chat with is not the model you code
+with — a cheap model for a quick question and a careful one for a change are
+different choices, and "New chat" and "New session" each keep their own side's.
+
+The agent mode's default is remembered **per folder** — `tavi.mode.<folderId>` —
+the way a permission mode is remembered per folder in other tools. The way you
+work in one repository is not the way you work in another. A session that is
+already open keeps the mode it was run with.
 
 - **Website:** `localStorage` for `https://your-host`. Shared across tabs,
   per-origin, per-browser-profile. Roughly 5–10 MB, but we use ~100 bytes.
@@ -48,6 +61,17 @@ time it is read, and the old one is removed afterwards. A rename is not a
 reason to lose someone's chats or their choice of model, and the move never
 overwrites: a value already in the new namespace is the newer one, and it
 wins.
+
+**One value is retired rather than moved.** The app used to keep one array of
+threads, holding both chats and code sessions with nothing on either to say
+which it was. It is gone, and it is deleted from **both** namespaces: the
+namespace rule above would otherwise move the legacy copy straight back on the
+next read. `src/lib/storage.ts` has `forgetStorage` for exactly this, and
+`src/lib/migrations.ts` is where the one-time changes live.
+
+The same is true of the model and the effort, which used to be one choice for
+the whole app: the old value becomes the first choice on **each** side and the
+old key is then removed.
 
 ### What is deliberately not stored
 
@@ -81,18 +105,37 @@ an app-data file — see "What to change for desktop".
 
 ---
 
-## Conversation threads
+## Threads — two of them
 
-`src/lib/sessions.ts`, key `tavi.sessions.v1`.
+`src/lib/chats.ts`, key `tavi.chats.v1`, and `src/lib/sessions.ts`, key
+`tavi.code-sessions.v1`. The vocabulary they share — the turn shape, the title
+rule, the timestamp format, the storage machinery — is in `src/lib/threads.ts`,
+so the two cannot drift apart.
 
-Currently a single JSON array in `localStorage`, capped at 50 threads, with
-attachment text captured at send time so a restored thread keeps its context.
+**A chat is not a code session.** They are separate objects in separate
+stores, with separate shapes and separate caps:
+
+| | Chat | Code session |
+|---|---|---|
+| Key | `tavi.chats.v1` | `tavi.code-sessions.v1` |
+| Shape | turns, model, effort, pin | turns, model, effort, agent mode, folder, pin |
+| A folder | none — there is nowhere to put one | the folder's id and its name |
+| Grouped by | nothing; the list is flat | the project it was run against |
+| Id prefix | `c-` | `s-` |
+
+Both are a single JSON array in `localStorage`, capped at 50, with attachment
+text captured at send time so a restored thread keeps its context.
 
 - **Website:** fine as-is at this size. If threads grow to include full file
   contents, move to IndexedDB — the 5 MB `localStorage` ceiling would be hit
   by roughly one long thread with attachments.
 - **Desktop:** same today, with the same eviction caveat. Moving to a file in
   the app-data directory is the correct end state.
+
+**The composer's drafts are per side too**, and they are not namespaced: the
+key is `prompt-draft:chat` and `prompt-draft:code`. A half-written chat is
+waiting in the chat composer and a half-written session in the session
+composer, and neither appears in the other.
 
 ---
 
@@ -102,8 +145,14 @@ attachment text captured at send time so a restored thread keeps its context.
 `recent-folders`.
 
 `FileSystemDirectoryHandle` is structured-cloneable but **not** serialisable to
-`localStorage`, so it needs IndexedDB. Metadata (folder name, picked-at) lives
-alongside it.
+`localStorage`, so it needs IndexedDB. Metadata (the folder's id, its name and
+when it was picked) lives alongside it.
+
+**A folder's id is generated, and is not its name.** Two directories can share
+a name, and a folder identified by its name is one folder to this app: the
+second pick would overwrite the first's handle, and two projects would be
+grouped as one. The name is kept separately, because the name is what a person
+reads.
 
 - **Website:** IndexedDB, same-origin, evicted under the same pressure as
   `localStorage`.
@@ -219,12 +268,18 @@ directly — treat them as implementation detail. The practical consequences:
 
 1. **Move threads and preferences to an app-data file**, written from Rust, so
    uninstall/reinstall is a deliberate choice rather than a side effect and
-   "clear browser data" cannot silently wipe a user's work.
+   "clear browser data" cannot silently wipe a user's work. One file with two
+   collections, rather than two files, so the app-data directory does not
+   become a place where half the state is and half is not.
 2. **Add an export/import** for threads. Until the desktop app owns its storage,
-   a user has no way to back up or move their conversations.
-3. **Bound the thread store.** The web cap is 50 threads; the desktop file
-   needs an explicit size policy instead of relying on a browser quota.
-4. **Decide the upgrade story** for a schema change to the stored shape — the
-   key is versioned (`tavi.sessions.v1`) but there is no migration path yet.
+   a user has no way to back up or move their conversations. It has to cover
+   both stores, or the export is only half of somebody's work.
+3. **Bound the thread stores.** The web cap is 50 threads each; the desktop
+   file needs an explicit size policy instead of relying on a browser quota.
+4. **Decide the upgrade story** for a schema change to the stored shape. The
+   keys are versioned (`tavi.chats.v1`, `tavi.code-sessions.v1`), and the
+   one-time changes that have already happened — the retired thread store, the
+   model and the effort splitting per side — live in `src/lib/migrations.ts`.
+   There is no general migration path yet.
 
 None of this is needed for the web target, and none of it should block it.

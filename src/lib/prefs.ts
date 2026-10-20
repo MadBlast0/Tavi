@@ -8,9 +8,14 @@
  *
  * Scope note — this holds *preferences*, not data. Preferences are things the
  * user picked that would be trivial to re-enter (a model, an effort level).
- * Anything larger belongs in `sessions.ts`, and anything the user would be
- * upset to lose belongs in `fs-access.ts`. See `docs/storage.md` for where each
- * lands on each platform.
+ * Anything larger belongs in `chats.ts` or `sessions.ts`, and anything the user
+ * would be upset to lose belongs in `fs-access.ts`. See `docs/storage.md` for
+ * where each lands on each platform.
+ *
+ * A preference that belongs to one side of the app rather than to both is
+ * keyed with the side on the end — `model.chat`, `model.code` — because Chat
+ * and Code are separate places and the model you chat with is not the model
+ * you code with.
  *
  * `localStorage` is `string` -> `string` only, so everything here is a string
  * and parsing is the caller's business. A corrupt or absent value reads as

@@ -82,7 +82,7 @@ each request and attaches it as a bearer header to the loopback server.
 
 > Residual risk: in the desktop app the key exists briefly in webview JS memory
 > per request. That is inherent to the process split — see
-> `docs/plan/Plan_master.md` §9.2.
+> `docs/plan/Plan_master.md` §15.3.
 
 ## Configuration
 
@@ -331,14 +331,47 @@ to the thing it describes.
 
 | Data | Where |
 |---|---|
-| Preferences (model, effort, mode, rail open) | `localStorage` via `src/lib/prefs.ts` |
-| Conversation threads | `localStorage` via `src/lib/sessions.ts`, capped at 50 |
+| Preferences (model and effort per side, agent mode per folder, rail open) | `localStorage` via `src/lib/prefs.ts` |
+| Chats | `localStorage` via `src/lib/chats.ts`, capped at 50 |
+| Code sessions | `localStorage` via `src/lib/sessions.ts`, capped at 50 |
+| Composer drafts | `localStorage`, one per side |
 | Folder handles | IndexedDB via `src/lib/fs-access.ts` — handles cannot go in `localStorage` |
 | API key | OS credential store, through Rust. Never web storage |
 
 Browser storage is evictable, and that is fine on the web target but not for an
 installed app. `docs/storage.md` covers the platform paths and what should move
 into an app-data file.
+
+## The two surfaces
+
+The app has two places to be: **Chat** and **Code**. The switch is at the top
+of the rail, and it changes what the rail holds and what the work area shows.
+
+**A chat is not a code session.** They are separate objects, in separate
+stores, with separate lists.
+
+| | Chat | Code |
+|---|---|---|
+| A thread is called | a chat | a session |
+| The rail's list | "Chats", flat | "Sessions", grouped by project |
+| Owns a project folder | no | yes |
+| Owns an agent mode (Edit / Plan / Ask) | no | yes |
+| Files in context | attachments only | the folder's files and `@` mentions, inlined at send time |
+| Tools | none — the server refuses a chat that carries any | the toolkit, scoped to the folder (not built) |
+| System prompt | a conversation | the mode's instruction, and the folder |
+| Model and effort | remembered for the Chat side | remembered for the Code side |
+
+Switching between them takes you to the other side's conversation, or to an
+empty one if that side has none — never to the other side's thread. Opening a
+thread moves the switch with it, so opening a session puts the composer in
+Code. A reply in flight is aborted on a switch and its partial text kept,
+because one composer has one stream.
+
+**The server writes the system prompt.** The client sends the facts — which
+surface, which agent mode, which folder — and the server decides what the model
+is told. So a request that carries no surface is refused, a request that
+carries its own system prompt is refused, and a chat that carries tools is
+refused. A rule the client could ignore is not a rule.
 
 ## Tools
 
@@ -418,9 +451,9 @@ public catalog, projected to a slim shape and cached for 15 minutes.
   treated as a universal "thinking off". Turning thinking off is a
   **thinking-mode** decision, which providers model separately and which
   OpenRouter does not publish at all.
-- Selection and effort persist in local storage; both are preferences, not
-- Selection and effort persist in local storage; both are preferences, not
-  secrets.
+- Selection and effort persist in local storage, **per side** — the model you
+  chat with and the model you code with are two choices, and each side keeps
+  its own. Both are preferences, not secrets.
 
 ### Provider support
 
@@ -497,11 +530,11 @@ so tool support is intermittent.
   to project needs a project to move to, and `GET /api/projects` returns nothing,
   so the picker would open empty. An empty picker is worse than no picker.
 - **Code's thread list is grouped by project, and projects are usually
-  empty.** A thread records the folder it was run against, so that is what the
+  empty.** A session records the folder it was run against, so that is what the
   grouping uses. `GET /api/projects` currently returns an empty list because
-  nothing has been cloned into the projects folder, so every real thread lands
+  nothing has been cloned into the projects folder, so every real session lands
   under a `No folder` group until one has a folder on it. The grouping is
-  derived from the thread, not invented for it: a thread with no folder is
+  derived from the session, not invented for it: a session with no folder is
   labelled as having none rather than being hidden or given a name.
 - **The rail's width is not remembered.** Dragging the seam sets it for the
   session and a reload returns it to the default. A width chosen on one screen
@@ -615,8 +648,9 @@ so tool support is intermittent.
   original `File` object cannot survive a reload.
 - **Streaming text is revealed by `requestAnimationFrame`.** In a background tab
   the reveal pauses and catches up when the tab is focused again.
-- **Agent mode has no tool execution.** Modes change the system prompt only. A
-  model may describe commands it would run; it cannot run them.
+- **Agent mode has no tool execution.** Modes change the system prompt only, and
+  the server writes that prompt rather than the client. A model may describe
+  commands it would run; it cannot run them.
 
 ## Local edits to generated files
 
@@ -629,7 +663,13 @@ and **will be lost on regeneration**:
 | `src/components/thread.aui.tsx` | `overflow-y-auto` (scrollbar appears only when scrollable); model picker in the composer rail |
 | `src/components/tooltip-icon-button.tsx` | padding derived from size instead of hardcoded |
 | `src/components/button/button.tsx` | the outline variant paints its surface in `--input` rather than in the background, so the same classes work in both modes |
-| `src/blocks/prompt-input/prompt-input.tsx` | the composer's field paints itself in `--input` rather than in the background, and draws no hairline |
+
+`src/blocks/prompt-input/` is a different thing: the ui-haven prompt-input
+block, vendored in full and edited locally. It is not regenerated by the
+command above, so the changes to it are ours to keep — the composer's field
+paints itself in `--input` rather than in the background and draws no hairline,
+it can be told what content it is showing, and its attachments can be owned by
+the caller rather than by the composer.
 
 The composer surface and scrollbar styling deliberately live in
 `src/index.css` (unlayered, so they beat Tailwind's layered utilities) precisely
@@ -638,12 +678,20 @@ so they survive regeneration.
 ## Vendored component library
 
 66 components from the `ui-haven` library are in `src/components/<name>/`, with
-helpers in `src/lib/{hotkey,motion}.ts` and `src/hooks/`. They are additive and
-unreferenced by the chat, kept available for future UI work.
+helpers in `src/lib/{hotkey,motion}.ts` and `src/hooks/`. Many of them are
+what the app is drawn with — the rail, the menus, the dialogs, the composer —
+and the rest are additive and unreferenced, kept available for future UI work.
 
-`src/blocks/prompt-input/` is their full prompt-input block. It is **not wired
-up**: it is coupled to its own context and would mean replacing assistant-ui's
-composer wholesale. Kept for reference. Its useful patterns — a DropdownMenu
-model/effort rail, and the `EffortFill` idea — informed `ComposerModelPicker`.
+`src/blocks/prompt-input/` is the app's prompt-input block, and it **is** wired
+up: `src/App.tsx` renders it directly, and it is the surface the conversation
+is drawn and sent from.
+
+`src/assistant.tsx`, `src/components/thread.aui.tsx`, `src/toolkit.tsx`,
+`src/components/assistant-ui/**` and `src/components/model-picker.tsx` are the
+**assistant-ui** equivalents. They are a reference implementation of the same
+idea in another runtime, kept for comparison; the app does not mount them.
+They are kept honest by writing the same preference keys the live composer
+does, so a reader is not misled by two halves of the app disagreeing about
+where a choice is remembered.
 
 Test files and other unused archive data were removed on import.

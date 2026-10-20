@@ -1,6 +1,7 @@
 # Separating Chat from Code
 
-**Status:** plan, revision 3. Nothing in it is built yet.
+**Status:** plan, revision 4. **The seven stages are built.** What is left is
+recorded in §11.
 **Decided by:** the maintainer, 2026-10-20. The decisions are recorded in §7 and are
 not to be reopened without saying so here first.
 **Why this document exists:** the app has a Chat surface and a Code surface, and
@@ -409,15 +410,23 @@ The morph is not the problem and it does not change. `PromptInput` keeps one
 context, and the two `VariantRegion`s keep collapsing and expanding. What
 changes is that the **shared chrome is bound to the active side's values**:
 
-| Shared element | Today | Becomes |
+| Shared element | Before | Now |
 |---|---|---|
-| `PromptInput` context (`:1674-1692`) | one | one — but its **text, files, mentions and queue** are per side |
-| `composerModel` (`:1478-1488`) | one element, bound to one `model`/`effort` | one element, bound to the **active side's** model and effort. Still rendered in both regions, so the morph still carries it across |
-| `contextDial` (`:1589-1604`) | one element, one `usage` | one element; the usage belongs to the thread being shown, and is read from that thread's record |
+| `PromptInput` context | one | one — but its **text, files, mentions and queue** are per side |
+| `composerModel` | one element, bound to one `model`/`effort` | one element, bound to the **active side's** model and effort. Still rendered in both regions, so the morph still carries it across |
+| `contextDial` | one element, one `usage` | one element; the usage belongs to the thread being shown, and is read from that thread's record |
 | `context.textareaRef` | one slot, two textareas | unchanged — the dance in `prompt-input.tsx:698-724` already handles it |
-| Draft | one slot, and the swap is wrong (B10) | one slot per side, swapped explicitly by the app |
+| Draft | one slot, and the swap was wrong (B10) | one slot per side, owned by the app and swapped explicitly |
 | `PromptInputSelect` (Mode / Environment / Folder) | Code only | Code only — and Code-only *state*, so a chat can never inherit a folder |
 | `PromptInputMeter` | Chat only | Chat only |
+
+**How the composer was made to keep two of everything.** The content is now
+something the app owns rather than something the composer keeps:
+`PromptInput` takes the text, the files, the mentions and the queue in, and
+reports every change back. The alternative — remounting the composer on a
+switch — would have thrown the morph away, because the regions are animated by
+an `AnimatePresence` that only animates a region it has already mounted. So
+the context is still one, and the *contents* of it are the app's.
 
 ---
 
@@ -805,12 +814,53 @@ layer, and the server and rendering layer) and Claude Desktop's documentation.
 
 ---
 
-## 11. Where this lands
+## 11. Where this landed
 
 Stage by stage, each one committed on its own, each one ending with the app
 working and `pnpm typecheck` clean. The order is the one in §5, because it is
 the order in which each stage can be checked by hand.
 
+| Stage | Commit | What it landed |
+|---|---|---|
+| 1 + 2 | `0991d0c` | Two stores, two open threads, two drafts, a folder with a real identity, the one-time migrations |
+| 3 + 4 | `876fb9e` | The server writes the system prompt; the mode's default is per folder; the compaction summary is sent |
+| 5 + 6 | `8dcd720` | Code's things stay in Code; the small seams closed; the switch carries a count |
+| 7 | this | The documentation, and the two stale passages in the README |
+
 **The check for the whole plan is one sentence:** a chat never appears in the
 Sessions list, a session never appears in the Chats list, and switching between
 them never shows you a conversation that belongs to the other one.
+
+It is checked, in the running app:
+
+| Check | Result |
+|---|---|
+| A message sent in Chat | lands in `tavi.chats.v1`, and the chat record has no folder |
+| A message sent in Code | lands in `tavi.code-sessions.v1` |
+| The rail in Chat | the Chats list, and only the chats |
+| The rail in Code | the Sessions list, grouped by project, and only the sessions |
+| Switching Chat → Code | the Code surface: its own conversation, or an empty one |
+| Switching Code → Chat | the chat's own conversation, restored |
+| The old store | gone, from both namespaces |
+| A request with no surface | `400 No surface selected` |
+| A request with its own system prompt | `400 The system prompt is written by the server` |
+| A chat carrying tools | `400 A chat cannot carry tools` |
+
+### What is still to do
+
+| Item | Where |
+|---|---|
+| Parallel sessions — several running at once, each with its own panes | §6 |
+| Restoring the last open thread per side across a reload | §6 |
+| The rail's per-side row order and hidden set (the Customize panel) | §6 |
+| The command palette | §6 |
+| Search over threads | §6 |
+| Archive | §6 |
+| Diff, terminal, file and browser panes for Code | §6 |
+| Chat tools | §6 — and the server is where they would be enforced |
+| Side chats | §6 |
+| The chat route is network-reachable and unauthenticated | §9, B14 |
+| The model id is not validated against the catalogue | §9, B15 |
+| The tray's pending-intent slot holds one intent | §9, B16 |
+| A restored thread carries less context than the original | §9, B17 |
+| The README's duplicated line, its stale cross-reference, its backwards account of the composer | §9, B19 — all three fixed |
