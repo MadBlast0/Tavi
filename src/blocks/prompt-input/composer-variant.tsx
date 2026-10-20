@@ -7,8 +7,6 @@ import {
   IconSwitch,
   type IconSwitchOption,
 } from "@/components/icon-switch"
-import { listChats, onChatsChanged } from "@/lib/chats"
-import { listSessions, onSessionsChanged } from "@/lib/sessions"
 
 /** Which of the two composer layouts is in force. */
 export type ComposerVariant = "chat" | "code"
@@ -73,39 +71,24 @@ export function useComposerVariant() {
  * items are fully rounded so the indicator inherits that radius and the
  * highlight is a pill.
  *
- * Each option carries a count of what is behind it — how many chats, how many
- * sessions — so the rail says what is on the other side before you take it.
- * The counts are read from the two stores and kept up to date by their change
- * signals, because the composer writes to them directly.
+ * It says which surface you are on and nothing else. It used to carry a count
+ * of the chats and the sessions behind each side, which was the switch
+ * answering a question nobody asked it — and it made the control the only
+ * thing in the rail that was not a row.
  */
 export function ComposerVariantSwitch({ className }: { className?: string }) {
   const { variant, setVariant } = useComposerVariant()
-  const [counts, setCounts] = React.useState({ chat: 0, code: 0 })
-
-  React.useEffect(() => {
-    const refresh = () =>
-      setCounts({ chat: listChats().length, code: listSessions().length })
-    refresh()
-    const stopChats = onChatsChanged(refresh)
-    const stopSessions = onSessionsChanged(refresh)
-    return () => {
-      stopChats()
-      stopSessions()
-    }
-  }, [])
 
   const options: IconSwitchOption<ComposerVariant>[] = [
     {
       value: "chat",
       label: "Chat",
       icon: <MessageCircleIcon />,
-      badge: counts.chat || undefined,
     },
     {
       value: "code",
       label: "Code",
       icon: <CodeXmlIcon />,
-      badge: counts.code || undefined,
     },
   ]
 

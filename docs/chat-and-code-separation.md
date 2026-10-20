@@ -638,15 +638,12 @@ folder.
   in Chat, and the top of their project group in Code — where the group
   heading is above it, and a pinned session cannot be above its own project
   without the grouping being a lie.
-- **The switch can carry a count** of what is on each side — "3 chats", "2
-  sessions" — so the rail says what is behind the switch before you take it.
-  `IconSwitchOption` (`src/components/icon-switch/icon-switch.tsx:25-29`) is
-  `{value, label, icon}` with no slot for one, and `itemClassName` is applied to
-  every item alike, so neither can tell Chat from Code. The addition has to be
-  **generic** — an optional `badge?: ReactNode` on the option — because the
-  theme switch in settings uses the same component, and a Chat-only affordance
-  would leak into it, which is exactly the drift the component's own comment
-  warns against (`icon-switch.tsx:9-13`).
+- **The switch says which surface you are on and nothing else.** An earlier
+  draft gave each side a count of the chats and the sessions behind it, so the
+  rail would say what was on the other side before you took it. The maintainer
+  does not want it: the switch answers a question nobody asked it, and it made
+  the control the only thing in the rail that was not a row. The counts live in
+  the rail, where the lists are.
 
 ### Stage 7 — Documentation, and the dead code
 
@@ -743,6 +740,7 @@ quietly reversed later.
 | **D11** | **A turn's thread is decided when the turn is sent**, and carried through to the reply's write. | The composer can change while a reply is on its way — the user can press "New", or switch to the other surface. Reading the composer's state at the moment of the write is what produced two threads with the same conversation in them (B20). |
 | **D12** | **A reply that arrives late does not touch the composer.** It is kept on the thread it was asked on; the composer is left showing whatever it is showing now. | Otherwise one side's conversation ends up under the other side's composer, and the next message there saves it as a thread of the wrong kind (B20). |
 | **D13** | **A thread row in the rail shows the title and nothing else, and is the same height as a destination row.** | The maintainer's decision, against the earlier draft in this document. The rail is a list of places to go; a row that says which model answered it answers a question nobody asked, and a row taller than the rest of its own list reads as something else in the list. The thread still records the model it was run with — that is what the record is for — but the list does not say it. |
+| **D14** | **The Chat/Code switch carries no counts.** It says which surface you are on, and nothing else. | The maintainer's decision, against the earlier draft in this document. The switch answers a question nobody asked it, and a count on it made it the only control in the rail that was not a row. The counts live in the rail, where the lists are. `IconSwitch` is therefore left exactly as it was: the shared component takes no badge, so nothing about one of its two users can leak into the other. |
 
 ---
 
@@ -820,6 +818,7 @@ mistaken for consequences of it.
 | **New bugs B13–B19**, including the open chat route (B14), which the new server rule depends on. | Found by the audit of `server/`, `src-tauri/src/tray.rs` and the README. |
 | **B20 found by the maintainer: a conversation could cross from one surface to the other.** Fixed by D11 and D12, and by two rules made pure and testable in `src/blocks/prompt-input/thread-writes.ts`. | The write read the thread id from the composer's state *after* an await, and a late reply overwrote which thread the composer had open. Both let one side's conversation end up under the other side's composer, and the next message there saved it as a thread of the wrong kind. |
 | **The rail row grew a second line showing the model, and the row became taller than the rows above it.** The maintainer asked for it to be removed and for the row to be the same height as the destination rows. Fixed by D13. | The model is in the record and is restored when the thread is opened; the list does not need to say it. |
+| **The Chat/Code switch grew a count of the chats and the sessions behind each side.** The maintainer asked for it to be removed. Fixed by D14, and `IconSwitch` was put back exactly as it was — it takes no badge, so nothing about one of its two users can leak into the other. | The switch answers a question nobody asked it, and a count on it made it the only control in the rail that was not a row. |
 | **D4** and **D8** now cite the master plan** as well as Claude and the mock. | `:481` supports a thread remembering its model; `:982` puts the preferred model in preference state, which is where a per-side default belongs. |
 | **The composer's sessions menu is removed**, and the rail takes over what it carried — including the live running indicator, which the rail could not show before. §3.1, §3.5 and B4 are updated. | It was a second view of the same list the rail draws, with a "New chat" item inside the **code-only** footer that did not set the variant. Two lists of the same threads is the thing this whole plan exists to undo. |
 

@@ -26,15 +26,6 @@ export type IconSwitchOption<Value extends string> = {
   value: Value
   label: string
   icon: React.ReactNode
-  /**
-   * A short count shown beside the option.
-   *
-   * It is generic on purpose. The component is shared with the theme switch in
-   * settings, and an affordance that only made sense for one of its users would
-   * leak into the other — which is the drift the component's own comment warns
-   * against.
-   */
-  badge?: React.ReactNode
 }
 
 export function IconSwitch<Value extends string>({
@@ -83,14 +74,6 @@ export function IconSwitch<Value extends string>({
           <span className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
             {option.icon}
           </span>
-          {/* The count sits outside the collapsing label, so it is there
-              whichever option is selected. It says what is behind the switch
-              before you take it. */}
-          {option.badge ? (
-            <span className="ms-1 rounded-full bg-muted px-1.5 text-[0.625rem] leading-4 tabular-nums text-muted-foreground">
-              {option.badge}
-            </span>
-          ) : null}
           {/* Collapses to zero width when unselected. The easing matches the
               indicator's own glide, so the two move as one thing. */}
           <span
