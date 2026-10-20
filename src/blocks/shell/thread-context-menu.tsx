@@ -30,18 +30,23 @@ import { Button } from "@/components/button"
 import { Input } from "@/components/input"
 import { SidebarMenuItem } from "@/components/sidebar"
 import {
+  deleteChat,
+  forkChat,
+  renameChat,
+  togglePinChat,
+} from "@/lib/chats"
+import {
   deleteSession,
   forkSession,
   renameSession,
   togglePinSession,
-  type StoredSession,
 } from "@/lib/sessions"
-import { useComposerVariant } from "@/blocks/prompt-input/composer-variant"
+import type { RailThread } from "./rail-thread"
 
 /** What the menu is acting on, and what it is doing about it. */
 type Pending =
-  | { kind: "rename"; session: StoredSession }
-  | { kind: "delete"; session: StoredSession }
+  | { kind: "rename"; thread: RailThread }
+  | { kind: "delete"; thread: RailThread }
   | null
 
 /**
@@ -64,38 +69,59 @@ type Pending =
  * conversation, not a branch point.
  */
 export function ThreadContextMenu({
-  session,
+  thread,
   children,
 }: {
-  session: StoredSession
+  thread: RailThread
   children: React.ReactNode
 }) {
-  const { variant } = useComposerVariant()
   const [pending, setPending] = React.useState<Pending>(null)
   const [draftTitle, setDraftTitle] = React.useState("")
 
+  /**
+   * The store that holds this thread.
+   *
+   * A chat and a session are different objects in different places, so the menu
+   * acts on the one the thread actually belongs to rather than on whichever
+   * store happened to be in front of it.
+   */
+  const actions =
+    thread.side === "chat"
+      ? {
+          remove: deleteChat,
+          rename: renameChat,
+          togglePin: togglePinChat,
+          fork: forkChat,
+        }
+      : {
+          remove: deleteSession,
+          rename: renameSession,
+          togglePin: togglePinSession,
+          fork: forkSession,
+        }
+
   function openRename() {
-    setDraftTitle(session.title)
-    setPending({ kind: "rename", session })
+    setDraftTitle(thread.title)
+    setPending({ kind: "rename", thread })
   }
 
   function commitRename() {
-    if (pending?.kind === "rename") renameSession(pending.session.id, draftTitle)
+    if (pending?.kind === "rename") actions.rename(pending.thread.id, draftTitle)
     setPending(null)
   }
 
   function commitDelete() {
-    if (pending?.kind === "delete") deleteSession(pending.session.id)
+    if (pending?.kind === "delete") actions.remove(pending.thread.id)
     setPending(null)
   }
 
   function onFork() {
-    forkSession(session.id)
+    actions.fork(thread.id)
   }
 
   async function onCopyId() {
     try {
-      await navigator.clipboard.writeText(session.id)
+      await navigator.clipboard.writeText(thread.id)
     } catch {
       /* Clipboard refused. Nothing else to do, and the id is on the row's own
          title attribute if it is ever needed. */
@@ -129,16 +155,19 @@ export function ThreadContextMenu({
             and going the other way — sizing purely to the labels — made it look
             clipped rather than narrow. */}
         <ContextMenuContent className="w-max">
-          {variant === "code" ? (
+          {/* Forking is for trying another direction in a repository, so it is
+              offered on a session and not on a chat — where the thread is the
+              conversation rather than a branch point. */}
+          {thread.side === "code" ? (
             <ContextMenuItem onClick={onFork}>
               <GitForkIcon />
               Fork
             </ContextMenuItem>
           ) : null}
 
-          <ContextMenuItem onClick={() => togglePinSession(session.id)}>
-            {session.pinnedAt ? <PinOffIcon /> : <PinIcon />}
-            {session.pinnedAt ? "Unpin" : "Pin"}
+          <ContextMenuItem onClick={() => actions.togglePin(thread.id)}>
+            {thread.pinnedAt ? <PinOffIcon /> : <PinIcon />}
+            {thread.pinnedAt ? "Unpin" : "Pin"}
           </ContextMenuItem>
 
           {/* No ellipsis. It was there to signal that a dialog opens rather than
@@ -159,7 +188,7 @@ export function ThreadContextMenu({
               this opens. */}
           <ContextMenuItem
             variant="destructive"
-            onClick={() => setPending({ kind: "delete", session })}
+            onClick={() => setPending({ kind: "delete", thread })}
           >
             <Trash2Icon />
             Delete
@@ -217,7 +246,7 @@ export function ThreadContextMenu({
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete &quot;{session.title}&quot;?</DialogTitle>
+            <DialogTitle>Delete &quot;{thread.title}&quot;?</DialogTitle>
             <DialogDescription>
               This removes the thread and its whole conversation. It cannot be
               undone.

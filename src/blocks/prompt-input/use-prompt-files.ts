@@ -34,6 +34,16 @@ type PromptFileOptions = {
   maxFileSize?: number
   upload?: PromptUpload
   onReject?: (file: File, reason: string) => void
+  /**
+   * When given, the files belong to the caller rather than to this hook.
+   *
+   * Chat and Code are separate places, so the files attached to a message in
+   * one of them are not the files attached to a message in the other. The
+   * caller owns them, and this hook reports every change back.
+   */
+  value?: PromptFile[]
+  /** Called with the next list of files, whenever the caller owns them. */
+  onChange?: (files: PromptFile[]) => void
 }
 
 class UploadError extends Error {
@@ -74,12 +84,21 @@ function usePromptFiles({
   maxFileSize,
   upload,
   onReject,
+  value,
+  onChange,
 }: PromptFileOptions) {
-  const [files, setFiles] = React.useState<PromptFile[]>([])
+  const [ownFiles, setOwnFiles] = React.useState<PromptFile[]>([])
+  /* The caller owns the files when it passes them in. Everything below reads
+     `files` rather than `ownFiles`, and every change goes back out through
+     `commit`, so the two paths behave identically. */
+  const controlled = value !== undefined
+  const files = controlled ? value : ownFiles
   const filesRef = React.useRef(files)
   const controllers = React.useRef(new Map<string, AbortController>())
   const options = React.useRef({ upload, onReject })
   options.current = { upload, onReject }
+  const report = React.useRef(onChange)
+  report.current = onChange
 
   React.useEffect(() => {
     filesRef.current = files
@@ -93,11 +112,29 @@ function usePromptFiles({
     }
   }, [])
 
-  const patch = React.useCallback((id: string, change: Partial<PromptFile>) => {
-    setFiles((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, ...change } : entry))
-    )
-  }, [])
+  /**
+   * The one way the list changes.
+   *
+   * The ref is set before the change is reported, so a second change in the
+   * same tick is made against the list the caller has just been told about
+   * rather than against a stale one.
+   */
+  const commit = React.useCallback((next: PromptFile[]) => {
+    filesRef.current = next
+    if (controlled) report.current?.(next)
+    else setOwnFiles(next)
+  }, [controlled])
+
+  const patch = React.useCallback(
+    (id: string, change: Partial<PromptFile>) => {
+      commit(
+        filesRef.current.map((entry) =>
+          entry.id === id ? { ...entry, ...change } : entry,
+        ),
+      )
+    },
+    [commit],
+  )
 
   const start = React.useCallback(
     (entry: PromptFile) => {
@@ -171,23 +208,23 @@ function usePromptFiles({
         })
       }
       const next = [...filesRef.current, ...accepted, ...rejected]
-      filesRef.current = next
-      setFiles(next)
+      commit(next)
       for (const entry of accepted) start(entry)
       return { accepted, rejected }
     },
-    [accept, maxFiles, maxFileSize, start]
+    [accept, maxFiles, maxFileSize, start, commit]
   )
 
-  const remove = React.useCallback((id: string) => {
-    controllers.current.get(id)?.abort()
-    controllers.current.delete(id)
-    const entry = filesRef.current.find((f) => f.id === id)
-    if (entry) revoke(entry)
-    const next = filesRef.current.filter((f) => f.id !== id)
-    filesRef.current = next
-    setFiles(next)
-  }, [])
+  const remove = React.useCallback(
+    (id: string) => {
+      controllers.current.get(id)?.abort()
+      controllers.current.delete(id)
+      const entry = filesRef.current.find((f) => f.id === id)
+      if (entry) revoke(entry)
+      commit(filesRef.current.filter((f) => f.id !== id))
+    },
+    [commit],
+  )
 
   const retry = React.useCallback(
     (id: string) => {
@@ -209,16 +246,16 @@ function usePromptFiles({
       }
     }
     controllers.current.clear()
-    filesRef.current = []
-    setFiles([])
+    commit([])
     return sent
-  }, [])
+  }, [commit])
 
-  const restore = React.useCallback((entries: PromptFile[]) => {
-    const next = [...entries, ...filesRef.current]
-    filesRef.current = next
-    setFiles(next)
-  }, [])
+  const restore = React.useCallback(
+    (entries: PromptFile[]) => {
+      commit([...entries, ...filesRef.current])
+    },
+    [commit],
+  )
 
   return React.useMemo(
     () => ({ files, add, remove, retry, take, restore }),

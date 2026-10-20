@@ -67,6 +67,28 @@ type PromptMessage = {
 
 type QueuedMessage = PromptMessage & { id: string }
 
+/**
+ * The composer content, when the app owns it.
+ *
+ * Chat and Code are separate places, so what the user has typed, attached,
+ * mentioned or queued belongs to one of them and not to the other. The app
+ * passes the content in and takes the changes back, and the composer keeps
+ * nothing of its own.
+ *
+ * When the app does not pass it, the composer keeps it itself, exactly as it
+ * always did — the controlled path is for the app that has two sides, not a
+ * requirement on every caller.
+ */
+type PromptInputContent = {
+  text: string
+  files: PromptFile[]
+  mentions: PromptMention[]
+  queue: QueuedMessage[]
+}
+
+/** A change to the content, when the app owns it. */
+type PromptInputContentChange = Partial<PromptInputContent>
+
 type MenuHandle = {
   listId: string
   activeId?: string
@@ -174,6 +196,19 @@ function writeDraft(key: string, value: string) {
   } catch {}
 }
 
+/**
+ * The composer's saved text for a key.
+ *
+ * Exported for the app that owns the composer: when it has two sides, each
+ * side's draft is the app's business, because only the app knows which side a
+ * piece of text belongs to.
+ */
+export const readComposerDraft = (key: string): string => readDraft(key)
+
+/** Saves the composer's text for a key. See `readComposerDraft`. */
+export const writeComposerDraft = (key: string, value: string): void =>
+  writeDraft(key, value)
+
 function isPrintable(event: KeyboardEvent) {
   return (
     event.key.length === 1 &&
@@ -207,6 +242,16 @@ type PromptInputProps = Omit<
     value?: string
     defaultValue?: string
     onValueChange?: (value: string) => void
+    /**
+     * The composer's own content, when the app owns it.
+     *
+     * The app has two sides and each keeps its own half of what the user has
+     * typed, attached, mentioned and queued. Passing the content in — and
+     * taking the changes back through `onContentChange` — is how the two stay
+     * apart without the composer knowing what a side is.
+     */
+    composerContent?: PromptInputContent
+    onComposerContentChange?: (change: PromptInputContentChange) => void
     submitOn?: "enter" | "mod+enter"
     pasteLimit?: number | false
     maxLength?: number
@@ -225,8 +270,9 @@ function PromptInput({
   value,
   defaultValue = "",
   onValueChange,
-  submitOn = "enter",
-  pasteLimit = 5000,
+  composerContent,
+  onComposerContentChange,
+  submitOn = "enter",  pasteLimit = 5000,
   maxLength,
   draftKey,
   globalDrop = false,
@@ -246,14 +292,26 @@ function PromptInput({
   onDrop,
   ...props
 }: PromptInputProps) {
+  /**
+   * Whether the app owns the content.
+   *
+   * When it does, the composer holds none of it: the text, the files, the
+   * mentions and the queue all come from the app and every change goes back
+   * out. That is what lets two sides of the same composer keep two different
+   * drafts without either of them knowing the other exists.
+   */
+  const controlled = composerContent !== undefined
+
   const [ownText, setOwnText] = React.useState(defaultValue)
-  const text = value ?? ownText
+  const text = controlled ? composerContent.text : ownText
   const [caret, setCaret] = React.useState(0)
   const [focused, setFocused] = React.useState(false)
   const [autoExpanded, setExpanded] = React.useState(false)
   const expanded = layout === "expanded" || (layout === "auto" && autoExpanded)
-  const [mentions, setMentions] = React.useState<PromptMention[]>([])
-  const [queue, setQueue] = React.useState<QueuedMessage[]>([])
+  const [ownMentions, setOwnMentions] = React.useState<PromptMention[]>([])
+  const mentions = controlled ? composerContent.mentions : ownMentions
+  const [ownQueue, setOwnQueue] = React.useState<QueuedMessage[]>([])
+  const queue = controlled ? composerContent.queue : ownQueue
   const [menu, setMenu] = React.useState<MenuHandle | null>(null)
   const [tools, setTools] = React.useState(0)
   const [dragging, setDragging] = React.useState(false)
@@ -271,12 +329,62 @@ function PromptInput({
     )
   }, [])
 
+  /**
+   * Reports a change to the app, when the app owns the content.
+   *
+   * The change is partial on purpose: the composer knows which part it
+   * changed and the app knows what the whole thing is, so neither has to
+   * rebuild the other's half.
+   */
+  const report = React.useCallback(
+    (change: PromptInputContentChange) => {
+      onComposerContentChange?.(change)
+    },
+    [onComposerContentChange],
+  )
+
   const setText = React.useCallback(
     (next: string) => {
-      if (value === undefined) setOwnText(next)
+      if (!controlled) setOwnText(next)
+      report({ text: next })
       onValueChange?.(next)
     },
-    [value, onValueChange]
+    [controlled, report, onValueChange],
+  )
+
+  /* The mentions and the queue are read through refs, so the setters can stay
+     the same function however often the lists change. */
+  const mentionsRef = React.useRef(mentions)
+  mentionsRef.current = mentions
+  const queueRef = React.useRef(queue)
+  queueRef.current = queue
+
+  const setMentions = React.useCallback(
+    (next: PromptMention[] | ((current: PromptMention[]) => PromptMention[])) => {
+      const resolved =
+        typeof next === "function"
+          ? (next as (current: PromptMention[]) => PromptMention[])(
+              mentionsRef.current,
+            )
+          : next
+      if (!controlled) setOwnMentions(resolved)
+      report({ mentions: resolved })
+    },
+    [controlled, report],
+  )
+
+  const setQueue = React.useCallback(
+    (next: QueuedMessage[] | ((current: QueuedMessage[]) => QueuedMessage[])) => {
+      const resolved =
+        typeof next === "function"
+          ? (next as (current: QueuedMessage[]) => QueuedMessage[])(
+              queueRef.current,
+            )
+          : next
+      if (!controlled) setOwnQueue(resolved)
+      report({ queue: resolved })
+    },
+    [controlled, report],
   )
 
   const files = usePromptFiles({
@@ -288,17 +396,30 @@ function PromptInput({
       announce(`${file.name || "File"} not added. ${reason}.`)
       onReject?.(file, reason)
     },
+    value: controlled ? composerContent.files : undefined,
+    onChange: controlled
+      ? (next) => report({ files: next })
+      : undefined,
   })
 
+  /**
+   * The draft is saved and restored only when the composer owns the text.
+   *
+   * When the app owns it, the draft is the app's business — it is the app
+   * that knows which side's draft this is, and the app writes it. Restoring
+   * here as well would overwrite one side's saved draft with the other side's
+   * text, because the key changes at the same moment the text does.
+   */
   React.useEffect(() => {
-    if (!draftKey) return
+    if (!draftKey || controlled) return
     const draft = readDraft(draftKey)
     if (draft) setText(draft)
-  }, [draftKey])
+  }, [draftKey, controlled, setText])
 
   React.useEffect(() => {
-    if (draftKey) writeDraft(draftKey, text)
-  }, [draftKey, text])
+    if (!draftKey || controlled) return
+    writeDraft(draftKey, text)
+  }, [draftKey, text, controlled])
 
   const addFiles = React.useCallback(
     (incoming: File[], extra?: { pasted?: string }) => {
@@ -1160,6 +1281,8 @@ export {
   PromptInputTools,
   usePromptInput,
   type MenuHandle,
+  type PromptInputContent,
+  type PromptInputContentChange,
   type PromptInputProps,
   type PromptMention,
   type PromptMessage,

@@ -2,9 +2,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { restoreFontFamily, warmInstalledFonts } from "./lib/fonts";
+import { runMigrations } from "./lib/migrations";
 import { restorePalette } from "./lib/palette";
 import "./index.css";
 
+// The changes made to what is on disk, once. Before the first render, so the
+// app never sees the old shape of its own data.
+runMigrations();
 // Before the first render, so the app is never painted in the default face and
 // then swapped to the chosen one.
 restoreFontFamily();

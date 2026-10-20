@@ -33,12 +33,14 @@ import {
 import { useComposerVariant } from "@/blocks/prompt-input/composer-variant"
 import { useThreadBridge } from "@/blocks/prompt-input/thread-bridge"
 import { ThreadContextMenu } from "./thread-context-menu"
+import type { RailThread } from "./rail-thread"
+import { listChats, onChatsChanged } from "@/lib/chats"
 import {
-  formatWhen,
   listSessions,
   onSessionsChanged,
-  type StoredSession,
 } from "@/lib/sessions"
+import { formatWhen } from "@/lib/threads"
+import type { Side } from "@/lib/sides"
 import { cn } from "@/lib/utils"
 
 /**
@@ -224,7 +226,7 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "za", label: "Name (Z to A)" },
 ]
 
-function sortThreads(sessions: StoredSession[], sort: Sort) {
+function sortThreads(sessions: RailThread[], sort: Sort) {
   const sorted = [...sessions]
   if (sort === "newest") sorted.sort((a, b) => b.updatedAt - a.updatedAt)
   else if (sort === "oldest") sorted.sort((a, b) => a.updatedAt - b.updatedAt)
@@ -247,13 +249,20 @@ function sortThreads(sessions: StoredSession[], sort: Sort) {
   return sorted.sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0))
 }
 
-function groupByProject(sessions: StoredSession[]) {
-  const groups = new Map<string, StoredSession[]>()
+/**
+ * Groups sessions by the project they were run against.
+ *
+ * The key is the folder's id and the heading is its name: the id is what
+ * identifies a folder, and the name is what a person reads. Two projects whose
+ * directories share a name are two groups, not one.
+ */
+function groupByProject(sessions: RailThread[]) {
+  const groups = new Map<string, { name: string; threads: RailThread[] }>()
   for (const session of sessions) {
     const key = session.folder || NO_FOLDER
     const bucket = groups.get(key)
-    if (bucket) bucket.push(session)
-    else groups.set(key, [session])
+    if (bucket) bucket.threads.push(session)
+    else groups.set(key, { name: session.folderName || NO_FOLDER, threads: [session] })
   }
   return [...groups.entries()]
 }
@@ -335,12 +344,12 @@ function ThreadListHeading({
 }
 
 function ThreadRow({
-  session,
+  thread,
   active,
   running,
   onOpen,
 }: {
-  session: StoredSession
+  thread: RailThread
   active: boolean
   running: boolean
   onOpen: (id: string) => void
@@ -348,13 +357,13 @@ function ThreadRow({
   return (
     /* The context menu supplies the row's own <li>, so what goes in is the
        button and the timestamp and nothing else. */
-    <ThreadContextMenu session={session}>
+    <ThreadContextMenu thread={thread}>
       <SidebarMenuButton
         size="sm"
         className={THREAD}
         isActive={active}
-        onClick={() => onOpen(session.id)}
-        title={session.title}
+        onClick={() => onOpen(thread.id)}
+        title={thread.title}
       >
         {/* The dot says this thread is answering right now. It is driven by
             the live stream rather than by a flag the row makes up, so it
@@ -367,13 +376,13 @@ function ThreadRow({
             className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate">{session.title}</span>
+        <span className="min-w-0 flex-1 truncate">{thread.title}</span>
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
           trigger rather than beside it. */}
       <SidebarMenuBadge className="text-sidebar-foreground/70">
-        {running ? "Running" : formatWhen(session.updatedAt)}
+        {running ? "Running" : formatWhen(thread.updatedAt)}
       </SidebarMenuBadge>
     </ThreadContextMenu>
   )
@@ -390,12 +399,36 @@ function ThreadRow({
 export function SidebarNav() {
   const { variant } = useComposerVariant()
   const bridge = useThreadBridge()
-  const [sessions, setSessions] = React.useState<StoredSession[]>(() => listSessions())
+  /* The two lists, kept apart.
+     A chat is not a code session, so the rail is not one list drawn twice: it
+     is two lists, and the switch says which of them you are looking at. */
+  const [chats, setChats] = React.useState<RailThread[]>(() =>
+    listChats().map((chat) => ({
+      id: chat.id,
+      title: chat.title,
+      updatedAt: chat.updatedAt,
+      model: chat.model,
+      pinnedAt: chat.pinnedAt,
+      side: "chat" as const,
+    })),
+  )
+  const [sessions, setSessions] = React.useState<RailThread[]>(() =>
+    listSessions().map((session) => ({
+      id: session.id,
+      title: session.title,
+      updatedAt: session.updatedAt,
+      model: session.model,
+      folder: session.folder,
+      folderName: session.folderName,
+      pinnedAt: session.pinnedAt,
+      side: "code" as const,
+    })),
+  )
   /* Per mode, for the same reason the lists themselves are: a chat list sorted
      one way and a project list sorted another is two answers to one list. Not
      stored — a sort is a way of reading what is on screen, and re-reading it
      the way you left it is the default everywhere else in the app. */
-  const [sortByMode, setSortByMode] = React.useState<Record<"chat" | "code", Sort>>({
+  const [sortByMode, setSortByMode] = React.useState<Record<Side, Sort>>({
     chat: "newest",
     code: "newest",
   })
@@ -403,22 +436,47 @@ export function SidebarNav() {
 
   /* The composer writes threads whenever a message is sent, and it writes them
      straight to the store rather than through here. So this listens to the
-     store instead of trying to watch someone else's writes, and re-reads on
-     the store's own signal. Re-reading on window focus as well, because a
-     thread can also change in another tab. */
+     stores instead of trying to watch someone else's writes, and re-reads on
+     their own signals. Re-reading on window focus as well, because a thread
+     can also change in another tab. */
   React.useEffect(() => {
-    const refresh = () => setSessions(listSessions())
+    const refresh = () => {
+      setChats(
+        listChats().map((chat) => ({
+          id: chat.id,
+          title: chat.title,
+          updatedAt: chat.updatedAt,
+          model: chat.model,
+          pinnedAt: chat.pinnedAt,
+          side: "chat" as const,
+        })),
+      )
+      setSessions(
+        listSessions().map((session) => ({
+          id: session.id,
+          title: session.title,
+          updatedAt: session.updatedAt,
+          model: session.model,
+          folder: session.folder,
+          folderName: session.folderName,
+          pinnedAt: session.pinnedAt,
+          side: "code" as const,
+        })),
+      )
+    }
     refresh()
-    const stop = onSessionsChanged(refresh)
+    const stopChats = onChatsChanged(refresh)
+    const stopSessions = onSessionsChanged(refresh)
     window.addEventListener("focus", refresh)
     return () => {
-      stop()
+      stopChats()
+      stopSessions()
       window.removeEventListener("focus", refresh)
     }
   }, [])
 
   function onNew() {
-    bridge.functions.current?.reset()
+    bridge.functions.current?.reset(variant)
   }
 
   function onOpen(id: string) {
@@ -459,15 +517,18 @@ export function SidebarNav() {
       </SidebarGroup>
 
       {variant === "code"
-        ? groupByProject(sessions).map(([project, threads]) => (
+        ? groupByProject(sessions).map(([project, group]) => (
             <SidebarGroup key={project} className={GROUP}>
+              <SidebarGroupLabel className={cn(LABEL, "px-1 text-xs text-sidebar-foreground/60")}>
+                {group.name}
+              </SidebarGroupLabel>
               <SidebarMenu>
-                {sortThreads(threads, sort).map((session) => (
+                {sortThreads(group.threads, sort).map((thread) => (
                   <ThreadRow
-                    key={session.id}
-                    session={session}
-                    active={session.id === bridge.activeId}
-                    running={session.id === bridge.runningId}
+                    key={thread.id}
+                    thread={thread}
+                    active={thread.id === bridge.activeId}
+                    running={thread.id === bridge.runningId}
                     onOpen={onOpen}
                   />
                 ))}
@@ -477,12 +538,12 @@ export function SidebarNav() {
         : (
             <SidebarGroup className={GROUP}>
               <SidebarMenu>
-                {sortThreads(sessions, sort).map((session) => (
+                {sortThreads(chats, sort).map((thread) => (
                   <ThreadRow
-                    key={session.id}
-                    session={session}
-                    active={session.id === bridge.activeId}
-                    running={session.id === bridge.runningId}
+                    key={thread.id}
+                    thread={thread}
+                    active={thread.id === bridge.activeId}
+                    running={thread.id === bridge.runningId}
                     onOpen={onOpen}
                   />
                 ))}

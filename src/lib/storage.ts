@@ -78,3 +78,26 @@ export const writeStorage = (name: string, value: string | undefined): boolean =
     return false;
   }
 };
+
+/**
+ * Removes a value from both namespaces.
+ *
+ * `writeStorage(name, undefined)` removes only the current spelling, and the
+ * legacy one is then moved straight back on the next read — so a value that
+ * has been retired with it comes back. This removes both, and the value stays
+ * gone.
+ *
+ * It is the one thing this module does that is not a move, and it is only for
+ * values that are being retired on purpose: a store that has been replaced by
+ * a different one, or a preference that has been split in two.
+ */
+export const forgetStorage = (name: string): void => {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(storageKey(name));
+    localStorage.removeItem(legacyStorageKey(name));
+  } catch {
+    // Nothing to do. A storage that refuses to be written to is a storage
+    // that has already forgotten everything.
+  }
+};

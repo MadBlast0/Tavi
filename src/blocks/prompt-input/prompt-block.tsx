@@ -39,11 +39,23 @@ import {
   type RecentFolder,
 } from "@/lib/fs-access"
 import {
+  findChat,
+  listChats,
+  saveChat,
+  type StoredChat,
+} from "@/lib/chats"
+import {
+  findSession,
   listSessions,
   saveSession,
-  type StoredTurn,
+  type StoredSession,
 } from "@/lib/sessions"
-import { PREF, readPref, writePref } from "@/lib/prefs"
+import {
+  type StoredTurn,
+  type StoredUsage,
+} from "@/lib/threads"
+import { PREF, readPref, sidePref, writePref } from "@/lib/prefs"
+import type { Side } from "@/lib/sides"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
 
@@ -185,6 +197,9 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  readComposerDraft,
+  writeComposerDraft,
+  type PromptInputContent,
   type PromptMessage,
   type PromptStatus,
 } from "./prompt-input"
@@ -499,6 +514,28 @@ type Turn =
   /** A model-written summary of everything above it; sent with later requests. */
   | { id: string; role: "summary"; text: string }
 
+/**
+ * What a thread records about the run that produced it.
+ *
+ * Captured when the turn is sent, because the reply comes back later and by
+ * then the user may have changed the model, the folder or the surface. A
+ * thread records the settings it was actually run with, not the ones that
+ * happen to be in force when the answer arrives.
+ */
+type WriteState = {
+  /** Which side the thread belongs to. */
+  side: Side
+  model: string
+  effort: string
+  /** The agent mode. Code only. */
+  mode: string
+  /** The folder's id and name. Code only. */
+  folderId: string | undefined
+  folderName: string | undefined
+  /** The provider's accounting for the turn that just finished. */
+  usage: PromptTokenUsage | null
+}
+
 /** Matches a typed `@path/to/file.ext` so it resolves like one from the menu. */
 const AT_REFERENCE = /@([\w./-]*[\w-]+\.[a-z0-9]{1,8})/gi
 
@@ -760,18 +797,88 @@ function useDock(ref: React.RefObject<HTMLElement | null>, docked: boolean) {
 export function PromptBlock() {
   const [turns, setTurns] = React.useState<Turn[]>([])
   const [status, setStatus] = React.useState<PromptStatus>("ready")
-  /* Restored from the last session's picks. A value that no longer exists in
-     the catalogue is replaced when the catalogue arrives. */
-  const [model, setModel] = React.useState(() => readPref(PREF.model) ?? "")
-  /* Restored from the last session's picks, then reconciled against whatever
-     the selected model actually accepts — see the effect below. Held as a plain
-     string because it is a preference, not a validated value until the
-     catalogue says which levels are on offer. */
-  const [effort, setEffort] = React.useState(
-    () => readPref(PREF.effort) ?? "",
+  /* The switch that changes this lives in the sidebar; see composer-variant.tsx.
+     It is a *surface* switch: it says which of the two places you are in, and
+     each place has its own threads, its own model and its own composer. */
+  const { variant, setVariant } = useComposerVariant()
+
+  /**
+   * The model and the effort each side remembers.
+   *
+   * A chat and a code session are different work, and the model that answers
+   * one of them is not the model that answers the other. Both are remembered
+   * per side, so "New chat" keeps the chat's model and "New session" keeps the
+   * session's, and each side comes back to the one it was left on.
+   */
+  const [modelBySide, setModelBySide] = React.useState<Record<Side, string>>(() => ({
+    chat: readPref(sidePref(PREF.model, "chat")) ?? "",
+    code: readPref(sidePref(PREF.model, "code")) ?? "",
+  }))
+  const [effortBySide, setEffortBySide] = React.useState<Record<Side, string>>(() => ({
+    chat: readPref(sidePref(PREF.effort, "chat")) ?? "",
+    code: readPref(sidePref(PREF.effort, "code")) ?? "",
+  }))
+  const model = modelBySide[variant]
+  const effort = effortBySide[variant]
+
+  /**
+   * What the user has typed, attached, mentioned or queued — per side.
+   *
+   * The composer is one shell with two regions, and the regions share the
+   * shell's context. That context is where the text and the attachments live,
+   * so without this a half-written chat would be waiting in the Code
+   * composer, and a chat's attachments would go out with a code message.
+   *
+   * The content belongs to the side, not to the composer, so the composer is
+   * told what it is showing and reports what changed.
+   */
+  const [contentBySide, setContentBySide] = React.useState<
+    Record<Side, PromptInputContent>
+  >(() => ({
+    chat: { text: readComposerDraft("chat"), files: [], mentions: [], queue: [] },
+    code: { text: readComposerDraft("code"), files: [], mentions: [], queue: [] },
+  }))
+  const content = contentBySide[variant]
+
+  /**
+   * Choosing a model, or an effort level, changes the side you are on.
+   *
+   * The picker is one control with two memories: the same button in the chat
+   * composer and in the code composer, bound to whichever side is showing.
+   */
+  const setModel = React.useCallback(
+    (next: string | ((current: string) => string)) => {
+      setModelBySide((current) => {
+        const resolved =
+          typeof next === "function" ? next(current[variant]) : next
+        return { ...current, [variant]: resolved }
+      })
+    },
+    [variant],
   )
-  /* The switch that changes this lives in the sidebar; see composer-variant.tsx. */
-  const { variant } = useComposerVariant()
+  const setEffort = React.useCallback(
+    (next: string | ((current: string) => string)) => {
+      setEffortBySide((current) => {
+        const resolved =
+          typeof next === "function" ? next(current[variant]) : next
+        return { ...current, [variant]: resolved }
+      })
+    },
+    [variant],
+  )
+
+  /** A change to the composer content, which belongs to the side. */
+  const onContentChange = React.useCallback(
+    (change: Partial<PromptInputContent>) => {
+      setContentBySide((current) => ({
+        ...current,
+        [variant]: { ...current[variant], ...change },
+      }))
+    },
+    [variant],
+  )
+
+  /** The agent mode. Code only — a chat has no repository to be careful in. */
   const [mode, setMode] = React.useState(() => readPref(PREF.mode) ?? "edit")
   const [realModels, setRealModels] = React.useState<PromptModel[]>([])
   /** Every model's display name, including ones outside the free pool. */
@@ -805,7 +912,18 @@ export function PromptBlock() {
    * change and read once a minute.
    */
   const draftRef = React.useRef("")
-  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null)
+  /**
+   * The thread each side has open.
+   *
+   * A chat is not a code session, so each side keeps its own, and opening one
+   * does not close the other. Switching between the two leaves the other side
+   * exactly where it was.
+   */
+  const [activeBySide, setActiveBySide] = React.useState<Record<Side, string | null>>({
+    chat: null,
+    code: null,
+  })
+  const activeSessionId = activeBySide[variant]
   const [canPick, setCanPick] = React.useState(false)
   /* Clone dialog. Opening it is what the folder menu triggers; the URL, the
      result and any failure all live here rather than in the menu, so a slow
@@ -857,13 +975,121 @@ export function PromptBlock() {
   const abortRef = React.useRef<AbortController | null>(null)
   const dirRef = React.useRef<DirHandle | null>(null)
   const dockRef = React.useRef<HTMLDivElement>(null)
-  /** Mirrors `activeSessionId` so async work always sees the current value. */
-  const activeSessionRef = React.useRef<string | null>(null)
+  /**
+   * The thread being written, and the side it belongs to.
+   *
+   * A ref, because the write happens inside a stream that outlives the render
+   * that started it — and because a thread belongs to a side, so the side has
+   * to be known at the moment of the write rather than at the moment of the
+   * render that began it.
+   */
+  const activeRef = React.useRef<{ side: Side; id: string | null }>({
+    side: "chat",
+    id: null,
+  })
   const empty = turns.length === 0
   useDock(dockRef, !empty)
 
   const folder = folders.find((item) => item.id === folderId) ?? null
   const busy = status === "submitted" || status === "streaming"
+
+  /**
+   * Shows a thread, or nothing at all.
+   *
+   * The store is the truth about a thread that is not open; the composer holds
+   * the live copy while it is open. Loading one replaces everything the
+   * composer is showing — the turns, the usage, the model, the effort, and in
+   * Code the folder and the agent mode — because a thread is a conversation
+   * with its own settings rather than a window onto shared ones.
+   *
+   * The folder and the mode are Code's, so loading a chat does not touch
+   * them, and loading a session restores them from the session rather than
+   * from whatever was there before.
+   */
+  const loadThread = React.useCallback(
+    (side: Side, id: string | null) => {
+      abortRef.current?.abort()
+      abortRef.current = null
+      setStatus("ready")
+
+      if (!id) {
+        setTurns([])
+        setUsage(null)
+        setServedModel(null)
+        activeRef.current = { side, id: null }
+        setActiveBySide((current) =>
+          current[side] === null ? current : { ...current, [side]: null },
+        )
+        if (side === "code") {
+          setFolderId(undefined)
+          setMode(readPref(PREF.mode) ?? "edit")
+        }
+        return
+      }
+
+      if (side === "chat") {
+        const chat = findChat(id)
+        if (!chat) return
+        setTurns(fromStoredTurns(chat.turns))
+        setUsage(chat.usage ?? null)
+        setServedModel(null)
+        activeRef.current = { side, id }
+        setActiveBySide((current) =>
+          current[side] === id ? current : { ...current, [side]: id },
+        )
+        if (chat.model) setModelBySide((current) => ({ ...current, [side]: chat.model! }))
+        if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
+        return
+      }
+
+      const session = findSession(id)
+      if (!session) return
+      setTurns(fromStoredTurns(session.turns))
+      setUsage(session.usage ?? null)
+      setServedModel(null)
+      activeRef.current = { side, id }
+      setActiveBySide((current) =>
+        current[side] === id ? current : { ...current, [side]: id },
+      )
+      if (session.model) setModelBySide((current) => ({ ...current, [side]: session.model! }))
+      if (session.effort) setEffortBySide((current) => ({ ...current, [side]: session.effort! }))
+      if (session.mode) setMode(session.mode)
+      setFolderId(
+        folders.some((item) => item.id === session.folder) ? session.folder : undefined,
+      )
+    },
+    [folders],
+  )
+
+  /**
+   * Opens a thread, and moves to the side that owns it.
+   *
+   * Opening a session from the Sessions list puts the composer in Code, and
+   * opening a chat puts it in Chat — a thread is a conversation with its own
+   * job, and the composer is that job's furniture.
+   */
+  const openThread = React.useCallback(
+    (side: Side, id: string) => {
+      if (variant !== side) setVariant(side)
+      loadThread(side, id)
+    },
+    [variant, setVariant, loadThread],
+  )
+
+  /**
+   * Starts a new thread on a side.
+   *
+   * It resets that side's conversation and nothing else: the other side's
+   * thread is untouched, and this side keeps its model, its effort and — in
+   * Code — the folder it was pointed at.
+   */
+  const resetThread = React.useCallback(
+    (side: Side) => {
+      loadThread(side, null)
+    },
+    [loadThread],
+  )
+
   /* The selected model is added to the visible list when it is not already there.
      A saved preference may name a paid model while the picker lists only the free
      pool; without this the trigger fell back to the first free entry and showed
@@ -1014,16 +1240,26 @@ export function PromptBlock() {
   }, [])
 
   /* Persist the picks. Written declaratively so every path that changes them —
-     the picker, opening a session, the restore fallback — is covered once. */
+     the picker, opening a thread, the restore fallback — is covered once. The
+     model and the effort are remembered per side, so each of them is written
+     against the side that is showing. */
   React.useEffect(() => {
-    if (model) writePref(PREF.model, model)
-  }, [model])
+    writePref(sidePref(PREF.model, variant), model || undefined)
+  }, [model, variant])
   React.useEffect(() => {
-    if (effort) writePref(PREF.effort, effort)
-  }, [effort])
+    writePref(sidePref(PREF.effort, variant), effort || undefined)
+  }, [effort, variant])
   React.useEffect(() => {
     writePref(PREF.mode, mode)
   }, [mode])
+
+  /* The draft is the side's, so it is saved against the side and restored into
+     the side. A half-written chat is waiting in the chat composer, and a
+     half-written session in the session composer, and neither appears in the
+     other. */
+  React.useEffect(() => {
+    writeComposerDraft(variant, content.text)
+  }, [variant, content.text])
 
   /* Starters name files by index, so a window chosen for one folder means
      nothing in another. Advancing rather than resetting keeps every thread open
@@ -1072,11 +1308,15 @@ export function PromptBlock() {
   }, [folderId])
 
   /* Streams a reply from the chat route. */
-  const respondReal = async (id: string, history: Turn[]) => {
+  const respondReal = async (id: string, history: Turn[], write: WriteState) => {
     const controller = new AbortController()
     abortRef.current = controller
     /* Hoisted so the abort and failure paths can store what actually arrived. */
     let shown = ""
+    /* The provider's own accounting for the turn, as it arrives. It is kept
+       here as well as in state because the write happens after the stream has
+       ended, and by then the render that started it is long gone. */
+    let reported: PromptTokenUsage | null = null
 
     try {
       /* Resolve every file the thread points at before the request goes out, so
@@ -1166,6 +1406,7 @@ export function PromptBlock() {
           /* The provider's own accounting for the turn that just ended. This is
              what the context dial reads — no estimate is involved. */
           if (event.type === "finish" && metadata?.usage) {
+            reported = metadata.usage
             setUsage(metadata.usage)
           }
           if (event.type === "error") {
@@ -1195,7 +1436,7 @@ export function PromptBlock() {
       ]
       setTurns(settled)
       setStatus("ready")
-      void persist(settled)
+      void persist(settled, { ...write, usage: reported })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "unknown error"
@@ -1215,39 +1456,75 @@ export function PromptBlock() {
             ]
       setTurns(settled)
       setStatus("ready")
-      void persist(settled)
+      void persist(settled, { ...write, usage: reported })
     } finally {
       abortRef.current = null
     }
   }
 
-  /* Writes the current thread to storage. Called once a turn settles, so a
-     half-streamed reply is never stored as if it were complete. */
-  /* Writes the current thread to storage. Called once a turn settles, so a
-     half-streamed reply is never stored as if it were complete.
-     The id comes from a ref rather than state: `persist` runs from inside an
-     async stream that outlives the render which started it, so a state value
-     captured at call time would still be stale and create a second thread. */
-  const persist = async (next: Turn[]) => {
-    const saved = saveSession(activeSessionRef.current, {
+  /**
+   * Writes the current thread to storage.
+   *
+   * Called once a turn settles, so a half-streamed reply is never stored as if
+   * it were complete. The id comes from a ref rather than state: `persist`
+   * runs from inside an async stream that outlives the render which started
+   * it, so a state value captured at call time would still be stale and create
+   * a second thread.
+   *
+   * The thread goes into the store for the side it belongs to — the chat store
+   * or the code-session store — because a chat and a session are different
+   * objects, and one of them appearing in the other's list is the thing this
+   * separation exists to prevent.
+   */
+  const persist = async (next: Turn[], write: WriteState) => {
+    const base = {
       turns: await toStoredTurns(next, projectFiles),
-      model,
-      effort: effort ? effort : undefined,
-      mode,
-      folder: folder?.name,
-    })
-    activeSessionRef.current = saved.id
-    setActiveSessionId(saved.id)
+      model: write.model || undefined,
+      effort: write.effort || undefined,
+      usage: write.usage ?? undefined,
+    }
+    const active = activeRef.current
+    const id = active.side === write.side ? active.id : null
+    const saved =
+      write.side === "chat"
+        ? saveChat(id, base)
+        : saveSession(id, {
+            ...base,
+            mode: write.mode,
+            folder: write.folderId,
+            folderName: write.folderName,
+          })
+    activeRef.current = { side: write.side, id: saved.id }
+    setActiveBySide((current) => ({ ...current, [write.side]: saved.id }))
     return saved
   }
+
+  /**
+   * What a write needs to know, captured when the turn was sent.
+   *
+   * The reply comes back later, and by then the user may have changed the
+   * model, the folder or the surface. A thread records the settings it was
+   * actually run with, not the ones that happen to be in force when the
+   * answer arrives.
+   */
+  const captureWrite = (): WriteState => ({
+    side: variant,
+    model,
+    effort,
+    mode,
+    folderId: folder?.id,
+    folderName: folder?.name,
+    usage,
+  })
 
   const send = (message: PromptMessage) => {
     const id = `${Date.now()}`
     const next: Turn[] = [...turns, { id: `${id}-user`, role: "user", message }]
     setTurns(next)
     setStatus("submitted")
-    void persist(next)
-    void respondReal(`${id}-assistant`, next)
+    const write = captureWrite()
+    void persist(next, write)
+    void respondReal(`${id}-assistant`, next, write)
   }
 
   const stop = () => {
@@ -1262,7 +1539,7 @@ export function PromptBlock() {
         : turn,
     )
     setTurns(settled)
-    void persist(settled)
+    void persist(settled, captureWrite())
   }
 
   /* Opens a folder the browser will actually grant us, and keeps it in recents.
@@ -1271,7 +1548,7 @@ export function PromptBlock() {
     const picked = await pickFolder()
     if (!picked) return
     setFolders(await listRecentFolders())
-    setFolderId(picked.name)
+    setFolderId(picked.id)
   }
 
   const chooseFolder = (id: string) => {
@@ -1284,47 +1561,48 @@ export function PromptBlock() {
     if (folderId === id) setFolderId(undefined)
   }
 
-  const newSession = () => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setTurns([])
-    setUsage(null)
-    setServedModel(null)
-    setStatus("ready")
-    activeSessionRef.current = null
-    setActiveSessionId(null)
-    /* A new chat should not open on the starters the last one ended on. Done
-       here rather than watched for, because `activeSessionId` goes to null for
-       a new chat *and* for an unassigned one - two new chats in a row leave it
-       unchanged and a dependency would not notice the second. */
+  /**
+   * Starts a new thread on a side.
+   *
+   * It resets that side's conversation and nothing else: the other side's
+   * thread is untouched, and this side keeps its model, its effort and — in
+   * Code — the folder it was pointed at.
+   */
+  const newThread = (side: Side) => {
+    resetThread(side)
+    /* A new thread should not open on the starters the last one ended on. Done
+       here rather than watched for, because the open thread goes to null for a
+       new thread *and* for an unassigned one - two new threads in a row leave
+       it unchanged and a dependency would not notice the second. */
     setStarterOffset((n) => n + 1)
   }
 
-  const openSession = (id: string) => {
-    const session = listSessions().find((item) => item.id === id)
-    if (!session) return
-    abortRef.current?.abort()
-    abortRef.current = null
-    setTurns(fromStoredTurns(session.turns))
-    setUsage(null)
-    setServedModel(null)
-    setStatus("ready")
-    activeSessionRef.current = session.id
-    setActiveSessionId(session.id)
-    if (session.model) setModel(session.model)
-    if (session.effort) setEffort(session.effort)
-    if (session.mode) setMode(session.mode)
-    setFolderId((current) =>
-      folders.some((item) => item.name === session.folder) ? session.folder : current,
-    )
-  }
-
-  /* Header "New chat": same as the menu's, and it leaves the thread stored. */
-  const reset = () => {
-    newSession()
+  /**
+   * The rail's "New" row, and the tray's and the menu's.
+   *
+   * It starts a new thread on the side it was asked for and empties the
+   * composer. The thread that was open stays stored, and the other side's
+   * thread is not touched at all.
+   */
+  const reset = (side: Side = variant) => {
+    newThread(side)
     requestAnimationFrame(() =>
       dockRef.current?.querySelector("textarea")?.focus()
     )
+  }
+
+  /**
+   * The rail's "open a thread" row.
+   *
+   * The side is not passed in, because a thread knows which side it belongs to
+   * — a chat is a chat and a session is a session, and the ids say which.
+   */
+  const open = (id: string) => {
+    if (findChat(id)) {
+      openThread("chat", id)
+      return
+    }
+    if (findSession(id)) openThread("code", id)
   }
 
   /* The rail sits above this block and cannot reach its handlers, so they are
@@ -1333,7 +1611,7 @@ export function PromptBlock() {
      loop or require memoising functions that were never written to be stable. */
   const threadBridge = useThreadBridge()
   React.useLayoutEffect(() => {
-    threadBridge.functions.current = { reset, open: openSession }
+    threadBridge.functions.current = { reset, open }
   })
   /* Which thread is open is state, because the rail has to redraw its list when
      it changes — unlike the handlers above, which only ever get called. */
@@ -1346,6 +1624,35 @@ export function PromptBlock() {
   React.useEffect(() => {
     threadBridge.setRunningId(busy ? activeSessionId : null)
   }, [busy, activeSessionId, threadBridge])
+
+  /**
+   * Switching sides shows the other side's thread.
+   *
+   * The composer is one shell with two regions, and the region that is showing
+   * has to be showing *that side's* conversation — so the switch loads the
+   * thread the new side had open, or nothing if it had none.
+   *
+   * A layout effect rather than an ordinary one, so the swap happens before
+   * the browser paints: otherwise there is a frame in which the old side's
+   * conversation is drawn under the new side's composer, which is exactly the
+   * confusion this is meant to remove.
+   *
+   * Loading also aborts a reply in flight. One composer, one stream: the
+   * partial answer is kept and marked stopped, and the side it belonged to is
+   * exactly where you left it.
+   */
+  React.useLayoutEffect(() => {
+    loadThread(variant, activeBySide[variant])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant])
+
+  /* The composer text is mirrored into a ref, because the idle rotation has to
+     know whether the box is empty before it turns the starters over, and
+     reading it on every keystroke would re-render the whole block to answer a
+     question only a timer ever asks. */
+  React.useEffect(() => {
+    draftRef.current = content.text
+  }, [content.text])
 
   /**
    * The model picker, shared by both variants.
@@ -1419,7 +1726,7 @@ export function PromptBlock() {
       ]
       setTurns(next)
       setUsage(null)
-      await persist(next)
+      await persist(next, captureWrite())
     } catch {
       // Leave the thread untouched; a failed compaction should cost nothing.
     } finally {
@@ -1562,10 +1869,8 @@ export function PromptBlock() {
             accept="image/*,.pdf,.txt,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.go,.rs"
             maxFileSize={10 * 1024 * 1024}
             maxLength={8000}
-            draftKey="acme-prompt-input-demo"
-    onValueChange={(value) => {
-      draftRef.current = value
-    }}
+            composerContent={content}
+            onComposerContentChange={onContentChange}
             layout={variant === "code" ? "expanded" : "auto"}
             globalDrop
             focusOnType

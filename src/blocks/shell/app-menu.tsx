@@ -47,7 +47,7 @@ type MenuEntry = {
 }
 
 /** The commands the menu can run. */
-type MenuAction = "new-chat" | "close-window" | "exit"
+type MenuAction = "new-chat" | "new-session" | "close-window" | "exit"
 
 const NOT_BUILT = "Not built yet"
 
@@ -63,6 +63,7 @@ const MENU: MenuEntry[] = [
     label: "File",
     children: [
       { label: "New chat", action: "new-chat" },
+      { label: "New session", action: "new-session" },
       { label: "Open file" },
       { label: "Open folder" },
       { label: "Settings" },
@@ -215,13 +216,17 @@ function MenuEntries({
 export function AppMenu() {
   const newThread = useNewThread()
 
-  /* The three commands the menu really has. The window's own controls are
-     the same as the tray's: closing the window puts the app away rather than
-     quitting it, and quitting is a command of its own. */
+  /* The commands the menu really has. The window's own controls are the same as
+     the tray's: closing the window puts the app away rather than quitting it,
+     and quitting is a command of its own. */
   const run = React.useCallback(
     (action: MenuAction) => {
       if (action === "new-chat") {
         newThread("chat")
+        return
+      }
+      if (action === "new-session") {
+        newThread("code")
         return
       }
       if (!isDesktopApp()) return

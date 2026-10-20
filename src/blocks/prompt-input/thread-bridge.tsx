@@ -4,6 +4,7 @@ import * as React from "react"
 import { invoke } from "@tauri-apps/api/core"
 
 import { isDesktopApp } from "@/lib/desktop"
+import type { Side } from "@/lib/sides"
 import { useComposerVariant } from "./composer-variant"
 
 /**
@@ -27,8 +28,14 @@ import { useComposerVariant } from "./composer-variant"
  * a row cannot say "this one is working".
  */
 export type ThreadBridge = {
-  /** Start a new thread, leaving whatever is open. */
-  reset: () => void
+  /**
+   * Start a new thread on a side, leaving whatever is open there.
+   *
+   * The side is optional because the rail's "New" row means "new thread on the
+   * side I am already on", while the tray and the menu mean "new chat" or
+   * "new session" by name.
+   */
+  reset: (side?: Side) => void
   /** Open an existing thread by its id. */
   open: (id: string) => void
 }
@@ -86,14 +93,14 @@ export function useNewThread() {
   const bridge = useThreadBridge()
 
   return React.useCallback(
-    (variant: "chat" | "code") => {
+    (side: Side) => {
       /* Any request the system tray is still holding is answered by what the
          user has just done instead. */
       if (isDesktopApp()) {
         void invoke("take_intent").catch(() => {})
       }
-      setVariant(variant)
-      bridge.functions.current?.reset()
+      setVariant(side)
+      bridge.functions.current?.reset(side)
     },
     [setVariant, bridge.functions],
   )

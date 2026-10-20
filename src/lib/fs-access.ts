@@ -57,10 +57,40 @@ const DB_VERSION = 1
 const HANDLE_STORE = "handles"
 const META_STORE = "recent-folders"
 
+/**
+ * A folder the user has granted access to.
+ *
+ * The id is generated, and deliberately **not** the directory's name: two
+ * directories on two drives can share a name, and a folder that is identified
+ * by its name is one folder to this app. Picking the second would overwrite
+ * the first's handle, and a session would lose track of which repository it
+ * was run against. The name is kept separately, because it is what a person
+ * reads.
+ */
 export type RecentFolder = {
+  /** A generated id. The one thing that identifies this folder. */
   id: string
+  /** The directory's name, for display. */
   name: string
   pickedAt: number
+}
+
+/**
+ * A fresh id for a folder.
+ *
+ * `crypto.randomUUID` where it exists, and a made-up one where it does not.
+ * The fallback is not a random number generator — it is the timestamp and a
+ * counter, which is enough to keep two folders picked in the same second
+ * apart.
+ */
+let folderCounter = 0
+const newFolderId = (): string => {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID()
+  }
+  folderCounter += 1
+  return `f-${Date.now().toString(36)}-${folderCounter.toString(36)}`
 }
 
 const openDb = (): Promise<IDBDatabase | null> =>
@@ -109,10 +139,16 @@ export const listRecentFolders = async (): Promise<RecentFolder[]> => {
 }
 
 export const rememberFolder = async (handle: DirHandle): Promise<RecentFolder> => {
-  const entry: RecentFolder = { id: handle.name, name: handle.name, pickedAt: Date.now() }
+  const entry: RecentFolder = {
+    id: newFolderId(),
+    name: handle.name,
+    pickedAt: Date.now(),
+  }
   const db = await openDb()
   if (db) {
-    await run(db, HANDLE_STORE, "readwrite", (s) => s.put(handle, handle.name))
+    /* Keyed by the generated id, not by the name — the handle store holds the
+       one thing that must not be confused with another folder's. */
+    await run(db, HANDLE_STORE, "readwrite", (s) => s.put(handle, entry.id))
     await run(db, META_STORE, "readwrite", (s) => s.put(entry))
   }
   return entry
@@ -146,13 +182,19 @@ export const restoreFolder = async (id: string): Promise<DirHandle | null> => {
   }
 }
 
-export const pickFolder = async (): Promise<DirHandle | null> => {
+/**
+ * Asks the user for a folder and remembers it.
+ *
+ * It returns the folder that was remembered rather than the handle, because
+ * the id is the thing a caller needs — the handle is looked up again from the
+ * id when the files are read.
+ */
+export const pickFolder = async (): Promise<RecentFolder | null> => {
   const picker = (window as PickerWindow).showDirectoryPicker
   if (!picker) return null
   try {
     const handle = await picker({ mode: "read" })
-    await rememberFolder(handle)
-    return handle
+    return await rememberFolder(handle)
   } catch {
     // The user dismissed the picker. That is not an error worth surfacing.
     return null

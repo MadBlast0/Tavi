@@ -22,6 +22,7 @@
  */
 
 import { readStorage, writeStorage } from "@/lib/storage";
+import type { Side } from "@/lib/sides";
 
 export const readPref = (name: string): string | undefined => readStorage(name);
 
@@ -36,4 +37,14 @@ export const PREF = {
   mode: "mode",
   font: "font",
   sidebar: "sidebar",
-} as const
+} as const;
+
+/**
+ * A preference that belongs to one side of the app rather than to both.
+ *
+ * Chat and Code are separate places, so the model you chat with and the model
+ * you code with are two choices and not one. The key is the preference's name
+ * with the side on the end — `tavi.model.chat`, `tavi.model.code` — which
+ * keeps it inside the one namespace everything else lives in.
+ */
+export const sidePref = (name: string, side: Side): string => `${name}.${side}`;
