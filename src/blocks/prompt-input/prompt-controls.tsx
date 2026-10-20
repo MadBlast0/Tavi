@@ -1907,6 +1907,24 @@ function PromptInputSelect({
 }
 
 /**
+ * How much of a folder name is shown before it is cut.
+ *
+ * A folder name can be a sentence — people name folders after what is in them.
+ * The picker is a list of folders, not a place to read them, so a long name is
+ * cut and marked rather than allowed to push the list wide. Twenty characters
+ * holds most project names whole while still leaving room for the pill and the
+ * row to sit side by side.
+ */
+const FOLDER_NAME_LIMIT = 20
+
+/** Cuts a folder name to the limit, marking the cut with an ellipsis. */
+function shortFolderName(name: string): string {
+  return name.length > FOLDER_NAME_LIMIT
+    ? `${name.slice(0, FOLDER_NAME_LIMIT)}…`
+    : name
+}
+
+/**
  * The folder picker.
  *
  * Not the generic select, because a folder can be **forgotten**, and
@@ -1916,9 +1934,10 @@ function PromptInputSelect({
  * another one.
  *
  * So every row is a submenu, and right-clicking the row opens it. The submenu
- * opens on a right-click rather than on a hover, because a submenu that popped
- * open under the pointer every time the list was swept would be noise, and this
- * one has a single item in it.
+ * opens on a right-click rather than on a hover or a click, because a submenu
+ * that popped open under the pointer every time the list was swept — or every
+ * time a folder was chosen — would be noise, and this one has a single item in
+ * it. Choosing a folder is a click; forgetting one is a right-click.
  *
  * **Forgetting a folder takes it out of this list and nothing else.** The
  * sessions that were run against it keep their history, keep the project they
@@ -1953,7 +1972,10 @@ function PromptInputFolderSelect({
   const context = usePromptInput("PromptInputFolderSelect")
   const { announce, disabled } = context
   const current = folders.find((folder) => folder.id === value)
-  const shown = current?.name ?? placeholder ?? label
+  /** What the pill says: the folder's name, cut to the limit. */
+  const shown = current ? shortFolderName(current.name) : (placeholder ?? label)
+  /** What the pill is called, for anyone who cannot see it. The whole name. */
+  const named = current ? `${label}: ${current.name}` : `${label}: ${shown}`
 
   /**
    * Which row's submenu is open.
@@ -1988,7 +2010,8 @@ function PromptInputFolderSelect({
                   size="sm"
                   variant="ghost"
                   shape="pill"
-                  aria-label={`${label}: ${shown}`}
+                  aria-label={named}
+                  title={current?.name}
                   disabled={disabled}
                   className="min-w-0"
                 />
@@ -2022,17 +2045,30 @@ function PromptInputFolderSelect({
               <DropdownMenuSubTrigger
                 /* A submenu that opened on a hover would pop open under the
                    pointer every time the list was swept past. This one is
-                   opened by a right-click, and by the keyboard. */
+                   opened by a right-click, and by the keyboard's own submenu
+                   key. */
                 openOnHover={false}
                 onContextMenu={(event) => {
                   event.preventDefault()
                   setOpenFor(folder.id)
                 }}
-                onClick={() => choose(folder.id)}
-                className="[&>[data-icon=inline-end]]:hidden"
+                /* A submenu trigger opens its submenu when it is pressed, and
+                   a folder row is pressed to choose the folder. The press is
+                   taken away from the menu, so choosing a folder does not also
+                   throw up the submenu on top of it. The row still chooses the
+                   folder, and the keyboard's submenu key still opens the
+                   submenu, because that path does not go through a press. */
+                onMouseDown={(event) => event.preventBaseUIHandler?.()}
+                onClick={(event) => {
+                  event.preventBaseUIHandler?.()
+                  choose(folder.id)
+                }}
+                /* The submenu is opened by a right-click, so the arrow that
+                   points at a submenu is a promise the row does not keep. */
+                className="[&>[data-slot=dropdown-menu-sub-trigger-icon]]:hidden"
               >
                 <FolderOpenIcon />
-                <span className="truncate">{folder.name}</span>
+                <span className="truncate">{shortFolderName(folder.name)}</span>
                 {folder.id === value ? (
                   <CheckIcon aria-hidden="true" className="ms-auto size-3.5" />
                 ) : null}
