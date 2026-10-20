@@ -30,4 +30,3 @@ and what it does and does not do.
 |---|---|
 | [`plan/later-on.md`](plan/later-on.md) | What is deferred, and why: the features that were deliberately left out, the things noticed while building, and the three that need a machine to check |
 | [`plan/Plan_master.md`](plan/Plan_master.md) | The master plan the app was built from |
-| [`plan/mock/shell-layout.html`](plan/mock/shell-layout.html) | The shell layout as it was designed, before it was built |
