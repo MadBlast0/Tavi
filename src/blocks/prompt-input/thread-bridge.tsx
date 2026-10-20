@@ -1,6 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { invoke } from "@tauri-apps/api/core"
+
+import { isDesktopApp } from "@/lib/desktop"
+import { useComposerVariant } from "./composer-variant"
 
 /**
  * How the rail drives the composer, and what the composer is showing.
@@ -57,4 +61,34 @@ export function useThreadBridge() {
     throw new Error("useThreadBridge must be used inside a ThreadBridgeProvider")
   }
   return value
+}
+
+/**
+ * Start a new thread in one of the two composer layouts.
+ *
+ * The rail, the application menu and the system tray all want the same thing
+ * — an empty chat, or an empty session, in front of the user — and they all
+ * want it in the same way: the layout changes, and the composer is emptied.
+ * This is that, in one place, so the three of them cannot drift apart.
+ *
+ * It lives here rather than in the shell because the thread bridge is already
+ * the seam between the rail and the composer, and the composer variant is the
+ * other half of what a new thread means.
+ */
+export function useNewThread() {
+  const { setVariant } = useComposerVariant()
+  const bridge = useThreadBridge()
+
+  return React.useCallback(
+    (variant: "chat" | "code") => {
+      /* Any request the system tray is still holding is answered by what the
+         user has just done instead. */
+      if (isDesktopApp()) {
+        void invoke("take_intent").catch(() => {})
+      }
+      setVariant(variant)
+      bridge.functions.current?.reset()
+    },
+    [setVariant, bridge.functions],
+  )
 }

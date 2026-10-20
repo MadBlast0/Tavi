@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai-app",
+  "productName": "Tavi",
   "version": "0.1.0",
-  "identifier": "com.mad.ai-app",
+  "identifier": "com.mad.tavi",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "ai-app",
-        "width": 800,
-        "height": 600
+        "title": "Tavi",
+        "width": 1030,
+        "height": 579,
+        "minWidth": 600,
+        "minHeight": 338,
+        "center": true,
+        "preventOverflow": true,
+        "visible": false,
+        "decorations": false
       }
     ],
     "security": {

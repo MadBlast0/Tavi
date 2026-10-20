@@ -1605,28 +1605,17 @@ export function PromptBlock() {
 
   return (
     <MessageScrollerProvider autoScroll>
-      <main className="flex h-svh flex-col bg-background">
-        <header className="grid h-(--shell-top-bar-h) shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4">
-          {/* The centre cell is empty. It held the Chat/Code switch, which now
-              lives in the sidebar beside the work area; the grid is kept so
-              "New chat" stays in the outer column rather than drifting to the
-              middle when the switch leaves.
+      {/* The top padding is the title bar's height, and the title bar is drawn
+          over the top of the work area. The bar is the app's only strip at the
+          top of the window now — the window has no caption of its own — so the
+          conversation starts under it rather than under a second bar.
 
-              The height is the shell's `--shell-top-bar-h`, the same number the
-              sidebar's strip is sized from. CSS variables cascade, so the value
-              set by the shell reaches this header without either block knowing
-              the other's name.
-
-              No rule under it. The two top bars were divided by hairlines, and
-              a rule drawn under one half and not the other reads as a mistake
-              rather than a boundary; drawing both just put a grey line across
-              the app for no information. */}
-          {empty ? null : (
-            <Button variant="ghost" size="xs" onClick={reset} className="justify-self-end">
-              New chat
-            </Button>
-          )}
-        </header>
+          The padding is on the main rather than on what is inside it, so the
+          background still reaches the top of the window: the work area's
+          colour has to be there for the title bar to sit against, and the
+          curve where the work area meets the rail is cut out of this
+          background. */}
+      <main className="flex h-svh flex-col bg-background pt-(--shell-top-bar-h)">
         {empty ? (
           <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
             <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">

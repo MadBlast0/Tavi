@@ -1,89 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { ArrowLeftIcon, ArrowRightIcon, MenuIcon, PanelLeftIcon } from "lucide-react"
 
-import { Button } from "@/components/button"
 import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
   SidebarProvider,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/sidebar"
 import { ComposerVariantSwitch } from "@/blocks/prompt-input/composer-variant"
 import { matchesHotkey } from "@/lib/hotkey"
+import { PREF, readPref, writePref } from "@/lib/prefs"
 import { SidebarAccount } from "./sidebar-account"
 import { SidebarNav } from "./sidebar-nav"
 import { SETTINGS_HOTKEY, SettingsDialog } from "./settings-dialog"
+import { TitleBar } from "./title-bar"
 import { cn } from "@/lib/utils"
-
-/**
- * The four controls that live in the top-left corner of the shell.
- *
- * They are mounted once, over the shell rather than inside either half of it,
- * which is the only arrangement where they stay put. Mounted in the sidebar
- * while it is open and in the workspace while it is closed, they would have to
- * cross the seam on every toggle — and a control that flies from one side of
- * a divider to the other reads as the sidebar moving when the sidebar did not.
- * Here the sidebar animates underneath them and they do not move at all.
- *
- * Only the sidebar toggle has anything to act on yet. The app has no menu and
- * no navigation history, so those three are rendered disabled rather than
- * wired to something that does nothing. A button that looks live and is not
- * is worse than one that admits it.
- */
-function ShellControls({
-  onBack,
-  onForward,
-  canGoBack,
-  canGoForward,
-  className,
-}: {
-  onBack?: () => void
-  onForward?: () => void
-  canGoBack?: boolean
-  canGoForward?: boolean
-  className?: string
-}) {
-  return (
-    <div
-      className={cn(
-        "flex h-(--shell-top-bar-h) items-center gap-0.5",
-        className
-      )}
-    >
-      {/* The vendored trigger, so the toggle keeps its aria-expanded and
-          aria-controls wiring and the focus hand-back when the sidebar closes
-          over something focused. */}
-      <SidebarTrigger size="icon-xs" aria-label="Toggle sidebar">
-        <PanelLeftIcon className="rtl:-scale-x-100" />
-      </SidebarTrigger>
-      <Button variant="ghost" size="icon-xs" aria-label="Main menu" disabled>
-        <MenuIcon />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Back"
-        disabled={!canGoBack}
-        onClick={onBack}
-      >
-        <ArrowLeftIcon />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Forward"
-        disabled={!canGoForward}
-        onClick={onForward}
-      >
-        <ArrowRightIcon />
-      </Button>
-    </div>
-  )
-}
 
 /**
  * The rail's width.
@@ -130,6 +63,11 @@ function clampSidebarWidth(value: number) {
  * Pointer events rather than mouse events, so it drags under a touch or a pen
  * as well, and the pointer is captured on the way down so the drag survives
  * leaving the 12px strip.
+ *
+ * It starts below the title bar rather than at the top of the window. The bar
+ * lies over the seam and would otherwise take the first 36 pixels of it, and a
+ * grab area that is there but does nothing is worse than one that is not
+ * there.
  */
 function SidebarResizeHandle({
   width,
@@ -210,7 +148,7 @@ function SidebarResizeHandle({
       onPointerCancel={onPointerUp}
       onKeyDown={onKeyDown}
       style={{ insetInlineStart: width }}
-      className="group absolute inset-y-0 z-30 w-3 -translate-x-1/2 cursor-col-resize touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-foreground/60"
+      className="group absolute top-(--shell-top-bar-h) bottom-0 z-30 w-3 -translate-x-1/2 cursor-col-resize touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-foreground/60"
     />
   )
 }
@@ -283,6 +221,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [resizing, setResizing] = React.useState(false)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
 
+  /* Whether the rail is open.
+     The first time the app is ever run it is closed, so what is on screen is
+     the conversation and the box to type in rather than a list of places to
+     go. The rail is navigation for when it is wanted, and on the first run
+     nobody has said they want it.
+
+     After that it is remembered, because the rail is a working tool: someone
+     living in the session list wants it open every morning, and someone who
+     closed it wants it shut. The width is deliberately *not* remembered, for
+     the reason given above it.
+
+     The stored value is read during the first render rather than in an
+     effect, so the rail is never painted open and then closed — the same
+     reason the model and the effort are read that way. */
+  const [railOpen, setRailOpen] = React.useState(() => {
+    const stored = readPref(PREF.sidebar)
+    return stored === undefined ? false : stored === "true"
+  })
+
+  const onRailOpenChange = React.useCallback((open: boolean) => {
+    setRailOpen(open)
+    writePref(PREF.sidebar, String(open))
+  }, [])
+
   /* The rail's width is also published on the document root, not only on the
      shell wrapper the sidebar provider makes it a variable of. Menus and popovers
      render in a portal at the end of the body, so they inherit from there and
@@ -312,28 +274,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    /* `relative` so the controls can anchor to the shell's own top-left corner —
-       the one point that means the same thing whether or not the sidebar is
-       showing.
+    /* `relative` so the title bar can anchor to the shell's own top-left
+       corner — the one point that means the same thing whether or not the
+       sidebar is showing.
 
        `bg-sidebar` is the backdrop the work area's rounded corners are cut out
        of. It is the same colour the rail paints, so the curve reads as the rail
        wrapping around the workspace rather than as a hole.
 
-       `--shell-top-bar-h` is the app's top bar, and it is the single source of
-       its thickness: the sidebar's strip is sized by it, and the work area's
-       header reads the same variable. One number, two consumers, so the halves
-       cannot end up a pixel apart. Nothing is drawn between them — a rule here
-       only ever disagreed with the one it was meant to continue.
+       `--shell-top-bar-h` is the title bar, and it is the single source of its
+       thickness: the bar itself is sized by it, the rail's strip is sized by it,
+       and the work area's content starts below it by the same amount. One
+       number, three consumers, so the halves cannot end up a pixel apart.
+       Nothing is drawn between them — a rule here only ever disagreed with the
+       one it was meant to continue.
 
        The `resizing` flag suspends the vendored sidebar's own width animation.
        Left running, it eases the rail toward the pointer at a quarter of a
        second per frame and the whole panel trails the cursor. */
     <SidebarProvider
       data-resizing={resizing ? "" : undefined}
+      open={railOpen}
+      onOpenChange={onRailOpenChange}
       style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}
       className={cn(
-        "relative bg-sidebar [--shell-top-bar-h:2.25rem]",
+        "relative bg-sidebar [--shell-top-bar-h:1.75rem]",
         "data-[resizing]:[&_[data-slot=sidebar]]:transition-none",
         "data-[resizing]:[&_[data-slot=sidebar-container]]:transition-none",
       )}
@@ -343,10 +308,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           reacts to the pointer rather than a static rule with a hit area on
           top of it. */}
       <Sidebar collapsible="offcanvas" className="after:hidden">
-        {/* The four controls sit over the shell rather than in here, so they
-            hold their place across the collapse. The switch belongs to the
-            sidebar properly — it disappears with it — so it lives in the
-            header, below the top bar.
+        {/* The switch belongs to the sidebar properly — it disappears with it —
+            so it lives in the header, below the top bar.
 
             `mt` puts the header under the top bar rather than over it. */}
         <SidebarHeader className="mt-(--shell-top-bar-h)">
@@ -361,7 +324,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <SidebarAccount onOpenSettings={() => setSettingsOpen(true)} />
       </Sidebar>
       <WorkArea>{children}</WorkArea>
-      <ShellControls className="absolute start-0 top-0 z-30 px-1.5" />
+      {/* The window's caption, drawn by the app because the window has none of
+          its own. It lies over the shell rather than beside it, and it is
+          transparent, so the colours and the curve it sits against are the
+          shell's own. */}
+      <TitleBar />
       <SidebarResizeHandle
         width={width}
         onResize={setWidth}

@@ -3,7 +3,6 @@
 import * as React from "react"
 import { CodeXmlIcon, MessageCircleIcon } from "lucide-react"
 
-import { PREF, readPref, writePref } from "@/lib/prefs"
 import {
   IconSwitch,
   type IconSwitchOption,
@@ -38,21 +37,20 @@ const ComposerVariantContext = React.createContext<ComposerVariantContextValue |
  * control that changes it sits in the sidebar while the thing it changes is the
  * composer. The two are in different halves of the tree, and the only way for
  * one to reach the other without threading props through the shell's children
- * is a context. The stored preference moves with it, so the choice survives a
- * reload whichever half of the app asked for it.
+ * is a context.
+ *
+ * The app always opens in Chat, and never opens in the layout it was last left
+ * in. The two are not the same thing: the model, the effort and the composer
+ * mode are choices about *how* to work and are remembered, but which of the
+ * two jobs the app starts on is a question about what the user came to do, and
+ * a fresh start is the honest answer to it. Coming back to Code is a click.
  */
 export function ComposerVariantProvider({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [variant, setVariant] = React.useState<ComposerVariant>(() =>
-    readPref(PREF.variant) === "chat" ? "chat" : "code"
-  )
-
-  React.useEffect(() => {
-    writePref(PREF.variant, variant)
-  }, [variant])
+  const [variant, setVariant] = React.useState<ComposerVariant>("chat")
 
   const value = React.useMemo(
     () => ({ variant, setVariant }),

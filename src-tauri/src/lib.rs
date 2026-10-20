@@ -2,6 +2,10 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
+use tauri::AppHandle;
+
+mod tray;
+mod window_state;
 
 /// Filesystem commands backing the `list_directory` and `read_text_file` tools.
 ///
@@ -233,12 +237,6 @@ async fn list_installed_fonts() -> Result<Vec<String>, String> {
     Ok(normalize_families(families))
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 // --- Provider API key, held in the OS credential store -----------------------
 //
 // The key never touches disk in plaintext and never reaches a log. The webview
@@ -246,12 +244,46 @@ fn greet(name: &str) -> String {
 // chat server, which forwards it upstream. See docs/plan §9.2 for the residual
 // risk this accepts.
 
-const KEY_SERVICE: &str = "ai-app";
+const KEY_SERVICE: &str = "tavi";
 const KEY_USER: &str = "openrouter-api-key";
+
+/// The namespace the key was stored under before the app was renamed.
+///
+/// The app was called something else when the key was first entered, and the
+/// credential is still sitting under that name. The key itself did not
+/// change, so it is moved rather than asked for again: a key the user has
+/// already entered should not have to be entered a second time because the app
+/// was renamed.
+const LEGACY_KEY_SERVICE: &str = "ai-app";
 
 fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEY_SERVICE, KEY_USER)
         .map_err(|e| format!("Credential store unavailable: {e}"))
+}
+
+/// Move a key from one namespace to another, if it is in the first.
+///
+/// The key is written to the new namespace before the old one is removed: a
+/// key that exists in both places is one the user has already set, and losing
+/// it would be worse than leaving a duplicate behind. A key that is in
+/// neither place is simply absent, which is what an app that has never had a
+/// key looks like.
+fn migrate_key(from_service: &str, to_service: &str) -> Result<Option<String>, String> {
+    let legacy = keyring::Entry::new(from_service, KEY_USER)
+        .map_err(|e| format!("Credential store unavailable: {e}"))?;
+    let key = match legacy.get_password() {
+        Ok(key) => key,
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(e) => return Err(format!("Could not read key: {e}")),
+    };
+
+    keyring::Entry::new(to_service, KEY_USER)
+        .map_err(|e| format!("Credential store unavailable: {e}"))?
+        .set_password(&key)
+        .map_err(|e| format!("Could not store key: {e}"))?;
+
+    let _ = legacy.delete_credential();
+    Ok(Some(key))
 }
 
 #[tauri::command]
@@ -267,8 +299,10 @@ fn set_api_key(key: String) -> Result<(), String> {
 fn get_api_key() -> Result<Option<String>, String> {
     match entry()?.get_password() {
         Ok(key) => Ok(Some(key)),
-        // Absent is a normal state, not a failure.
-        Err(keyring::Error::NoEntry) => Ok(None),
+        // Absent is a normal state, not a failure — unless the key is still
+        // under the name the app had before it was renamed, in which case it
+        // is moved across and handed back.
+        Err(keyring::Error::NoEntry) => migrate_key(LEGACY_KEY_SERVICE, KEY_SERVICE),
         Err(e) => Err(format!("Could not read key: {e}")),
     }
 }
@@ -281,26 +315,100 @@ fn clear_api_key() -> Result<(), String> {
     }
 }
 
+/// Quit the app.
+///
+/// The window's remembered size is written out first: the app is leaving, and
+/// the size it is leaving at is the one it should come back at.
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    window_state::flush(&app);
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The window's remembered geometry. The tracker is shared between the
+    // setup, which restores the window, and the event handler, which notices
+    // it being moved or resized.
+    let tracker = window_state::Tracker::default();
+    let for_events = tracker.clone();
+    let for_setup = tracker.clone();
+    let for_watch = tracker.clone();
+    // A third copy is put in the app's own state, so that the tray can reach
+    // it: the tray's Exit has to write the window's size out before the app
+    // leaves, and it is the tray that decides when the app leaves.
+    let for_state = tracker.clone();
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .manage(for_state)
         .invoke_handler(tauri::generate_handler![
-            greet,
             list_directory,
             read_text_file,
             set_api_key,
             get_api_key,
             clear_api_key,
-            list_installed_fonts
+            list_installed_fonts,
+            tray::take_intent,
+            quit_app
         ])
+        .setup(move |app| {
+            window_state::setup(app.handle(), &for_setup);
+            window_state::watch(app.handle(), for_watch);
+            tray::setup(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(move |window, event| {
+            window_state::on_event(&for_events, window, event);
+            tray::on_window_event(window, event);
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SystemSource, normalize_families};
+    use super::{KEY_USER, SystemSource, migrate_key, normalize_families};
+
+    /// The key moves from the namespace the app had before it was renamed to
+    /// the one it has now, and the old one is cleaned up.
+    ///
+    /// It uses namespaces of its own so the user's own key is never touched,
+    /// and it removes what it created so nothing is left behind.
+    #[test]
+    fn a_key_moves_between_namespaces() {
+        const FROM: &str = "tavi-test-migration-from";
+        const TO: &str = "tavi-test-migration-to";
+
+        // A machine with no credential store has nowhere to move a key to and
+        // from. That is not the migration failing — it is a machine without
+        // the facility, and the app says so when it cannot reach one.
+        let (Ok(from), Ok(to)) = (
+            keyring::Entry::new(FROM, KEY_USER),
+            keyring::Entry::new(TO, KEY_USER),
+        ) else {
+            return;
+        };
+
+        let _ = from.delete_credential();
+        let _ = to.delete_credential();
+
+        from.set_password("secret")
+            .expect("the test key should store");
+        let moved = migrate_key(FROM, TO).expect("the migration should work");
+
+        assert_eq!(moved.as_deref(), Some("secret"));
+        assert_eq!(
+            to.get_password().expect("the moved key should read"),
+            "secret"
+        );
+        assert!(
+            matches!(from.get_password(), Err(keyring::Error::NoEntry)),
+            "the old namespace should have been cleaned up"
+        );
+
+        let _ = from.delete_credential();
+        let _ = to.delete_credential();
+    }
 
     fn names(input: &[&str]) -> Vec<String> {
         normalize_families(input.iter().map(|s| s.to_string()).collect())

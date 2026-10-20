@@ -2,6 +2,7 @@ import { PromptBlock } from "@/blocks/prompt-input/prompt-block";
 import { ComposerVariantProvider } from "@/blocks/prompt-input/composer-variant";
 import { ThreadBridgeProvider } from "@/blocks/prompt-input/thread-bridge";
 import { Shell } from "@/blocks/shell/shell";
+import { TrayBridge } from "@/blocks/shell/tray-bridge";
 
 /**
  * The app has no router yet. The prompt block is the app surface; its
@@ -12,11 +13,16 @@ import { Shell } from "@/blocks/shell/shell";
  * spans the seam between them: the composer variant, whose switch is in the
  * rail and whose effect is in the work area; and the thread bridge, which is
  * how the rail starts and opens threads in the work area.
+ *
+ * The tray bridge sits with them for the same reason. It carries the system
+ * tray's commands into the app, and both of the things it needs to act on —
+ * the variant and the thread — are held above the shell.
  */
 function App() {
   return (
     <ThreadBridgeProvider>
       <ComposerVariantProvider>
+        <TrayBridge />
         <Shell>
           <PromptBlock />
         </Shell>
