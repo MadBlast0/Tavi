@@ -132,8 +132,9 @@ small as it can be.
 
 Your last pick is remembered. Model, effort and mode are restored on load, and
 a stored model that has left the catalogue is replaced with one the picker
-names. See [`docs/storage.md`](docs/storage.md) for where each kind of data
-lives on the web and desktop targets.
+names. See [Appendix A of
+`docs/tavi-implementation-prompt.md`](docs/tavi-implementation-prompt.md#appendix-a--existing-storage-architecture-reference)
+for where each kind of data lives on the web and desktop targets.
 
 Two things are deliberately *not* remembered, because they are questions about
 what you are doing now rather than preferences:
@@ -339,8 +340,9 @@ to the thing it describes.
 | API key | OS credential store, through Rust. Never web storage |
 
 Browser storage is evictable, and that is fine on the web target but not for an
-installed app. `docs/storage.md` covers the platform paths and what should move
-into an app-data file.
+installed app. [Appendix A of
+`docs/tavi-implementation-prompt.md`](docs/tavi-implementation-prompt.md#appendix-a--existing-storage-architecture-reference)
+covers the platform paths and what should move into an app-data file.
 
 ## The two surfaces
 
