@@ -8,8 +8,10 @@ import {
   ClipboardPasteIcon,
   ExternalLinkIcon,
   KeyRoundIcon,
+  PencilIcon,
   PlusIcon,
   RefreshCwIcon,
+  ReplaceIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -31,6 +33,7 @@ import {
 } from "@/components/alert-dialog"
 import { Badge } from "@/components/badge"
 import { Button } from "@/components/button"
+import { InfoHint } from "@/components/info-hint"
 import {
   Dialog,
   DialogBody,
@@ -41,14 +44,21 @@ import {
   DialogTitle,
 } from "@/components/dialog"
 import {
-  Empty,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu"
+import { Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@/components/empty"
-import { Field, FieldDescription, FieldLabel } from "@/components/field"
+import { Field, FieldLabel } from "@/components/field"
+import { Input } from "@/components/input"
 import {
   InputGroup,
   InputGroupAddon,
@@ -66,9 +76,12 @@ import {
   ItemTitle,
 } from "@/components/item"
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/native-select"
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select"
 import { Skeleton } from "@/components/skeleton"
 import {
   activateProviderKey,
@@ -118,12 +131,10 @@ import { cn } from "@/lib/utils"
 const PANE_INSET = { "--item-px": "0px" } as React.CSSProperties
 
 /** What the pane says about the keys, on the desktop. */
-const DESKTOP_NOTE =
-  "A key lets Tavi reach a provider as you. Each one is kept in this computer's credential store — never written to disk by Tavi, never sent to a browser, and never logged. A development build also reads a key from .env.local, so a key can be given to the app without being pasted in."
+export const DESKTOP_NOTE = "Kept in this computer's credential store."
 
 /** What the pane says about the keys, in a browser. */
-const WEB_NOTE =
-  "A key lets Tavi reach a provider as you. Each one is kept by this computer's server — never sent back to the browser, and never logged. A key in the environment the server was started with — the .env.local file in development — is used too, and cannot be changed from here."
+export const WEB_NOTE = "Kept by this computer's server."
 
 /** The window a provider's spending cap resets on, in words. */
 const WINDOW_NAME: Record<string, string> = {
@@ -161,13 +172,31 @@ function money(value: number, currency: string | null): string {
   return rounded
 }
 
-/** A date, in the short form. */
+/**
+ * A date, in the short form.
+ *
+ * Written out rather than asked of the runtime, because the runtime's locale
+ * is not the same in the desktop app and in a browser — and the same key
+ * should not read as two different days in the two builds.
+ */
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+]
+
 function shortDate(seconds: number): string {
-  return new Date(seconds * 1000).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })
+  const date = new Date(seconds * 1000)
+  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`
 }
 
 /** How long ago something happened, in words. */
@@ -262,7 +291,151 @@ const SOURCE_NOTE: Record<string, string> = {
 }
 
 /**
+ * The pane, without the fetching.
+ *
+ * The list is drawn here, from the keys it is given. The container above it
+ * fetches them and holds the dialogs; nothing in this component knows where
+ * a key came from, which is what lets the same screen be drawn for the app
+ * and for the website — and what lets a test draw it with no network at all.
+ */
+export type KeyPaneProps = {
+  /** The keys, as they are known. */
+  keys: ProviderKey[]
+  /** Whether the keys are kept in this computer's credential store. */
+  held: boolean
+  /** The section's own name, from the settings registry. */
+  label: string
+  /** Whether the card is in its narrow shape. */
+  tall: boolean
+  /** Whether the keys are still being read. */
+  loading: boolean
+  /** The person asked to add a key. */
+  onAdd: () => void
+  /** The person asked to rename a key. */
+  onRename: (key: ProviderKey) => void
+  /** The person asked to put a new secret in place of a key's. */
+  onReplace: (key: ProviderKey) => void
+  /** The person asked to take a key away. */
+  onRemove: (key: ProviderKey) => void
+  /** Something about a key changed, and the list is to be read again. */
+  onChanged: () => void
+}
+
+/**
  * The pane.
+ */
+export function KeyPane({
+  keys,
+  held,
+  label,
+  tall,
+  loading,
+  onAdd,
+  onRename,
+  onReplace,
+  onRemove,
+  onChanged,
+}: KeyPaneProps) {
+  /* Every key the app holds, wherever it is kept.
+
+     A key in the development file, or in the environment the website's server
+     was started with, is a key the app is using — so it is listed, and said to
+     be somewhere else. The row carries no buttons for it, because there would
+     be nothing there to change. */
+  const stored = keys
+
+  /* The keys, grouped by the provider they are for. The order is the
+     provider table's own, so the groups do not move about between visits. */
+  const groups = PROVIDERS.map((provider) => ({
+    provider,
+    keys: stored.filter((key) => key.provider === provider.id),
+  })).filter((group) => group.keys.length > 0)
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* The heading and the action are siblings on the first line, so the
+          button's centre and the heading's centre are the same height. The
+          note sits below, where a reference layout puts it. */}
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="flex items-center gap-1">
+            <h2
+              className={cn(
+                "flex items-center gap-2 text-base leading-snug font-semibold text-pretty",
+                tall && "sr-only"
+              )}
+            >
+              {label}
+              {loading ? null : (
+                <Badge appearance="muted" shape="pill" size="sm">
+                  {stored.length}
+                </Badge>
+              )}
+            </h2>
+            <InfoHint label={`About ${label.toLowerCase()}`}>
+              A key acts as the account it was created for, so two keys for the
+              same provider can be told apart. Tavi never writes a key to disk
+              in plaintext, never sends one to a browser, and never logs one. If
+              you think a key has been exposed, replace it here and revoke it
+              at the provider.
+            </InfoHint>
+          </div>
+
+          <Button type="button" size="sm" onClick={onAdd}>
+            <PlusIcon className="size-4" />
+            Add key
+          </Button>
+        </div>
+        <p
+          data-slot="api-keys-note"
+          className="max-w-prose text-sm text-pretty text-muted-foreground"
+        >
+          {held ? DESKTOP_NOTE : WEB_NOTE}
+        </p>
+      </div>
+
+      {loading ? (
+        <SkeletonRows />
+      ) : groups.length === 0 ? (
+        <EmptyKeys onAdd={onAdd} />
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <KeyGroup
+              key={group.provider.id}
+              provider={group.provider.id}
+              label={group.provider.label}
+              keys={group.keys}
+              onRename={onRename}
+              onReplace={onReplace}
+              onRemove={onRemove}
+              onChanged={onChanged}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The pane.
+ *
+ * A list of the keys the app holds, grouped by the provider they are for —
+ * because the provider is a property of the key, and two keys for one
+ * provider have to sit together to be told apart.
+ *
+ * The key itself is never shown. It is never read back out of where it is
+ * kept, and on the desktop it never reaches this code at all — so a row can
+ * say whether the provider accepts it and whose key it is, and can put a new
+ * one in, rename it, choose between two, and take one away, and can do
+ * nothing else with it.
+ *
+ * The heading is drawn here rather than by the settings card because it
+ * carries two things the card's shared heading has no room for: how many keys
+ * there are, and the button that adds one. `tall` is the card's narrow shape,
+ * where the strip of tabs has already named the section and saying it again
+ * would say it twice.
  */
 export function KeySettings({
   label,
@@ -300,69 +473,23 @@ export function KeySettings({
     void load()
   }, [load])
 
-  const stored = (keys ?? []).filter((key) => key.source !== "dev-file")
-
-  /* The keys, grouped by the provider they are for. The order is the
-     provider table's own, so the groups do not move about between visits. */
-  const groups = PROVIDERS.map((provider) => ({
-    provider,
-    keys: stored.filter((key) => key.provider === provider.id),
-  })).filter((group) => group.keys.length > 0)
-
   return (
     <div className="flex flex-col gap-6">
-      {/* The heading and the action are siblings on the first line, so the
-          button's centre and the heading's centre are the same height. The
-          description sits below, where a reference layout puts it. */}
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <h2
-            className={cn(
-              "flex items-center gap-2 text-base leading-snug font-semibold text-pretty",
-              tall && "sr-only"
-            )}
-          >
-            {label}
-            {keys === null ? null : (
-              <Badge appearance="muted" shape="pill" size="sm">
-                {stored.length}
-              </Badge>
-            )}
-          </h2>
-
-          <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-            <PlusIcon className="size-4" />
-            Add key
-          </Button>
-        </div>
-        <p className="max-w-prose text-sm text-pretty text-muted-foreground">
-          {held ? DESKTOP_NOTE : WEB_NOTE}
-        </p>
-      </div>
-
-      {keys === null ? (
-        <SkeletonRows />
-      ) : groups.length === 0 ? (
-        <EmptyKeys onAdd={() => setAddOpen(true)} />
-      ) : (
-        <div className="flex flex-col gap-6">
-          {groups.map((group) => (
-            <KeyGroup
-              key={group.provider.id}
-              provider={group.provider.id}
-              label={group.provider.label}
-              keys={group.keys}
-              onRename={setRenaming}
-              onReplace={setReplacing}
-              onRemove={(key) => {
-                setRemoving(key)
-                setRemovingOpen(true)
-              }}
-              onChanged={() => void load()}
-            />
-          ))}
-        </div>
-      )}
+      <KeyPane
+        keys={keys ?? []}
+        held={held}
+        label={label}
+        tall={tall}
+        loading={keys === null}
+        onAdd={() => setAddOpen(true)}
+        onRename={setRenaming}
+        onReplace={setReplacing}
+        onRemove={(key) => {
+          setRemoving(key)
+          setRemovingOpen(true)
+        }}
+        onChanged={() => void load()}
+      />
 
       <KeyDialog
         open={addOpen}
@@ -372,7 +499,7 @@ export function KeySettings({
         onSaved={() => void load()}
       />
       <RenameKeyDialog
-        key={renaming?.id ?? "none"}
+        key={renaming?.id ?? "renaming"}
         open={renaming !== null}
         info={renaming}
         onOpenChange={(open) => {
@@ -381,7 +508,7 @@ export function KeySettings({
         onRenamed={() => void load()}
       />
       <ReplaceKeyDialog
-        key={replacing?.id ?? "none"}
+        key={replacing?.id ?? "replacing"}
         open={replacing !== null}
         info={replacing}
         held={held}
@@ -449,13 +576,45 @@ function KeyGroup({
 
   return (
     <section className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm leading-snug font-semibold text-pretty">
-          {label}
-        </h3>
-        <Badge appearance="muted" shape="pill" size="sm">
-          {keys.length}
-        </Badge>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm leading-snug font-semibold text-pretty">
+            {label}
+          </h3>
+          <Badge appearance="muted" shape="pill" size="sm">
+            {keys.length}
+          </Badge>
+        </div>
+
+        {/* Where the provider keeps its own answers. They sit on the provider's
+            own line rather than under every key, because they are the
+            provider's and not the key's. */}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {details?.logsUrl ? (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="h-auto p-0 text-xs"
+              onClick={() => void openExternal(details.logsUrl!)}
+            >
+              Usage and logs
+              <ExternalLinkIcon className="size-3" />
+            </Button>
+          ) : null}
+          {details?.limitsUrl ? (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="h-auto p-0 text-xs"
+              onClick={() => void openExternal(details.limitsUrl!)}
+            >
+              Spending limits
+              <ExternalLinkIcon className="size-3" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <ItemGroup variant="default">
@@ -470,46 +629,6 @@ function KeyGroup({
           />
         ))}
       </ItemGroup>
-
-      {details ? (
-        <p className="max-w-prose text-xs text-pretty text-muted-foreground">
-          If you think a {label} key has been exposed: replace it here, then
-          revoke it at {label} and check {label}&apos;s usage and request logs.
-        {details.logsUrl ? (
-          <>
-            {" "}
-            <a
-              href={details.logsUrl}
-              onClick={(event) => {
-                event.preventDefault()
-                void openExternal(details.logsUrl!)
-              }}
-              className="inline-flex items-center gap-1 underline underline-offset-4"
-            >
-              Usage and logs
-              <ExternalLinkIcon className="size-3" />
-            </a>
-          </>
-        ) : null}
-        {details.limitsUrl ? (
-          <>
-            {" "}
-            <a
-              href={details.limitsUrl}
-              onClick={(event) => {
-                event.preventDefault()
-                void openExternal(details.limitsUrl!)
-              }}
-              className="inline-flex items-center gap-1 underline underline-offset-4"
-            >
-              Spending limits
-              <ExternalLinkIcon className="size-3" />
-            </a>
-          </>
-        ) : null}
-        .
-      </p>
-      ) : null}
     </section>
   )
 }
@@ -535,20 +654,18 @@ function KeyRow({
   onRemove: () => void
   onChanged: () => void
 }) {
-  const [checking, setChecking] = React.useState(false)
   const standing = standingOf(info)
   const provider = providerFor(info.provider)
   const elsewhere = isElsewhere(info)
 
+  /* The check runs behind the menu, which closes when the item is chosen. The
+     row's own badge is what changes when it is done. */
   const check = async () => {
-    setChecking(true)
     try {
       await recheckProviderKey(info.id)
       onChanged()
     } catch {
       /* The provider could not be asked. The row keeps the standing it had. */
-    } finally {
-      setChecking(false)
     }
   }
 
@@ -603,83 +720,76 @@ function KeyRow({
         </ItemTitle>
 
         <ItemDescription>{detail(info)}</ItemDescription>
-
-        <p className="text-xs text-pretty text-muted-foreground">
-          {[
-            `Added ${shortDate(info.createdAt)}`,
-            info.lastUsedAt
-              ? `Last used by Tavi ${ago(info.lastUsedAt)}`
-              : "Not used by Tavi yet",
-            info.expiresAt ? `Expires ${shortDate(info.expiresAt)}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
       </ItemContent>
 
       <ItemActions>
         {/* A key that is not in the store this pane writes to is not in it:
-            there is nothing here to edit or to take away. The buttons would
-            write a second key somewhere else and leave the one in use
-            unchanged, which is worse than not offering them. */}
+            there is nothing here to edit or to take away. The menu would write
+            a second key somewhere else and leave the one in use unchanged,
+            which is worse than not offering it. */}
         {elsewhere ? null : (
-          <>
-            {info.active ? null : (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Actions for ${info.name}`}
+                />
+              }
+            >
+              <PencilIcon className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
                 aria-label={`Make active ${info.name}`}
+                disabled={info.active}
+                title={
+                  info.active ? "This is the key in use." : undefined
+                }
                 onClick={() => void makeActive()}
               >
+                <CircleCheckIcon />
                 Make active
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={`Rename ${info.name}`}
-              onClick={onRename}
-            >
-              Rename
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={`Replace key ${info.name}`}
-              onClick={onReplace}
-            >
-              Replace key
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={`Check ${info.name} now`}
-              title={
-                provider?.validation === "inference-probe"
-                  ? "Checking this key costs one request. NVIDIA does not publish a key check, so this is a real inference."
-                  : undefined
-              }
-              loading={checking}
-              onClick={() => void check()}
-            >
-              <RefreshCwIcon className="size-4" />
-              Check now
-            </Button>
-            <Button
-              type="button"
-              variant="ghost-destructive"
-              size="sm"
-              aria-label={`Remove ${info.name}`}
-              onClick={onRemove}
-            >
-              <Trash2Icon className="size-4" />
-              Remove
-            </Button>
-          </>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                aria-label={`Rename ${info.name}`}
+                onClick={onRename}
+              >
+                <PencilIcon />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                aria-label={`Replace key ${info.name}`}
+                onClick={onReplace}
+              >
+                <ReplaceIcon />
+                Replace key
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                aria-label={`Check now ${info.name}`}
+                title={
+                  provider?.validation === "inference-probe"
+                    ? "Checking this key costs one request. NVIDIA does not publish a key check, so this is a real inference."
+                    : undefined
+                }
+                onClick={() => void check()}
+              >
+                <RefreshCwIcon />
+                Check now
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                aria-label={`Remove ${info.name}`}
+                onClick={onRemove}
+              >
+                <Trash2Icon />
+                Remove
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </ItemActions>
     </Item>
@@ -692,6 +802,9 @@ function KeyRow({
  * The account name is the provider's own — the label OpenRouter puts on a
  * key — and it is already masked by the provider and masked again here.
  * Nothing here is the key.
+ *
+ * The standing is not repeated here: the badge beside the name already says
+ * whether the provider accepts it.
  */
 function detail(info: ProviderKey): string {
   const parts: string[] = []
@@ -712,26 +825,18 @@ function detail(info: ProviderKey): string {
     parts.push(info.maskedValue)
   }
 
-  if (info.valid === false) {
-    parts.push(
-      info.checkReason === "no-credit"
-        ? "The provider accepts this key, but the account has no credit left."
-        : "The provider did not accept this key.",
-    )
-    return parts.join(" · ")
-  }
-
-  if (info.valid !== true) {
-    parts.push(
-      info.checkReason === "unreachable"
-        ? "The provider could not be reached, so this key's standing is unknown."
-        : "This key has not been checked.",
-    )
-    return parts.join(" · ")
-  }
-
   if (info.isFreeTier) {
     parts.push("Free tier")
+  }
+
+  /* What the badge does not say. A key that was refused is worth a word more
+     than the badge carries, because there are two things it can mean and only
+     one of them is a mistake. */
+  if (info.valid === false && info.checkReason === "not-accepted") {
+    parts.push("It may have been revoked, or entered wrongly")
+  }
+  if (info.valid === null && info.checkReason === "unreachable") {
+    parts.push("The provider could not be reached")
   }
 
   const allowance = allowanceOf(info)
@@ -739,9 +844,16 @@ function detail(info: ProviderKey): string {
     parts.push(allowance)
   }
 
-  if (parts.length === 0) {
-    parts.push("The provider accepts this key.")
+  /* The dates the app knows for certain. "Last used" is the app's own use,
+     which is the one it can be sure of. */
+  parts.push(`Added ${shortDate(info.createdAt)}`)
+  if (info.lastUsedAt) {
+    parts.push(`Last used by Tavi ${ago(info.lastUsedAt)}`)
   }
+  if (info.expiresAt) {
+    parts.push(`Expires ${shortDate(info.expiresAt)}`)
+  }
+
   return parts.join(" · ")
 }
 
@@ -929,30 +1041,44 @@ function KeyDialog({
             className="flex flex-col gap-4"
           >
             <Field>
-              <FieldLabel htmlFor="key-provider">Provider</FieldLabel>
+              <div className="flex items-center gap-1">
+                <FieldLabel>Provider</FieldLabel>
+                <InfoHint label="About the provider">
+                  Which provider the key is for. A key only works with the
+                  provider that made it, and Tavi asks that provider when it
+                  checks the key.
+                </InfoHint>
+              </div>
               <div className="flex items-center gap-2">
-                <NativeSelect
-                  id="key-provider"
-                  size="default"
-                  className="min-w-0 flex-1"
+                <Select
+                  /* The list of what there is to choose from, so the closed
+                     field shows the provider's name rather than its id. */
+                  items={PROVIDERS.map((option) => ({
+                    value: option.id,
+                    label: option.label,
+                  }))}
                   value={chosen}
-                  onChange={(event) => {
-                    setChosen(event.target.value)
+                  onValueChange={(value) => {
+                    setChosen(value ?? "")
                     setChecked(null)
                   }}
                 >
-                  {PROVIDERS.map((option) => {
-                    const count = counts.get(option.id) ?? 0
-                    return (
-                      <NativeSelectOption key={option.id} value={option.id}>
+                  <SelectTrigger id="key-provider" className="min-w-0 flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    /* The list opens below the field, not over it: the
+                       selected provider has to stay readable while the list
+                       is open. */
+                    alignItemWithTrigger={false}
+                  >
+                    {PROVIDERS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
                         {option.label}
-                        {count > 0
-                          ? ` — already has ${count} key${count === 1 ? "" : "s"}`
-                          : ""}
-                      </NativeSelectOption>
-                    )
-                  })}
-                </NativeSelect>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {provider ? (
                   <Button
                     type="button"
@@ -968,8 +1094,14 @@ function KeyDialog({
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="key-name">Name</FieldLabel>
-              <input
+              <div className="flex items-center gap-1">
+                <FieldLabel htmlFor="key-name">Name</FieldLabel>
+                <InfoHint label="About the name">
+                  What this key is for, so you can tell two keys for the same
+                  provider apart. Left empty, it is named after the provider.
+                </InfoHint>
+              </div>
+              <Input
                 id="key-name"
                 type="text"
                 autoComplete="off"
@@ -977,19 +1109,22 @@ function KeyDialog({
                 maxLength={64}
                 placeholder={provider?.label ?? "Provider"}
                 value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring"
+                onValueChange={(value) => setName(value)}
               />
-              <FieldDescription>
-                What this key is for, so you can tell two keys for the same
-                provider apart. Left empty, it is named after the provider.
-              </FieldDescription>
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="provider-api-key">
-                {provider?.label ?? "Provider"} API key
-              </FieldLabel>
+              <div className="flex items-center gap-1">
+                <FieldLabel htmlFor="provider-api-key">
+                  {provider?.label ?? "Provider"} API key
+                </FieldLabel>
+                <InfoHint label="About the key">
+                  The key itself. It is shown once, here, and never again —{" "}
+                  {held
+                    ? "Tavi keeps it in this computer's credential store, never writes it to disk in plaintext, and never reads it back into the app."
+                    : "Tavi keeps it on this computer's server, never sends it back to the browser, and never reads it back into the app."}
+                </InfoHint>
+              </div>
               <InputGroup>
                 <InputGroupInput
                   id="provider-api-key"
@@ -1015,11 +1150,6 @@ function KeyDialog({
                   <InputGroupPasswordToggle />
                 </InputGroupAddon>
               </InputGroup>
-              <FieldDescription>
-                {held
-                  ? "Kept in this computer's credential store. It is never written to disk in plaintext, and it is never read back into the app."
-                  : "Kept by this computer's server. It is never sent back to the browser, and it is never read back into the app."}
-              </FieldDescription>
             </Field>
 
             {probe ? (
@@ -1129,15 +1259,14 @@ function RenameKeyDialog({
         <DialogBody>
           <Field>
             <FieldLabel htmlFor="rename-key">Name</FieldLabel>
-            <input
+            <Input
               id="rename-key"
               type="text"
               autoComplete="off"
               spellCheck={false}
               maxLength={64}
               value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring"
+              onValueChange={(value) => setName(value)}
             />
           </Field>
 
@@ -1237,9 +1366,18 @@ function ReplaceKeyDialog({
 
         <DialogBody>
           <Field>
-            <FieldLabel htmlFor="replace-key">
-              {provider?.label ?? "Provider"} API key
-            </FieldLabel>
+            <div className="flex items-center gap-1">
+              <FieldLabel htmlFor="replace-key">
+                {provider?.label ?? "Provider"} API key
+              </FieldLabel>
+              <InfoHint label="About the key">
+                The new key. It is checked before it is put in place, so a key
+                the provider refuses leaves the old one exactly as it was.{" "}
+                {held
+                  ? "Tavi keeps it in this computer's credential store, never writes it to disk in plaintext, and never reads it back into the app."
+                  : "Tavi keeps it on this computer's server, never sends it back to the browser, and never reads it back into the app."}
+              </InfoHint>
+            </div>
             <InputGroup>
               <InputGroupInput
                 id="replace-key"
@@ -1255,11 +1393,6 @@ function ReplaceKeyDialog({
                 <InputGroupPasswordToggle />
               </InputGroupAddon>
             </InputGroup>
-            <FieldDescription>
-              {held
-                ? "Kept in this computer's credential store. It is never written to disk in plaintext, and it is never read back into the app."
-                : "Kept by this computer's server. It is never sent back to the browser, and it is never read back into the app."}
-            </FieldDescription>
           </Field>
 
           {probe ? (
