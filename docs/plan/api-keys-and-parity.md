@@ -1406,6 +1406,14 @@ That is this pane, exactly, with a key in place of a contact.
 to the "Make active" / "Rename" / "Replace key" / "Check now" actions the
 §3.3.9 list adds.
 
+**The row carries one control, not five.** The buttons those names belong to
+used to sit in the row itself — five of them, side by side — and the key's own
+name was the smallest thing on the line. They are in a menu at the far right of
+the row now, opened by a pencil button, and the name gets the space back. The
+naming rule is unchanged by the move: the button that opens the menu is
+"Actions for *<key>*", and each item in the menu names the key too, because a
+column of menus is still a column of rows.
+
 #### 3.10.2 The list is not a list
 
 The rows are plain `div`s. The vendored `Item` component already knows how
@@ -1445,7 +1453,7 @@ hairline dividers the app already uses.
 | The Remove confirmation | fine — the title names the provider (*"Remove the OpenRouter key?"*) and the description says what is lost |
 | The destructive button's colour | `ghost-destructive` — red text, and it is still named "Remove"; colour is not the only signal |
 
-**Decision:** Verb first, and the visible text inside the name: “Edit OpenRouter”, not “Edit”. The rows are a list: `ItemGroup`, so the items are `listitem`s inside a `list`.
+**Decision:** Verb first, and the visible text inside the name: “Edit OpenRouter”, not “Edit”. The rows are a list: `ItemGroup`, so the items are `listitem`s inside a `list`. The row's actions live in **one** menu at the far right of the row, so the row carries a single control; the button that opens it is named “Actions for *<key>*”, and every item in the menu names the key as well — “Rename Work key”, “Remove Work key” — because a column of menus is still a column of rows.
 
 ### 3.10 What the provider research found
 
@@ -1935,7 +1943,7 @@ element, which is a value the stylesheet cannot win against.
 | **P20** ✅ | A shape test: the Rust command, the server route and the TypeScript type answer the same keys | new test | the test fails when a field is added to one side only |
 | **P21** ✅ | **One detector.** `src/lib/secret.ts` re-implements the runtime check instead of importing it; there is one marker, in one file | `src/lib/desktop.ts`, `src/lib/secret.ts` | the marker string appears once in `src/` |
 | **P22** ✅ | **One adapter per boundary**: only the Tauri adapter imports `@tauri-apps/*`, only the web adapter calls `fetch("/api/…")` | new `src/lib/web.ts`, `src/lib/api.ts` | a grep for `@tauri-apps/` finds one file |
-| **P23** ⚠️ | An **ARIA-snapshot parity test** — the same screen, compared by accessible tree rather than by pixels (§3.8) | new, needs a DOM runner | the same spec passes against both builds; sequenced last, because it needs a runner the repo does not have |
+| **P23** ✅ | An **ARIA-snapshot parity test** — the same screen, compared by accessible tree rather than by pixels (§3.8) | new, needs a DOM runner | the same spec passes against both builds; sequenced last, because it needs a runner the repo does not have |
 
 
 **What was done.** **P18** ✅: `src/lib/api-contract.test.ts` reads the
@@ -1947,28 +1955,30 @@ the TypeScript type, the Rust command and the server's object. **P21** ✅: the
 runtime marker is written down once, in `src/lib/platform.ts`. **P22** ✅:
 `src/lib/desktop.ts` is the only file that imports `@tauri-apps/*` and
 `src/lib/web.ts` is the only file that calls `fetch("/api/…")`;
-`src/lib/api.ts` picks between them. **P23** ⚠️: see the note below.
+`src/lib/api.ts` picks between them. **P23** ✅: the parity test draws the pane twice and compares the two — see the note below.
 
-**P23** — the ARIA-snapshot parity test — is **not done**, and this is why.
+**P23** ✅: `src/lib/key-parity.test.ts` draws the pane twice — once
+as the desktop draws it and once as the website does — and compares the two.
 
-The
-item needs a runner that can import a `.tsx` file and render it: the
-repository's test command is `node --test`, and Node's type stripping does
-not read JSX. The two ways to get there are a bundler-aware runner (Vitest,
-jsdom, Testing Library — three dependencies and a second test runner in a
-repository whose house style is one `node --test` command) or a component test
-that does not render at all.
+The comparison is of the *structure*, not of the pixels, and that is the
+research's own recommendation: a Tauri window is WebView2 and the website is
+Chromium, and a screenshot diff would fail on the engine, the display scaling
+and the font rendering before it failed on anything that mattered. What is
+compared is the markup: the same controls, with the same names, in the same
+order, carrying the same state — which is what an ARIA snapshot is a
+serialisation of, and what a screen-reader user actually experiences.
 
-What was done instead is the half of the item that the repository can carry
-without either: the **registry of differences** (**P19**), which says that a
-file may only consult the build if it is on a list with a reason, and a test
-that fails when it is not. The other half — comparing the two builds'
-accessible trees — needs the runner, and adding one is a larger change to the
-project's tooling than this document's author would make without being asked.
+The one difference the registry records — the sentence that says where the
+key is kept — is allowed, and is named in the test so that a *second*
+difference is a failure. The test also says that the rows are a `list`, that
+exactly one key is marked “in use”, and that every row's button names the
+key it belongs to.
 
-The screen was compared by hand instead, in the browser and in the desktop app:
-the same list, the same buttons, the same dialog, and one sentence differing
-— where the key is kept.
+The loader is Vite's, which the repository already depends on, so no new
+runner and no new dependency were needed: `vite.ssrLoadModule` reads a
+`.tsx` file and `react-dom/server` renders it. The cost is about a minute
+in the suite — React and the component library are loaded into Node for the
+first time — and it is paid once, not once per test.
 
 ### 4.6 The dormant branch (§6)
 
@@ -2677,6 +2687,75 @@ behaviour, and the two are no longer the same file.
 no such script: the server was only ever started by `pnpm dev`, which starts
 the web target with it. The script is there now.
 
+**The credential store does not like two threads at once.** The Windows
+credential manager is one store on the machine, and a write and a read from
+two threads can come back disagreeing: a key that was just written reads back
+as the one before it. The tests that touch the store now take a lock, so they
+do not compete with each other. The app does not have the problem — it makes
+one request at a time — but it is worth knowing before anything else is
+written against that store.
+
+**A test needs a store of its own.** The credential service is the
+operating system's namespace for the secret, and the app's own is `tavi`. A
+test that used it would move the user's keys about — which it did, until the
+service became a field rather than a constant. The tests now have a service of
+their own, and a scratch sidecar beside it.
+
+**The desktop app's development-file key was being listed and then hidden.**
+The backend listed it — it is a key the app is using, and saying so is the
+point — and the pane filtered it out because it was not in the store the pane
+writes to. Found by looking at the desktop app, which is the only way it shows
+up: the browser's server has an environment key of its own and never showed
+the row at all.
+
+**Two dialogs had the same React key.** Both the rename dialog and the replace
+dialog were keyed "none" when they were closed, and React said so in the
+console: "Encountered two children with the same key". It was the only defect
+the desktop app showed that the browser did not, because the browser's console
+was not being read.
+
+**Tauri refuses a command with a bare string, not with an error.** A
+command that answers `Err("…")` rejects the promise with that text, so a
+caller that checks `instanceof Error` throws away the reason the Rust side
+gave and shows its own generic wording instead. The desktop adapter now
+turns a refusal into an error that says what it was, and the pane says
+"OpenRouter did not accept this key." rather than "The key could not be
+stored."
+
+**The pane said too much.** The first version of the rewritten screen
+carried three sentences under the heading, a paragraph of dates under every
+row, and a paragraph of guidance under every provider. It was all true and it
+was all necessary somewhere, and together they made a list of keys look like
+a document. It is now one line under the heading, one line under each row,
+the provider's own links on the provider's own line, and one line of guidance
+at the foot of the pane. The reassurance that is left out of the screen is a
+tooltip on the line that is there, so it is still there for anyone who asks.
+
+**Two differences between the builds that should not have been there.** The
+server's environment key was shown without a masked value, because the mask is
+computed when a key is written and that key was never written by the app —
+but the server holds it, so it can mask it, and now does. And a date was
+formatted by the runtime, which put `21 Oct 2026` in the desktop app and
+`Oct 21, 2026` in a browser, because the two runtimes have different
+locales; the date is written out now, and the same key reads the same in
+both.
+
+**A mark that only opens on hover is a mark that does not open at
+all.** A touch screen has no hover, and a person who taps a mark expects
+something. The note opens on hover, on keyboard focus and on a click, and the
+mark is drawn in the theme's own muted colour — legible against the light
+theme's white and against the dark theme's near-black, and the same weight as
+the other quiet controls beside it.
+
+**A hand-rolled control is a control the app does not know about.** The
+add-key dialog had a native `<select>` and a hand-written `<input>` with
+its own border and focus ring, while the repository has a `Select` and an
+`Input` that are the app's own. The native select is the browser's dropdown
+dressed up in the operating system's colours, and it is not what the rest of
+the app looks like. Both are the app's own components now, and the provider
+list is the providers' names and nothing else — a count of the keys a
+provider already has is the list's business, not the option's.
+
 **Two product questions were put to the maintainer, and answered.** The
 deployment model (§4.8 P35): the server is a local, single-operator server,
 the operator's own keys are used locally whether in a browser or in the app,
@@ -2689,6 +2768,24 @@ catalogue's age to be shown, and it is — but the age is shown in the model
 picker's popover rather than in the settings pane, because the catalogue is
 the picker's business and the settings pane has nothing to say about a list of
 models it is not showing.
+
+**A row of buttons is a row with a row of buttons.** The rewritten pane gave
+each key a row with the key's name, its badges and its one line of detail —
+and then five buttons: Make active, Rename, Replace key, Check now, Remove.
+The buttons were wider than the name, and the screen read as a form rather
+than a list of keys. They are in a menu at the far right of the row now, opened
+by a pencil button, which is where the Remove button used to be. “Make active”
+is in the menu too, and is disabled with the reason on it — “This is the key in
+use.” — when the key is already the one the app sends requests with, so the
+menu is the same shape for every key. One thing the move costs: the check's
+spinner was on the button, and there is no button to spin now — the menu
+closes, the check runs, and the row's badge is what changes when it is done.
+
+**A menu's items are not in the tree until it is opened.** The parity test
+looked for the rows' buttons in the rendered markup and found nothing, because
+base-ui mounts a menu's content only while it is open. The rule it now
+checks is the one that can be checked in markup: the control that opens the
+menu says which key it acts on.
 
 ### 8.6 Reporting back
 
