@@ -7,6 +7,17 @@ rem
 rem It runs from this file's own folder rather than wherever you happened to
 rem double-click from, which is the difference between working and a "cannot
 rem find package.json" no matter where in Explorer you started it.
+rem
+rem It starts everything there is to start:
+rem
+rem   - the Node server on 8787, which is what the browser talks to
+rem   - Vite on 1420, which serves the frontend to both
+rem   - the Tauri app itself, which reloads as you edit
+rem   - a browser tab on http://localhost:1420, so the web target is there too
+rem
+rem The two servers are started by `pnpm dev`, which the Tauri command runs
+rem before it builds the app, so there is one thing to stop and one window to
+rem read the output from.
 
 cd /d "%~dp0"
 
@@ -42,10 +53,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem Port 1420 is the Vite dev server the desktop app loads from. If something is
-rem already listening on it, the app will quietly load whatever is already being
-rem served there, or fail to connect - both of which look like a bug in the app
-rem rather than a stale process. Worth catching before the stack trace.
+rem Two ports have to be free.
+rem
+rem 1420 is the Vite dev server that both the app and the browser load from.
+rem 8787 is the Node server behind it, which is what answers /api. If either is
+rem already listening, the preview will quietly use whatever is already there —
+rem or fail to connect, and both of those look like a bug in the app rather
+rem than a stale process. Worth catching before the stack trace.
 
 netstat -ano | findstr ":1420" | findstr "LISTENING" >nul
 if not errorlevel 1 (
@@ -60,11 +74,34 @@ if not errorlevel 1 (
     exit /b 1
 )
 
+netstat -ano | findstr ":8787" | findstr "LISTENING" >nul
+if not errorlevel 1 (
+    echo.
+    echo   Port 8787 is already in use.
+    echo.
+    echo   That is the port the Node server answers /api on. Something is
+    echo   already serving it - usually a preview that was left running. Close
+    echo   that window, or stop it with Ctrl+C, then run this again.
+    echo.
+    pause
+    exit /b 1
+)
+
 echo.
 echo   Starting the app preview
 echo.
+echo   This starts the Node server, Vite and the Tauri app, and opens a
+echo   browser tab on http://localhost:1420
+echo.
 echo   Keep this window open while you work. Press Ctrl+C to stop it.
 echo.
+
+rem The browser is opened by Vite, which opens it when the dev server is
+rem ready rather than when this file is run - a tab opened before the server
+rem is listening shows a connection error that looks like the app is broken.
+rem
+rem `pnpm dev:web` is what starts Vite, so the browser opens whichever of the
+rem three commands is used: this one, `pnpm dev`, or `pnpm dev:web` on its own.
 
 pnpm tauri dev
 set "EXITCODE=%errorlevel%"

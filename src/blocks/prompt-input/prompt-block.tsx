@@ -1173,16 +1173,28 @@ export function PromptBlock() {
 
   React.useEffect(() => {
     let current = true
-    const read = () => {
+    let timer: number | undefined
+
+    const read = (attempt = 0) => {
       void listApiKeys()
         .then((list) => {
           if (current) setKeys(list)
         })
         .catch(() => {
-          /* The keys could not be read. Nothing is claimed about whether there
-             is one, so the list is treated as empty and the picker asks for a
-             key — which is where the answer is. */
-          if (current) setKeys([])
+          if (!current) return
+          /* The server may not be listening yet. A browser tab can be opened
+             before it is, and the app has no way of telling that apart from a
+             server that is not there at all, so the question is asked again a
+             few times before it is given up on. A failure that is not a
+             failure yet should not be reported as one. */
+          if (attempt < 4) {
+            timer = window.setTimeout(() => read(attempt + 1), 750)
+            return
+          }
+          /* Nothing is claimed about whether there is a key, so the list is
+             treated as empty and the picker asks for a key — which is where
+             the answer is. */
+          setKeys([])
         })
     }
     read()
@@ -1192,6 +1204,7 @@ export function PromptBlock() {
     window.addEventListener(SETTINGS_CLOSED, onClosed)
     return () => {
       current = false
+      if (timer !== undefined) window.clearTimeout(timer)
       window.removeEventListener(SETTINGS_CLOSED, onClosed)
     }
   }, [])
