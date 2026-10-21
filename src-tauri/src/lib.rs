@@ -2,6 +2,7 @@ use tauri::AppHandle;
 
 mod appfile;
 mod files;
+mod keys;
 mod projects;
 mod provider;
 mod threads;
@@ -87,88 +88,6 @@ async fn list_installed_fonts() -> Result<Vec<String>, String> {
     Ok(normalize_families(families))
 }
 
-/// The provider key, held in the OS credential store.
-///
-/// The key never touches disk in plaintext and never reaches a log. It is
-/// read here, used by the provider request, and not handed out: the webview
-/// used to ask for it and send it as a bearer header to a local server, which
-/// put a credential in JavaScript for no reason.
-const KEY_SERVICE: &str = "tavi";
-const KEY_USER: &str = "openrouter-api-key";
-
-/// The namespace the key was stored under before the app was renamed.
-///
-/// The app was called something else when the key was first entered, and the
-/// credential is still sitting under that name. The key itself did not
-/// change, so it is moved rather than asked for again: a key the user has
-/// already entered should not have to be entered a second time because the app
-/// was renamed.
-const LEGACY_KEY_SERVICE: &str = "ai-app";
-
-fn entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEY_SERVICE, KEY_USER)
-        .map_err(|e| format!("Credential store unavailable: {e}"))
-}
-
-/// Move a key from one namespace to another, if it is in the first.
-///
-/// The key is written to the new namespace before the old one is removed: a
-/// key that exists in both places is one the user has already set, and losing
-/// it would be worse than leaving a duplicate behind. A key that is in
-/// neither place is simply absent, which is what an app that has never had a
-/// key looks like.
-fn migrate_key(from_service: &str, to_service: &str) -> Result<Option<String>, String> {
-    let legacy = keyring::Entry::new(from_service, KEY_USER)
-        .map_err(|e| format!("Credential store unavailable: {e}"))?;
-    let key = match legacy.get_password() {
-        Ok(key) => key,
-        Err(keyring::Error::NoEntry) => return Ok(None),
-        Err(e) => return Err(format!("Could not read key: {e}")),
-    };
-
-    keyring::Entry::new(to_service, KEY_USER)
-        .map_err(|e| format!("Credential store unavailable: {e}"))?
-        .set_password(&key)
-        .map_err(|e| format!("Could not store key: {e}"))?;
-
-    let _ = legacy.delete_credential();
-    Ok(Some(key))
-}
-
-#[tauri::command]
-fn set_api_key(key: String) -> Result<(), String> {
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err("Key must not be empty.".to_string());
-    }
-    entry()?.set_password(&key).map_err(|e| format!("Could not store key: {e}"))
-}
-
-/// The key, if there is one.
-///
-/// Not a command any more. The webview used to ask for the key and send it to
-/// a local server as a bearer header, which put a credential in JavaScript
-/// for no reason: the provider request is made here, and the key is used
-/// here.
-pub fn get_api_key() -> Result<Option<String>, String> {
-    match entry()?.get_password() {
-        Ok(key) => Ok(Some(key)),
-        // Absent is a normal state, not a failure — unless the key is still
-        // under the name the app had before it was renamed, in which case it
-        // is moved across and handed back.
-        Err(keyring::Error::NoEntry) => migrate_key(LEGACY_KEY_SERVICE, KEY_SERVICE),
-        Err(e) => Err(format!("Could not read key: {e}")),
-    }
-}
-
-#[tauri::command]
-fn clear_api_key() -> Result<(), String> {
-    match entry()?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Could not clear key: {e}")),
-    }
-}
-
 /// Quit the app.
 ///
 /// The window's remembered size is written out first: the app is leaving, and
@@ -195,13 +114,15 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(for_state)
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
         .manage(projects::Clones::default())
         .invoke_handler(tauri::generate_handler![
-            set_api_key,
-            clear_api_key,
+            keys::list_api_keys,
+            keys::set_api_key,
+            keys::clear_api_key,
             list_installed_fonts,
             provider::chat,
             provider::cancel_chat,
@@ -241,48 +162,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{KEY_USER, SystemSource, migrate_key, normalize_families};
-
-    /// The key moves from the namespace the app had before it was renamed to
-    /// the one it has now, and the old one is cleaned up.
-    ///
-    /// It uses namespaces of its own so the user's own key is never touched,
-    /// and it removes what it created so nothing is left behind.
-    #[test]
-    fn a_key_moves_between_namespaces() {
-        const FROM: &str = "tavi-test-migration-from";
-        const TO: &str = "tavi-test-migration-to";
-
-        // A machine with no credential store has nowhere to move a key to and
-        // from. That is not the migration failing — it is a machine without
-        // the facility, and the app says so when it cannot reach one.
-        let (Ok(from), Ok(to)) = (
-            keyring::Entry::new(FROM, KEY_USER),
-            keyring::Entry::new(TO, KEY_USER),
-        ) else {
-            return;
-        };
-
-        let _ = from.delete_credential();
-        let _ = to.delete_credential();
-
-        from.set_password("secret")
-            .expect("the test key should store");
-        let moved = migrate_key(FROM, TO).expect("the migration should work");
-
-        assert_eq!(moved.as_deref(), Some("secret"));
-        assert_eq!(
-            to.get_password().expect("the moved key should read"),
-            "secret"
-        );
-        assert!(
-            matches!(from.get_password(), Err(keyring::Error::NoEntry)),
-            "the old namespace should have been cleaned up"
-        );
-
-        let _ = from.delete_credential();
-        let _ = to.delete_credential();
-    }
+    use super::{SystemSource, normalize_families};
 
     fn names(input: &[&str]) -> Vec<String> {
         normalize_families(input.iter().map(|s| s.to_string()).collect())

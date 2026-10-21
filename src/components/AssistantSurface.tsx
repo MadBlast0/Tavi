@@ -1,7 +1,6 @@
 "use client";
 
 import { Assistant } from "@/assistant";
-import { KeySettings } from "@/components/key-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -36,7 +35,6 @@ export const AssistantSurface = ({
       {/* Kept outside the generated Thread so regenerating that component
           cannot remove them. */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-        <KeySettings />
         <ThemeToggle />
       </div>
       <Assistant />

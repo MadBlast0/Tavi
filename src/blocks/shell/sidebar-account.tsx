@@ -26,7 +26,9 @@ import {
 } from "@/components/dropdown-menu"
 import { SidebarFooter } from "@/components/sidebar"
 import { formatHotkey, useIsApple } from "@/lib/hotkey"
-import { fetchKeyStatus } from "@/lib/chat"
+import { fetchKeyStatus } from "@/lib/transport"
+import { openExternal } from "@/lib/open-external"
+import { ACTIVE_PROVIDER_ID, providerFor } from "@/lib/providers"
 import { SETTINGS_HOTKEY } from "./settings-dialog"
 
 /**
@@ -243,7 +245,16 @@ export function SidebarAccount({
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem className={ITEM} title="Not built yet — the key lives in the server's environment">
+            <DropdownMenuItem
+              className={ITEM}
+              title="Opens the provider's key page in your browser"
+              onClick={() => {
+                const provider = providerFor(ACTIVE_PROVIDER_ID)
+                if (provider) {
+                  void openExternal(provider.keysUrl)
+                }
+              }}
+            >
               <KeyRoundIcon />
               Get API keys
               <SquareArrowOutUpRightIcon className="ms-auto size-3.5" />

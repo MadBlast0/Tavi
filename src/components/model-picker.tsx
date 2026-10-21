@@ -16,10 +16,9 @@ import {
 } from "@/components/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PREF, readPref, sidePref, writePref } from "@/lib/prefs";
-import { fetchKeyStatus, fetchModels } from "@/lib/chat";
+import { fetchKeyStatus, fetchModels, type KeyStatus } from "@/lib/transport";
 import type { Side } from "@/lib/sides";
 
-import type { KeyStatus } from "./key-types";
 import {
   availableEffort,
   type ModelReasoningCapabilities,

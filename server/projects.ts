@@ -16,6 +16,28 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
+import { PROVIDERS } from "../src/lib/providers.ts";
+
+/**
+ * The environment a clone runs with.
+ *
+ * The provider keys are taken out of it. `git` has no use for them, and a
+ * child process is a wider place for a credential to be than the process
+ * that started it.
+ *
+ * Everything else is left alone: `git` needs the user's own environment to
+ * find their global configuration — their name, their email, their credential
+ * helper — and a clone with none of that fails in a way that has nothing to
+ * do with the repository.
+ */
+const cloneEnv = (): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+  for (const provider of PROVIDERS) {
+    delete env[provider.envVar];
+  }
+  return { ...env, GIT_TERMINAL_PROMPT: "0" };
+};
+
 /**
  * Where cloned repositories go.
  *
@@ -153,7 +175,7 @@ export const cloneRepository = (
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+          env: cloneEnv(),
         },
       );
 

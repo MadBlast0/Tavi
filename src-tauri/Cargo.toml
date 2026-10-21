@@ -42,6 +42,10 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "tokio"] }
 font-kit = "0.14.3"
 tauri-plugin-dialog = "2.8.3"
+# Opening a page in the system's own browser. The webview swallows a new
+# window request, so a link to the provider's key page has to be handed to
+# the operating system rather than to the app.
+tauri-plugin-opener = "2.7.2"
 tokio = { version = "1.54.0", features = ["rt", "macros"] }
 
 

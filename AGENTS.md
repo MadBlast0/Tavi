@@ -32,14 +32,14 @@ identity — ask the maintainer.
 
 - The app surface is `src/blocks/prompt-input/prompt-block.tsx`. It is the whole
   app, not a demo — `src/App.tsx` renders it directly.
-- The chat server is `server/chat.ts`, proxied at `/api` in `vite.config.ts`.
+- The website's server is `server/main.ts`, proxied at `/api` in `vite.config.ts`.
 - **No invented data.** Do not add placeholder rows, fake metrics, or
   decorative UI that pretends to work. If a feature has no backend behind it,
   either build the backend or say so in the UI and in `README.md` → Known
   limitations.
 - **No hidden fallbacks.** The server refuses a chat request that carries no
   model (`400`) rather than substituting a default. Keep it that way.
-- `server/chat.ts` never logs request bodies, headers, or the API key.
+- `server/main.ts` never logs request bodies, headers, or the API key.
 
 ## Icons
 

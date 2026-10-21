@@ -496,12 +496,26 @@ function TabStrip({
 export function SettingsDialog({
   open,
   onOpenChange,
+  section,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * The section to open on.
+   *
+   * Undefined opens the default one. A named section is a destination rather
+   * than a one-time instruction, so it applies while the card is open too.
+   */
+  section?: string
 }) {
   const [query, setQuery] = React.useState("")
   const [active, setActive] = React.useState(DEFAULT_SETTINGS_SECTION)
+
+  /* Opening at a named section wins over the default. The reset below only
+     runs while the card is closed, so the two do not fight. */
+  React.useEffect(() => {
+    if (open && section) setActive(section)
+  }, [open, section])
   /* Measured on a plain wrapper around the card rather than on the card.
 
      The card is a `useRender` wrapper that does not hand its ref through to the
@@ -623,10 +637,12 @@ export function SettingsDialog({
                   <PrivacySettings />
                 </>
               ) : current?.id === "api-keys" ? (
-                <>
-                  <PaneHeading label={current.label} hidden={tall} />
-                  <KeySettings />
-                </>
+                /* This pane draws its own heading. It carries the count of
+                   keys and the button that adds one, which the shared
+                   heading has no room for — and it needs the card's shape to
+                   know whether the strip of tabs has already named the
+                   section. */
+                <KeySettings label={current.label} tall={tall} />
               ) : current ? (
                 <>
                   <PaneHeading label={current.label} hidden={tall} />

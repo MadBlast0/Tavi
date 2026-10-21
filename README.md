@@ -36,8 +36,8 @@ The website has no Rust, so it has a server of its own:
 └─────────┬─────────────────┘
           │ HTTP
 ┌─────────▼─────────────────┐
-│ Node chat server  :8787   │
-│  server/chat.ts           │
+│ Node server       :8787   │
+│  server/main.ts           │
 │  · /api/chat  /api/models  │
 │  · /api/key   /api/projects│
 └─────────┬─────────────────┘
@@ -63,7 +63,7 @@ deploy as a serverless function, which is what makes a web build cheap.
 ```bash
 pnpm install
 
-# web target — http://localhost:1420, with the chat server behind it
+# web target — http://localhost:1420, with the Node server behind it
 pnpm dev
 
 # desktop window — the app talks to the provider from Rust, so it needs
@@ -78,37 +78,55 @@ Nothing here needs a `.env.local` — the app starts without one and says so whe
 you try to chat. If you would rather keep the key in the environment than in
 the app, copy `.env.example` to `.env.local` and fill it in.
 
-`pnpm dev` starts Vite and the chat server together via `concurrently`.
+`pnpm dev` starts Vite and the Node server together via `concurrently`.
 `pnpm dev:web` starts only Vite, which is all the desktop app needs.
+`pnpm dev:server` starts only the Node server.
 
 This project uses pnpm and ships `pnpm-lock.yaml`. Do not install with npm: it
 would resolve a different set of versions from the registry and put it in
 `node_modules` without saying so, and the app would start against dependencies
 nobody else has.
 
-## Provider key
+## Provider keys
 
-Two supported paths; the desktop app's own wins if both are present.
+One key per provider. The providers are listed in `src/lib/providers.ts`, which
+the desktop app and the website's server both read, so the two call the same
+providers by the same names: OpenRouter, Anthropic, OpenAI and NVIDIA NIM.
 
-| Path | Where | Notes |
+**Settings → Platform → API keys** is where a key is set, and it is the same
+screen in the app and in the browser: the same list, the same buttons, the same
+dialog. What differs is where the key is kept.
+
+| Build | Where the key is kept | Notes |
 |---|---|---|
-| **In-app** | Settings → Platform → API keys | Stored in the OS credential store — Windows Credential Manager, macOS Keychain, or libsecret. Desktop only. |
-| **Environment** | `.env.local` → `OPENROUTER_API_KEY` | Development and web target. |
+| Desktop | The OS credential store — Windows Credential Manager, macOS Keychain, or libsecret | One credential per provider, filed under the provider's name. |
+| Website | The server's own file, under `~/Documents/Tavi/keys` | `TAVI_KEYS_DIR` moves it. Written so that only the owner can read it. |
 
-The key is never written to disk in plaintext, never placed in local storage,
-and never logged. On the desktop it is also never read into JavaScript: Rust
-takes it from the credential store, makes the request, and hands back the
-answer. There is no command that gives it out.
+A key that is in the environment is used when the file has none, so a
+deployment that sets `OPENROUTER_API_KEY` the usual way keeps working. One
+key can be set from the settings pane on the server too, and it wins over the
+environment variable.
 
-> The key on the web target lives in the server's environment, and never
-> reaches the browser. The web target has no credential store, so there is
-> nowhere else for it to be.
+A key is never written to disk in plaintext by the desktop app, never placed
+in local storage, and never logged. On the desktop it is also never read into
+JavaScript: Rust takes it from the credential store, makes the request, and
+hands back the answer. There is no command that gives it out.
+
+> The website's server holds one key per provider for everyone who uses it,
+> and its settings pane can only be changed by a request from the same
+> machine. The app's own requests are made through OpenRouter, which is the
+> provider the desktop app talks to; a key for another provider is stored and
+> can be checked, but nothing in the app speaks to those providers yet.
 
 ## Configuration
 
 | Setting | Default | Effect |
 |---|---|---|
-| `OPENROUTER_API_KEY` | — | Provider key. Server-side only. |
+| `OPENROUTER_API_KEY` | — | OpenRouter key. Server-side only, and only when the server's own file has none. |
+| `ANTHROPIC_API_KEY` | — | Anthropic key. Server-side only. |
+| `OPENAI_API_KEY` | — | OpenAI key. Server-side only. |
+| `NVIDIA_API_KEY` | — | NVIDIA NIM key. Server-side only. |
+| `TAVI_KEYS_DIR` | `~/Documents/Tavi/keys` | Where the website's server keeps its keys. |
 | `CHAT_SERVER_PORT` | `8787` | Chat server port. Must match the proxy target; both read this variable. |
 
 There is no default model. The server streams only the model the client sends,
@@ -558,6 +576,16 @@ so tool support is intermittent.
 
 ## Known limitations
 
+- **The API keys section holds one key per provider.** A key is filed under its
+  provider's name in the credential store, so OpenRouter, Anthropic, OpenAI
+  and NVIDIA NIM each have one slot and adding a key for a provider that
+  already has one replaces it. A key can also act for a particular account —
+  a personal key and a work key for the same provider — which would need a
+  name and an id per key, and a way to choose between them on every request.
+  The pane shows what the provider says about the key it holds: whether it is
+  accepted, which account it belongs to, whether it is on a free tier, and how
+  much of its allowance is gone. There is no billing behind any of it, because
+  a provider key is the only account the app has.
 - **The application menu is mostly a shape.** File, Edit, View, Go and Help are
   there with their submenus, so the app has the menu bar the machine expects,
   but only three of the commands do anything: New chat, Close window and Exit,

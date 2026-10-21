@@ -25,7 +25,7 @@ what removes it.
 | Data | Where | Sensitivity | Retention | Removed by |
 |---|---|---|---|---|
 | Chats and code sessions | The app's own file on the desktop; `localStorage` on the web | The user's own conversations. Never sent anywhere but the provider they chose | Until the user deletes it. The newest 50 of each kind are kept | Deleting a thread, or **Settings ? Privacy ? Delete everything** |
-| The provider key | The OS credential store, through Rust | A credential. Never written in plaintext, never read into JavaScript | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
+| The provider key | The OS credential store on the desktop; the server's own file on the website | A credential. Never logged, never sent back to a browser | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
 | Preferences: model, effort, agent mode, the rail's open state | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
@@ -36,7 +36,7 @@ what removes it.
 | Attachments and mentions | Inlined into the conversation, and stored with the turn | The user's own words and files | With the thread | Deleting the thread |
 
 **What leaves the machine.** The message that was sent, the attachments that
-came with it, and the files that were mentioned by name � and nothing else.
+came with it, and the files that were mentioned by name � and nothing else.
 They go to the provider the user chose a model from. A chat is never given a
 folder, and a request that tried to carry one is refused.
 
@@ -230,21 +230,25 @@ than leaving stale paths on screen.
 
 ---
 
-### Secrets — OS credential store
+### Secrets - OS credential store
 
-`src/lib/secret.ts` → `invoke("get_api_key")` → the `keyring` crate in
-`src-tauri/src/lib.rs`.
+`src/lib/secret.ts` → `invoke("set_api_key")` → the `keyring` crate in
+`src-tauri/src/keys.rs`.
 
 The key is never written to `localStorage`, never logged, never placed in the
-DOM. `server/chat.ts` logs neither headers nor request bodies.
+DOM. `server/main.ts` logs neither headers nor request bodies.
 
-The credential is stored under the service name `tavi`. The app was called
-something else when the key was first entered, and the credential is still
-under that name: it is moved to the current one the first time the app asks
-for it, so the rename does not cost the user their key. The new credential is
-written before the old one is removed — a key that exists in both places is
-one the user has already set, and losing it would be worse than leaving a
-duplicate behind.
+The credential is stored under the service name `tavi`, and each provider's
+key is filed under its own name within it: `api-key:openrouter`,
+`api-key:anthropic`, `api-key:openai`, `api-key:nvidia-nim`. One key per
+provider.
+
+The app was called something else when the key was first entered, and the
+credential is still under that name: it is moved to the current one the first
+time the app asks for it, so the rename does not cost the user their key. The
+new credential is written before the old one is removed - a key that exists in
+both places is one the user has already set, and losing it would be worse than
+leaving a duplicate behind.
 
 Where the OS puts it:
 
@@ -252,11 +256,20 @@ Where the OS puts it:
 |---|---|
 | macOS | Keychain |
 | Windows | Credential Manager |
-| Linux | Secret Service (`libsecret`) — GNOME Keyring, KWallet |
+| Linux | Secret Service (`libsecret`) - GNOME Keyring, KWallet |
 
-On the **website** there is no credential store. The key comes from the
-server's environment (`OPENROUTER_API_KEY`) and never reaches the browser. A
-web build that needs per-user keys needs a backend session, not browser storage.
+On the **website** there is no credential store, so the server keeps its own
+keys in a file of its own, under `~/Documents/Tavi/keys` (`TAVI_KEYS_DIR` moves
+it), written so that only the owner can read it. The key never reaches the
+browser: the browser is told whether a provider has a key and what that
+provider says about it, and nothing else. A key in the environment is used
+when the file has none.
+
+The settings pane is the same in both — the same list, the same buttons, the
+same dialog — because a person setting a key should not have to learn a
+second version of the screen depending on where the app is running. Changing
+the server's keys is only offered to a request from the same machine: it
+changes what every request through the server spends.
 
 ---
 

@@ -7,6 +7,7 @@ import {
   CircleHelpIcon,
   FolderOpenIcon,
   GitBranchIcon,
+  KeyRoundIcon,
   MicIcon,
   SquareIcon,
   PaperclipIcon,
@@ -39,6 +40,7 @@ import {
 } from "@/components/popover"
 import { Kbd, KbdGroup } from "@/components/kbd"
 import { NumberFlow } from "@/components/number-flow"
+import { openSettings } from "@/lib/open-settings"
 
 import {
   Tooltip,
@@ -700,12 +702,35 @@ function PromptInputEffort(props: EffortProps) {
   )
 }
 
+/**
+ * There is no provider key, so there is nothing to choose.
+ *
+ * The list is not fetched without one — it comes from the provider, and a list
+ * of models that cannot be called is a list of things that will fail. So this
+ * says what is missing, and offers the way to put it right.
+ */
+function NoKeyState({ onAddKey }: { onAddKey: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-2 px-2 py-3">
+      <p className="text-sm">
+        Tavi needs a provider key before it can reach any model.
+      </p>
+      <Button type="button" size="xs" variant="outline" onClick={onAddKey}>
+        <KeyRoundIcon className="size-4" />
+        Add a key in Settings
+      </Button>
+    </div>
+  )
+}
+
 function PromptInputModel({
   models,
   model,
   onModelChange,
   effort,
   onEffortChange,
+  noKey,
+  error,
   ...props
 }: Omit<EffortProps, "value" | "onValueChange"> & {
   models: PromptModel[]
@@ -713,6 +738,19 @@ function PromptInputModel({
   onModelChange: (value: string) => void
   effort: string
   onEffortChange: (value: string) => void
+  /**
+   * Whether there is no provider key at all.
+   *
+   * Without one the app cannot reach any model, so the list is not fetched
+   * and this says what is missing rather than showing an empty box.
+   */
+  noKey?: boolean
+  /**
+   * What the server said when the list could not be read.
+   *
+   * The server's own words: it knows what went wrong, and this does not.
+   */
+  error?: string | null
 }) {
   const context = usePromptInput("PromptInputModel")
   const listRef = React.useRef<HTMLDivElement>(null)
@@ -767,15 +805,21 @@ function PromptInputModel({
             type="button"
             size="xs"
             variant="ghost"
-            aria-label={`Model: ${current?.label ?? "none"}, effort: ${level?.label ?? "none"}`}
+            aria-label={`Model: ${current?.label ?? "No model selected"}, effort: ${level?.label ?? "none"}`}
             disabled={context.disabled}
           />
         }
       >
         {/* The model name yields space, the effort does not: this button is
             flex-shrunk by the actions row, and without `min-w-0 truncate` the raw text
-            node kept its full width and spilled ~18px past the button edge. */}
-        <span className="min-w-0 truncate">{current?.label}</span>
+            node kept its full width and spilled ~18px past the button edge.
+
+            The name is said even when there is not one. A button that showed
+            nothing at all was not readable as a button, so there was no sign
+            the model could be chosen at all. */}
+        <span className="min-w-0 truncate">
+          {current?.label ?? "No model selected"}
+        </span>
         {/* Sized by the label it is actually showing. This span used to hold an
             invisible copy of every level overlaid in the same grid cell, which
             sized the cell to the longest label in the set — so the button kept
@@ -803,25 +847,30 @@ function PromptInputModel({
         initialFocus={searchRef}
         finalFocus={context.textareaRef}
       >
-        <div className="flex items-center gap-2 pb-2">
-          <SearchIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            /* First Escape clears the filter; a second one closes the popover,
-               which is what the user expects from a search field. */
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && query) {
-                event.stopPropagation()
-                setQuery("")
-              }
-            }}
-            placeholder="Search models…"
-            aria-label="Search models"
-            className="placeholder:text-muted-foreground/70 h-7 w-full min-w-0 rounded-md bg-transparent text-sm outline-none"
-          />
-        </div>
+        {/* The search field is hidden when there is nothing to search: a search
+            box over an empty list is noise, and the list is empty because
+            there is no key. */}
+        {noKey ? null : (
+          <div className="flex items-center gap-2 pb-2">
+            <SearchIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              /* First Escape clears the filter; a second one closes the popover,
+                 which is what the user expects from a search field. */
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && query) {
+                  event.stopPropagation()
+                  setQuery("")
+                }
+              }}
+              placeholder="Search models…"
+              aria-label="Search models"
+              className="placeholder:text-muted-foreground/70 h-7 w-full min-w-0 rounded-md bg-transparent text-sm outline-none"
+            />
+          </div>
+        )}
 
         <div
           ref={listRef}
@@ -867,6 +916,15 @@ function PromptInputModel({
                 </button>
               )
             })
+          ) : noKey ? (
+            <NoKeyState
+              onAddKey={() => {
+                setOpen(false)
+                openSettings("api-keys")
+              }}
+            />
+          ) : error ? (
+            <p className="text-muted-foreground px-2 py-3 text-sm">{error}</p>
           ) : (
             <p className="text-muted-foreground px-2 py-3 text-sm">
               No models match “{query.trim()}”.

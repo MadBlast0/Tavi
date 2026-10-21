@@ -70,7 +70,7 @@ impl Provider {
         format!("{}/chat/completions", self.base)
     }
 
-    fn key_url(&self) -> String {
+    pub(crate) fn key_url(&self) -> String {
         format!("{}/key", self.base)
     }
 }
@@ -292,7 +292,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-fn http() -> reqwest::Client {
+pub(crate) fn http() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent(concat!("Tavi/", env!("CARGO_PKG_VERSION")))
         .timeout(REQUEST_TIMEOUT)
@@ -376,6 +376,13 @@ async fn fetch_text(
 /// The model catalogue, for the picker.
 #[tauri::command]
 pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<String, String> {
+    /* The catalogue comes from the provider, and a provider is only reachable
+       with a key. Without one there is nothing to list: the list would be of
+       models that cannot be called. The rule is here rather than in the
+       composer because a rule the client can ignore is not a rule. */
+    if crate::keys::get_api_key()?.is_none() {
+        return Err("No provider key is set. Add one in the settings.".to_string());
+    }
     catalogue(&app, &Provider::new(), force).await
 }
 
@@ -550,7 +557,7 @@ pub async fn chat(
 ) -> Result<(), String> {
     let provider = Provider::new();
 
-    let key = crate::get_api_key()
+    let key = crate::keys::get_api_key()
         .map_err(|error| error)?
         .ok_or("No provider key is set. Add one in the settings.")?;
 
@@ -825,7 +832,7 @@ where
 #[tauri::command]
 pub async fn key_status() -> Result<Value, String> {
     let provider = Provider::new();
-    let Some(key) = crate::get_api_key().map_err(|error| error)? else {
+    let Some(key) = crate::keys::get_api_key().map_err(|error| error)? else {
         return Ok(json!({ "valid": false, "reason": "No key configured." }));
     };
 
@@ -848,7 +855,12 @@ pub async fn key_status() -> Result<Value, String> {
         return Ok(json!({ "valid": false }));
     };
 
-    let label = raw
+    /* The answer is nested under `data`, but a gateway in front of the provider
+       may answer flat. Both are read, and neither is invented. Reading only
+       the top level meant the account name was never found. */
+    let data = raw.get("data").unwrap_or(&raw);
+
+    let label = data
         .get("label")
         .and_then(Value::as_str)
         .map(|label| redact(label));
@@ -856,10 +868,10 @@ pub async fn key_status() -> Result<Value, String> {
     Ok(json!({
         "valid": true,
         "label": label,
-        "limit": raw.get("limit"),
-        "remaining": raw.get("remaining"),
-        "usage": raw.get("usage"),
-        "isFreeTier": raw.get("is_free_tier"),
+        "limit": data.get("limit"),
+        "remaining": data.get("remaining"),
+        "usage": data.get("usage"),
+        "isFreeTier": data.get("is_free_tier"),
     }))
 }
 
@@ -867,7 +879,7 @@ pub async fn key_status() -> Result<Value, String> {
 ///
 /// The whole key is replaced, not most of it: a key is shown as `sk-***` or
 /// not at all.
-fn redact(label: &str) -> String {
+pub(crate) fn redact(label: &str) -> String {
     let mut out = String::new();
     let mut rest = label;
     while let Some(position) = rest.find("sk-") {

@@ -30,6 +30,7 @@
  * `nimEffortFromDeployment` below without any change to the UI or request path.
  */
 
+import { serverCredential } from "./key-store.ts";
 import {
   type CapabilitySource,
   type EffortCapability,
@@ -87,7 +88,7 @@ export const nimAdapter: ModelProviderAdapter = {
   hasLiveDiscovery: false,
 
   async listModels(connection: ProviderConnection): Promise<ProviderModel[]> {
-    const apiKey = process.env[connection.credentialRef ?? "NVIDIA_API_KEY"];
+    const apiKey = serverCredential(connection.credentialRef ?? "NVIDIA_API_KEY");
     const base = connection.baseUrl ?? "https://integrate.api.nvidia.com";
     const headers: Record<string, string> = { accept: "application/json" };
     // NIM permits unauthenticated listing, but a key gives the account's models.

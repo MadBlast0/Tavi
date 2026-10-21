@@ -1,5 +1,5 @@
 /**
- * Talking to the model.
+ * The transport to the model.
  *
  * There are two servers behind this: the Node one that serves the website, and
  * the Rust one that serves the desktop app. The request is the same and the
@@ -67,7 +67,7 @@ export type ChatEvent =
       messageMetadata?: { modelId?: string; usage?: ChatUsage };
     }
   | { type: "finish"; messageMetadata?: { modelId?: string; usage?: ChatUsage } }
-  | { type: "error"; error?: { message?: string } };
+  | { type: "error"; errorText: string };
 
 /**
  * The model catalogue, in the shape the picker reads.
@@ -94,7 +94,15 @@ export const fetchModels = async (): Promise<{
 
   const response = await fetch("/api/models");
   if (!response.ok) {
-    throw new Error(`The model catalogue is unavailable (${response.status}).`);
+    /* The server's own words, not a status code. It knows why it refused —
+       most often that there is no provider key — and a number is not a
+       reason. */
+    const detail = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      detail?.error ?? `The model catalogue is unavailable (${response.status}).`,
+    );
   }
   return (await response.json()) as { models: SlimModel[]; stale: boolean };
 };
@@ -191,11 +199,18 @@ const webChat = async (
       if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
       if (!payload || payload === "[DONE]") continue;
+      let event: ChatEvent;
       try {
-        onEvent(JSON.parse(payload) as ChatEvent);
+        event = JSON.parse(payload) as ChatEvent;
       } catch {
-        /* partial JSON, wait for more */
+        /* Partial JSON: the rest of it is still coming. */
+        continue;
       }
+      /* The handler is called outside the parse's catch on purpose. A handler
+         that throws is saying the turn failed, and catching it here would end
+         the stream with no text, no error and nothing to show — which is what
+         a failed turn looks like from the outside. */
+      onEvent(event);
     }
   }
 };

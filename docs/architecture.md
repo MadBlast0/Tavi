@@ -28,8 +28,8 @@ together with [`storage.md`](storage.md) for where the data lives and
                 │ Tauri IPC                    │ HTTP /api/*
                 ▼                              ▼
 ┌───────────────────────────────┐  ┌──────────────────────────┐
-│ Rust (src-tauri)              │  │ Node chat server         │
-│  · the provider request       │  │  server/chat.ts          │
+│ Rust (src-tauri)              │  │ Node server              │
+│  · the provider request       │  │  server/main.ts          │
 │  · the conversations file     │  │  · system prompt         │
 │  · the workspace grants       │  │  · model catalogue       │
 │  · git, for the clones        │  │  · clone                 │
@@ -49,7 +49,7 @@ assistant-ui scaffolding next to it — `src/assistant.tsx`,
 posts to the server with `fetch` and reads the reply itself: a stream of
 `data:` lines carrying `text-delta`, `message-metadata`, `finish` and `error`
 events. It does not use the AI SDK's message-stream protocol, and it sends no
-tools. `src/lib/chat.ts` chooses between the two servers — the Node one for the
+tools. `src/lib/transport.ts` chooses between the two servers — the Node one for the
 website, the Rust one for the desktop — and the composer does not know which.
 
 **The folder is a grant, and which kind depends on the target.** On the
@@ -104,7 +104,7 @@ proposals or from what the code already does.
 
 | | Decision | Why |
 |---|---|---|
-| B1 | **A chat is workspace-free.** A chat has no folder, no tools, and the server refuses a request that carries either. | Already the rule in `server/system.ts` and `server/chat.ts`. The plan keeps it. |
+| B1 | **A chat is workspace-free.** A chat has no folder, no tools, and the server refuses a request that carries either. | Already the rule in `server/system.ts` and `server/main.ts`. The plan keeps it. |
 | B2 | **A code session may exist without a folder.** It is grouped under "No folder". | The plan requires it, and the store already carries the case. |
 | B3 | **File writing is out of scope.** The app reads; it does not write. | The owner's decision, answering the plan's Step 4. The authorization gap is closed first; a write path is a separate, security-reviewed piece of work. |
 | B4 | **On the desktop, Rust owns the provider call.** The key is read from the OS credential store, used in Rust, and never enters JavaScript. There is no local port and no local endpoint on the desktop. | The owner's decision, answering the plan's Step 7. It removes the unauthenticated route and the key-in-JavaScript problem in one move. |
@@ -123,7 +123,7 @@ proposals or from what the code already does.
 |---|---|---|---|
 | G1 | ~~**Desktop conversations are not durable.**~~ | They lived in the webview's `localStorage`. Clearing site data, or eviction, took them. | **Stage 2** — one app-data file, written by Rust, with the old copy brought across once and only removed once the new one has been read back. |
 | G2 | ~~**The Rust file commands default to the whole home directory.**~~ | `AI_APP_FS_ROOT` was unset, so `fs_root()` fell back to `$HOME`. There was no per-workspace grant. | **Stage 3** — a grant is a canonical path the user chose; there is no default root, and the commands refuse without one. |
-| G3 | ~~**The packaged desktop app cannot chat.**~~ | The Tauri bundle loads a static Vite build; the chat server was a development process. | **Stage 4** — Rust makes the provider request. There is no server behind the desktop app at all. |
+| G3 | ~~**The packaged desktop app cannot chat.**~~ | The Tauri bundle loads a static Vite build; the Node server was a development process. | **Stage 4** — Rust makes the provider request. There is no server behind the desktop app at all. |
 | G4 | ~~**The provider key reaches JavaScript.**~~ | `get_api_key` returned the key to the webview, which sent it as a bearer header to the loopback server. | **Stage 4** — the key is read in Rust, used there, and there is no command that hands it out. |
 | G5 | ~~**The chat route is unauthenticated and binds every interface.**~~ | `server.listen(PORT)` with no host and no secret. | **Stage 4** for the desktop — the route does not exist there. The website's server still has no accounts, so it is a website's own problem; see `docs/plan/later-on.md`. |
 | G6 | ~~**The clone flow is minimal.**~~ | A URL, a fixed destination, no progress, no cancel, no retry, and a half-finished clone left on disk. | **Stage 5** — the destination is confirmed, progress is reported, a clone can be stopped, and a failure cleans up after itself. |

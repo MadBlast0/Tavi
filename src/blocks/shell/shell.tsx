@@ -11,6 +11,10 @@ import {
 } from "@/components/sidebar"
 import { ComposerVariantSwitch } from "@/blocks/prompt-input/composer-variant"
 import { matchesHotkey } from "@/lib/hotkey"
+import {
+  notifySettingsClosed,
+  OPEN_SETTINGS,
+} from "@/lib/open-settings"
 import { PREF, readPref, writePref } from "@/lib/prefs"
 import { SidebarAccount } from "./sidebar-account"
 import { SidebarNav } from "./sidebar-nav"
@@ -220,6 +224,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [width, setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
   const [resizing, setResizing] = React.useState(false)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
+  /* Which section the card opens on. Undefined is the default one; a name is
+     a destination, set by whatever asked for the card. */
+  const [settingsSection, setSettingsSection] = React.useState<
+    string | undefined
+  >(undefined)
+
+  /* The card is opened from below the shell as well as from the account menu —
+     the composer's model button sends the user here to add a key — so the two
+     are joined by an event rather than by a prop threaded through everything
+     between them. */
+  React.useEffect(() => {
+    const onOpen = (event: Event) => {
+      setSettingsSection((event as CustomEvent<string | undefined>).detail)
+      setSettingsOpen(true)
+    }
+    window.addEventListener(OPEN_SETTINGS, onOpen)
+    return () => window.removeEventListener(OPEN_SETTINGS, onOpen)
+  }, [])
 
   /* Whether the rail is open.
      The first time the app is ever run it is closed, so what is on screen is
@@ -337,7 +359,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* Outside the shell's own stacking, because the card portals to the end of
           the body and covers the rail anyway — mounting it inside would only
           decide what it covers on the way there. */}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open)
+          if (!open) notifySettingsClosed()
+        }}
+        section={settingsSection}
+      />
     </SidebarProvider>
   )
 }

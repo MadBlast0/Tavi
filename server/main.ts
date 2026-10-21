@@ -13,7 +13,9 @@ import {
 } from "ai";
 import type { ToolSet, UIMessage } from "ai";
 
-import { fetchKeyStatus } from "./key-status.ts";
+import { fetchKeyStatus, listProviderKeys } from "./key-status.ts";
+import { removeKey, serverCredential, storeKey } from "./key-store.ts";
+import { providerFor } from "../src/lib/providers.ts";
 import { defaultConnection, getCatalog, modelCapabilities } from "./models.ts";
 import {
   cloneRepository,
@@ -24,16 +26,12 @@ import { adapterFor, type OpenRouterProviderOptions } from "./providers.ts";
 import { buildSystemPrompt, type Variant } from "./system.ts";
 
 /**
+ * The website's server: the `/api` routes, the streaming chat route among them.
  * The Tauri window loads a static Vite bundle, so there is no server colocated
- * with the frontend. This process serves the streaming chat route instead; Vite
- * proxies `/api` here during development (see `server.proxy` in vite.config.ts).
+ * with the frontend; Vite proxies `/api` here (see `server.proxy` in vite.config.ts).
  */
 
 const PORT = Number(process.env.CHAT_SERVER_PORT ?? 8787);
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
 
 type ChatConfig = {
   modelName?: string;
@@ -44,6 +42,16 @@ type ChatConfig = {
    */
   reasoningEffort?: string;
 };
+
+/**
+ * A key never leaves this machine, and it never appears in a message.
+ *
+ * A provider's error quotes the request that failed, and a request that
+ * failed for want of a key can quote the key. Anything that looks like one is
+ * replaced before it is logged or sent.
+ */
+const scrub = (text: string): string =>
+  text.replace(/\b(sk-or-v1-|sk-)[A-Za-z0-9_-]{8,}/g, "$1***");
 
 async function handleChat(request: Request): Promise<Response> {
   const body = (await request.json()) as {
@@ -78,7 +86,7 @@ async function handleChat(request: Request): Promise<Response> {
   const { messages, tools, variant, mode, folder } = body;
 
   if (typeof body.system === "string") {
-    console.log("[chat] rejected: request carried its own system prompt");
+    console.log("[server] rejected: request carried its own system prompt");
     return Response.json(
       { error: "The system prompt is written by the server." },
       { status: 400 },
@@ -86,7 +94,7 @@ async function handleChat(request: Request): Promise<Response> {
   }
 
   if (variant !== "chat" && variant !== "code") {
-    console.log("[chat] rejected: request carried no surface");
+    console.log("[server] rejected: request carried no surface");
     return Response.json(
       {
         error:
@@ -105,7 +113,7 @@ async function handleChat(request: Request): Promise<Response> {
    * the client can ignore is not a rule.
    */
   if (variant === "chat" && tools) {
-    console.log("[chat] rejected: a chat carried tools");
+    console.log("[server] rejected: a chat carried tools");
     return Response.json(
       { error: "A chat cannot carry tools. Start a code session instead." },
       { status: 400 },
@@ -120,12 +128,29 @@ async function handleChat(request: Request): Promise<Response> {
   // user never chose, and did not even know was in play.
   const modelName = body.config?.modelName?.trim();
   if (!modelName) {
-    console.log("[chat] rejected: request carried no model");
+    console.log("[server] rejected: request carried no model");
     return Response.json(
       { error: "No model selected. Pick a model before sending." },
       { status: 400 },
     );
   }
+
+  /* The provider client is built here rather than once at startup, so that it
+     carries the key the server actually holds.
+
+     The key lives in the server's own store or in the environment, and the
+     store is what the settings pane writes to. A client built at startup
+     would only ever see the environment, so a key set in the app would pass
+     the check below and then never reach the provider. */
+  const apiKey = serverCredential("OPENROUTER_API_KEY");
+  if (!apiKey) {
+    console.log("[server] rejected: no provider key");
+    return Response.json(
+      { error: "No provider key is set. Add one in the settings." },
+      { status: 400 },
+    );
+  }
+  const openrouter = createOpenRouter({ apiKey });
 
   /* The provider adapter owns validation and serialisation for this connection.
      It refuses an explicit value the model cannot honour instead of substituting
@@ -150,7 +175,7 @@ async function handleChat(request: Request): Promise<Response> {
     });
 
     if (serialized.kind === "reject") {
-      console.log(`[chat] rejected: ${serialized.message}`);
+      console.log(`[server] rejected: ${serialized.message}`);
       return Response.json({ error: serialized.message }, { status: 400 });
     }
     if (serialized.kind === "payload") {
@@ -169,7 +194,7 @@ async function handleChat(request: Request): Promise<Response> {
   // Logs the resolved model, the surface it came from and the fields actually
   // serialised. No key, no headers, no request body.
   console.log(
-    `[chat] surface=${variant} model=${modelName} reasoning=${applied}`,
+    `[server] surface=${variant} model=${modelName} reasoning=${applied}`,
   );
 
   // AssistantChatTransport forwards system messages and any frontend tools the
@@ -187,6 +212,14 @@ async function handleChat(request: Request): Promise<Response> {
     // result and no assistant reply. Five covers realistic tool chains while
     // capping what a confused run can burn on the free tier.
     stopWhen: stepCountIs(5),
+    /* The SDK's default here writes the whole error to the console, and the
+       whole error carries the request that failed: the prompt that was sent,
+       the headers, and whatever the provider answered with. Only the reason
+       is written down, and the key is taken out of even that. */
+    onError: ({ error }) => {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`[server] provider request failed: ${scrub(reason)}`);
+    },
     ...(Object.keys(reasoningFields).length
       ? { providerOptions: reasoningFields }
       : {}),
@@ -203,6 +236,15 @@ async function handleChat(request: Request): Promise<Response> {
           return { modelId: part.response.modelId };
         }
         return undefined;
+      },
+      /* The SDK's default here is "An error occurred.", which keeps the
+         provider's reason off the wire. The reason is what tells a missing
+         key from a refused one from a network failure, so a scrubbed version
+         of it goes to the client. The logging is done once, on the call
+         above. */
+      onError: (error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        return scrub(reason);
       },
     }),
   });
@@ -286,6 +328,17 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/models") {
+    /* The catalogue comes from the provider, and a provider is only reachable
+       with a key. Without one there is nothing to list: the list would be of
+       models that cannot be called. The rule is here rather than in the
+       composer because a rule the client can ignore is not a rule. */
+    if (!serverCredential("OPENROUTER_API_KEY")) {
+      sendJson(res, 403, {
+        error: "No provider key is set. Add one in the settings.",
+        code: "no-provider-key",
+      });
+      return;
+    }
     try {
       const { models, stale } = await getCatalog();
       sendJson(res, 200, { models, stale });
@@ -302,12 +355,80 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/key") {
-    if (!process.env.OPENROUTER_API_KEY) {
+    const apiKey = serverCredential("OPENROUTER_API_KEY");
+    if (!apiKey) {
       sendJson(res, 200, { valid: false, reason: "No key configured." });
       return;
     }
     // Never logs or echoes the key.
-    sendJson(res, 200, await fetchKeyStatus(process.env.OPENROUTER_API_KEY));
+    sendJson(res, 200, await fetchKeyStatus(apiKey));
+    return;
+  }
+
+  /* Every provider's key, and what the provider says about it.
+   *
+   * The same list the desktop app keeps in the operating system's credential
+   * store, and the same pane over it. Nothing here logs or echoes a key. */
+  if (url.pathname === "/api/keys") {
+    if (req.method === "GET") {
+      sendJson(res, 200, await listProviderKeys());
+      return;
+    }
+
+    /* Changing the server's key changes what every request through the
+       server spends, so it is only offered to a request that came from this
+       machine. Anything else is a different process asking for the server's
+       credential. */
+    if (!isLoopback(req)) {
+      sendJson(res, 403, {
+        error:
+          "Only a request from this machine can change the server's keys.",
+      });
+      return;
+    }
+
+    if (req.method === "POST") {
+      let body: { provider?: unknown; key?: unknown };
+      try {
+        body = JSON.parse((await readBody(req)).toString("utf8"));
+      } catch {
+        sendJson(res, 400, { error: "The request body is not JSON." });
+        return;
+      }
+
+      const provider = typeof body.provider === "string" ? body.provider : "";
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      if (!providerFor(provider)) {
+        sendJson(res, 400, {
+          error: "That provider is not one the app knows about.",
+        });
+        return;
+      }
+      if (!key) {
+        sendJson(res, 400, { error: "Key must not be empty." });
+        return;
+      }
+
+      storeKey(provider, key);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      const provider = url.searchParams.get("provider") ?? "";
+      if (!providerFor(provider)) {
+        sendJson(res, 400, {
+          error: "That provider is not one the app knows about.",
+        });
+        return;
+      }
+      removeKey(provider);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    res.writeHead(405, { allow: "GET, POST, DELETE" });
+    res.end();
     return;
   }
 
@@ -322,8 +443,8 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (!process.env.OPENROUTER_API_KEY) {
-    sendJson(res, 500, { error: "OPENROUTER_API_KEY is not set" });
+  if (!serverCredential("OPENROUTER_API_KEY")) {
+    sendJson(res, 500, { error: "No provider key is set. Add one in the settings." });
     return;
   }
 
@@ -341,7 +462,7 @@ const server = createServer(async (req, res) => {
 
   try {
     const response = await handleChat(request);
-    console.log(`[chat] ${req.method} ${url.pathname} -> ${response.status}`);
+    console.log(`[server] ${req.method} ${url.pathname} -> ${response.status}`);
     res.writeHead(response.status, Object.fromEntries(response.headers));
 
     if (response.body) {
@@ -357,7 +478,7 @@ const server = createServer(async (req, res) => {
     // Logs the failure only. Request bodies and headers are never logged, so a
     // key carried as an authorization header cannot leak through this path.
     console.error(
-      "[chat] request failed:",
+      "[server] request failed:",
       error instanceof Error ? error.message : error,
     );
     sendJson(res, 500, {
@@ -367,10 +488,10 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[chat] streaming route on http://localhost:${PORT}/api/chat`);
+  console.log(`[server] streaming route on http://localhost:${PORT}/api/chat`);
   console.log(
-    `[chat] no default model; key ${
-      process.env.OPENROUTER_API_KEY ? "found" : "MISSING"
+    `[server] no default model; key ${
+      serverCredential("OPENROUTER_API_KEY") ? "found" : "MISSING"
     }`,
   );
 });

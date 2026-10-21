@@ -18,7 +18,7 @@ install has it without the user having to clone anything first.
 
 **Depends on.** A real installer pipeline. `pnpm tauri build` does not currently
 produce a working app — see "Known limitations" in the README, which is mostly
-this: the shipping frontend is static and the chat server is not bundled.
+this: the shipping frontend is static and the Node server is not bundled.
 
 ---
 

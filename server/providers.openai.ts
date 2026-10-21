@@ -20,6 +20,7 @@
  * which keeps the UI on provider default instead of guessing.
  */
 
+import { serverCredential } from "./key-store.ts";
 import {
   availableEffort,
   type CapabilitySource,
@@ -137,7 +138,7 @@ export const openaiAdapter: ModelProviderAdapter = {
   hasLiveDiscovery: false,
 
   async listModels(connection: ProviderConnection): Promise<ProviderModel[]> {
-    const apiKey = process.env[connection.credentialRef ?? "OPENAI_API_KEY"];
+    const apiKey = serverCredential(connection.credentialRef ?? "OPENAI_API_KEY");
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY is not set");
     }

@@ -18,6 +18,7 @@
  * request. Live discovery is exercised only when `ANTHROPIC_API_KEY` is set.
  */
 
+import { serverCredential } from "./key-store.ts";
 import {
   availableEffort,
   readSupport,
@@ -206,7 +207,7 @@ export const anthropicAdapter: ModelProviderAdapter = {
   hasLiveDiscovery: true,
 
   async listModels(connection: ProviderConnection): Promise<ProviderModel[]> {
-    const apiKey = process.env[connection.credentialRef ?? "ANTHROPIC_API_KEY"];
+    const apiKey = serverCredential(connection.credentialRef ?? "ANTHROPIC_API_KEY");
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY is not set");
     }

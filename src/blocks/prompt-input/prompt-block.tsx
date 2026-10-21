@@ -58,7 +58,9 @@ import {
   type StoredUsage,
 } from "@/lib/threads"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
-import { fetchModels, streamChat, type ChatRequest } from "@/lib/chat"
+import { fetchModels, streamChat, type ChatRequest } from "@/lib/transport"
+import { listApiKeys, type ApiKeyInfo } from "@/lib/secret"
+import { SETTINGS_CLOSED } from "@/lib/open-settings"
 import { cancelClone, cloneRepository, listProjects } from "@/lib/projects"
 import {
   MODES as MODE_DEFINITIONS,
@@ -1151,6 +1153,49 @@ export function PromptBlock() {
     void listWorkspaces().then(setFolders)
   }, [])
 
+  /**
+   * The provider keys, once they have been read.
+   *
+   * Null until they have been. The model list is not fetched until this says
+   * there is a key: the catalogue comes from the provider, and a list of
+   * models that cannot be called is a list of things that will fail. The
+   * picker says what is missing instead.
+   */
+  const [keys, setKeys] = React.useState<ApiKeyInfo[] | null>(null)
+  /**
+   * What the server said when the models could not be read.
+   *
+   * It is kept rather than swallowed, because a picker with no models in it
+   * and no reason why is a picker that looks broken. The server's own words
+   * are shown: it knows what went wrong, and this does not.
+   */
+  const [modelsError, setModelsError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let current = true
+    const read = () => {
+      void listApiKeys()
+        .then((list) => {
+          if (current) setKeys(list)
+        })
+        .catch(() => {
+          /* The keys could not be read. Nothing is claimed about whether there
+             is one, so the list is treated as empty and the picker asks for a
+             key — which is where the answer is. */
+          if (current) setKeys([])
+        })
+    }
+    read()
+    /* The settings card is where a key is added, so it is where this answer
+       can change, and it says when it closes. */
+    const onClosed = () => read()
+    window.addEventListener(SETTINGS_CLOSED, onClosed)
+    return () => {
+      current = false
+      window.removeEventListener(SETTINGS_CLOSED, onClosed)
+    }
+  }, [])
+
   /* Real model catalog from the backend, used only in the real app. */
   /* Model catalog from the backend. The server publishes no default, so
      something must be selected for the composer to be usable at all; that
@@ -1162,10 +1207,14 @@ export function PromptBlock() {
      a slow fetch could leave the picker describing a model the user has already
      moved off. */
   React.useEffect(() => {
+    /* No key, no models. Nothing is fetched from a provider the app cannot
+       reach, and the picker says what is missing. */
+    if (!keys || keys.length === 0) return
     let current = true
     fetchModels()
       .then((data) => {
         if (!current) return
+        setModelsError(null)
         const list: Array<{
           id: string
           name: string
@@ -1219,11 +1268,18 @@ export function PromptBlock() {
            for the composer to be usable at all. Which side that selection
            belongs to is settled below, once the catalogue is in state. */
       })
-      .catch(() => {})
+      .catch((error: unknown) => {
+        if (!current) return
+        setModelsError(
+          error instanceof Error
+            ? error.message
+            : "The model list could not be read.",
+        )
+      })
     return () => {
       current = false
     }
-  }, [])
+  }, [keys])
 
   /**
    * The side you are on always has a model.
@@ -1447,7 +1503,7 @@ export function PromptBlock() {
         },
         (event) => {
           if (event.type === "error") {
-            throw new Error(event.error?.message ?? "The stream reported an error")
+            throw new Error(event.errorText || "The stream reported an error")
           }
           if (event.type === "message-metadata") {
             if (event.messageMetadata?.modelId) {
@@ -1818,6 +1874,8 @@ export function PromptBlock() {
       effort={effort}
       onEffortChange={setEffort}
       recommended="medium"
+      noKey={keys !== null && keys.length === 0}
+      error={modelsError}
     />
   )
 
