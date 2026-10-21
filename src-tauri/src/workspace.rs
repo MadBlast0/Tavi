@@ -166,8 +166,16 @@ fn configured_cap() -> Option<PathBuf> {
 /// the grant is refused too.
 fn resolve_within(grant: &Path, input: &str) -> Result<PathBuf, String> {
     let trimmed = input.trim();
+
+    /* An empty path is the root of the grant.
+     *
+     * Listing a folder starts at the top and walks down, so the first call
+     * is for the grant itself. Refusing it would mean no folder could ever be
+     * listed from the top, and the walk would fail before it began. */
     if trimmed.is_empty() {
-        return Err("A path must not be empty.".to_string());
+        return grant
+            .canonicalize()
+            .map_err(|e| format!("The workspace is not there: {e}"));
     }
 
     let candidate = Path::new(trimmed);
@@ -490,7 +498,23 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// The boundary itself: a path that climbs out is refused.
+    /// An empty path is the root of the grant, not a mistake.
+    ///
+    /// Listing a folder starts at the top and walks down, so the first call
+    /// is for the grant itself. If this were refused, no folder could ever be
+    /// listed from the top.
+    #[test]
+    fn an_empty_path_is_the_root_of_the_workspace() {
+        let root = scratch("root");
+        let resolved = resolve_within(&root, "").expect("the root should be resolved");
+        assert_eq!(
+            resolved.canonicalize().expect("the root should canonicalize"),
+            root.canonicalize().expect("the root should canonicalize")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A path that climbs out is refused.
     #[test]
     fn a_path_that_climbs_out_is_refused() {
         let root = scratch("escape");
@@ -538,10 +562,19 @@ mod tests {
         let _ = fs::remove_dir_all(&outside);
     }
 
+    /// A path of nothing but spaces is the root too.
+    ///
+    /// It used to be refused. Listing a folder starts at the top and walks
+    /// down, so the first call is for the grant itself, and refusing it meant
+    /// no folder could ever be listed from the top.
     #[test]
-    fn an_empty_path_is_refused() {
-        let root = scratch("empty");
-        assert!(resolve_within(&root, "   ").is_err());
+    fn a_path_of_spaces_is_the_root_too() {
+        let root = scratch("spaces");
+        let resolved = resolve_within(&root, "   ").expect("the root should be resolved");
+        assert_eq!(
+            resolved.canonicalize().expect("the root should canonicalize"),
+            root.canonicalize().expect("the root should canonicalize")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
