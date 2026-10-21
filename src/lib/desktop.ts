@@ -18,7 +18,7 @@
  * is `src/lib/api.ts`.
  */
 
-import { Channel, invoke } from "@tauri-apps/api/core"
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window"
 import { openUrl } from "@tauri-apps/plugin-opener"
@@ -63,6 +63,29 @@ const requireDesktop = () => {
     throw new Error(
       "This is only available in the desktop app. Start it with `pnpm tauri dev`.",
     )
+  }
+}
+
+/**
+ * Calls a command, and turns a refusal into an error that says what it was.
+ *
+ * Tauri rejects with the command's own message as a bare string, not as an
+ * `Error`. A caller that checks `instanceof Error` would therefore throw its
+ * own generic wording away and show "something went wrong" in place of the
+ * reason the Rust side gave — which is the one worth showing.
+ */
+const invoke = async <T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> => {
+  try {
+    return await tauriInvoke<T>(command, args)
+  } catch (error) {
+    if (error instanceof Error) throw error
+    if (typeof error === "string" && error.trim() !== "") {
+      throw new Error(error)
+    }
+    throw new Error("That could not be done.")
   }
 }
 

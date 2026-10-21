@@ -20,7 +20,7 @@
  */
 
 import { PROVIDERS, type Provider, ACTIVE_PROVIDER_ID } from "../src/lib/providers.ts";
-import { redact } from "../src/lib/redact.ts";
+import { redact, maskSecret } from "../src/lib/redact.ts";
 import type { KeyStanding, ProviderKey } from "../src/lib/secret.ts";
 import {
   activeKeyIds,
@@ -376,7 +376,9 @@ export const listProviderKeys = async (): Promise<ProviderKeyStatus[]> => {
       createdAt: now,
       updatedAt: now,
       lastUsedAt: null,
-      maskedValue: null,
+      /* The server holds the key, so it can mask it the same way the desktop
+         does — and the two builds show the same key the same way. */
+      maskedValue: maskSecret(credential.key),
       source: "env",
       active: provider.id === ACTIVE_PROVIDER_ID,
       valid: null,
