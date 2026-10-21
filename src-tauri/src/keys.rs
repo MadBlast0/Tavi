@@ -1273,50 +1273,7 @@ pub async fn save_provider_key(
     }
 
     let path = index_path(&app)?;
-    let mut index = ensure_index(&path)?;
-
-    let id = mint_id();
-    let account = format!("{KEY_USER_PREFIX}{id}");
-    write_credential(&account, &secret)?;
-    if read_credential(&account)?.as_deref() != Some(secret.as_str()) {
-        let _ = delete_credential(&account);
-        return Err("The key could not be stored in the credential store.".to_string());
-    }
-
-    let now = now_secs();
-    let group = index
-        .providers
-        .entry(provider.id.to_string())
-        .or_default();
-    let chosen = name
-        .map(|name| name.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| provider.label.to_string());
-    let name_is_default = chosen == provider.label;
-
-    group.keys.push(KeyRecord {
-        id: id.clone(),
-        provider: provider.id.to_string(),
-        name: chosen,
-        name_is_default,
-        created_at: now,
-        updated_at: now,
-        last_used_at: None,
-        masked_value: Some(mask_secret(&secret)),
-        standing,
-    });
-
-    /* The first key for a provider is the one in use. Every key after it is
-       added inactive: adding a second key must never change which account
-       is billed. */
-    if group.active_key_id.is_none() {
-        group.active_key_id = Some(id);
-    }
-
-    if let Err(error) = write_index(&path, &index) {
-        let _ = delete_credential(&account);
-        return Err(error);
-    }
+    put_key(&path, provider, &secret, name.as_deref(), standing)?;
 
     Ok(())
 }
@@ -1334,8 +1291,8 @@ pub async fn replace_provider_key(app: AppHandle, id: String, key: String) -> Re
     }
 
     let path = index_path(&app)?;
-    let mut index = ensure_index(&path)?;
-    let (provider_id, position) = find_key(&index, &id)?;
+    let index = ensure_index(&path)?;
+    let (provider_id, _) = find_key(&index, &id)?;
     let provider = provider_for(&provider_id)
         .ok_or("That provider is not one the app knows about.")?;
 
@@ -1345,49 +1302,18 @@ pub async fn replace_provider_key(app: AppHandle, id: String, key: String) -> Re
         return Err(format!("{} did not accept this key.", provider.label));
     }
 
-    let account = format!("{KEY_USER_PREFIX}{id}");
-    write_credential(&account, &secret)?;
-
-    let group = index
-        .providers
-        .get_mut(&provider_id)
-        .ok_or("That key is not one the app holds.")?;
-    let record = &mut group.keys[position];
-    record.standing = standing;
-    record.masked_value = Some(mask_secret(&secret));
-    record.updated_at = now_secs();
-
-    if let Err(error) = write_index(&path, &index) {
-        return Err(error);
-    }
-
-    Ok(())
+    put_secret(&path, &id, &secret, standing)
 }
 
 /// Renames a key.
 #[tauri::command]
 pub async fn rename_provider_key(app: AppHandle, id: String, name: String) -> Result<(), String> {
-    let chosen = name.trim().to_string();
-    if chosen.is_empty() {
+    if name.trim().is_empty() {
         return Err("A key needs a name.".to_string());
     }
 
     let path = index_path(&app)?;
-    let mut index = ensure_index(&path)?;
-    let (provider_id, position) = find_key(&index, &id)?;
-    let provider = provider_for(&provider_id)
-        .ok_or("That provider is not one the app knows about.")?;
-
-    let group = index
-        .providers
-        .get_mut(&provider_id)
-        .ok_or("That key is not one the app holds.")?;
-    let record = &mut group.keys[position];
-    record.name = chosen.clone();
-    record.name_is_default = chosen == provider.label;
-    record.updated_at = now_secs();
-
-    write_index(&path, &index)
+    put_name(&path, &id, &name)
 }
 
 /// Makes a key the one requests go out with.
@@ -1397,19 +1323,7 @@ pub async fn rename_provider_key(app: AppHandle, id: String, name: String) -> Re
 #[tauri::command]
 pub async fn activate_provider_key(app: AppHandle, id: String) -> Result<(), String> {
     let path = index_path(&app)?;
-    let mut index = ensure_index(&path)?;
-    let (provider_id, _) = find_key(&index, &id)?;
-
-    index
-        .providers
-        .get_mut(&provider_id)
-        .and_then(|group| {
-            group.active_key_id = Some(id.clone());
-            Some(())
-        })
-        .ok_or("That key is not one the app holds.")?;
-
-    write_index(&path, &index)
+    put_active(&path, &id)
 }
 
 /// Takes a key away.
@@ -1420,22 +1334,7 @@ pub async fn activate_provider_key(app: AppHandle, id: String) -> Result<(), Str
 #[tauri::command]
 pub async fn remove_provider_key(app: AppHandle, id: String) -> Result<(), String> {
     let path = index_path(&app)?;
-    let mut index = ensure_index(&path)?;
-    let (provider_id, position) = find_key(&index, &id)?;
-
-    let group = index
-        .providers
-        .get_mut(&provider_id)
-        .ok_or("That key is not one the app holds.")?;
-    group.keys.remove(position);
-    if group.active_key_id.as_deref() == Some(id.as_str()) {
-        group.active_key_id = None;
-    }
-
-    write_index(&path, &index)?;
-
-    let _ = delete_credential(&format!("{KEY_USER_PREFIX}{id}"));
-    Ok(())
+    take_key(&path, &id)
 }
 
 /// Checks a key the app already holds.
@@ -1526,12 +1425,170 @@ pub fn note_key_use(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use std::path::PathBuf;
 
     use super::{
-        ACTIVE_PROVIDER, KEY_SERVICE, KEY_USER_PREFIX, PROVIDERS, Source, days_from_civil,
-        dev_key, entry_for, leading_prefix, mask_secret, migrate_key, provider_for,
-        timestamp,
+        ACTIVE_PROVIDER, KEY_SERVICE, KEY_USER_PREFIX, PROVIDERS, Source, Standing, days_from_civil,
+        delete_credential, dev_key, ensure_index, entry_for, find_key, leading_prefix, mask_secret,
+        migrate_key, provider_for, put_active, put_key, put_name, put_secret, read_credential,
+        read_index, take_key, timestamp, write_index,
     };
+
+    /// A scratch directory for one test's sidecar.
+    ///
+    /// The sidecar holds no secret, so a scratch file is enough to test
+    /// everything about it. The credentials themselves go to the machine's
+    /// credential store under an id the app minted, and are taken away again
+    /// by the test that made them.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tavi-keys-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the scratch directory should be creatable");
+        dir.join("provider-keys.json")
+    }
+
+    /// The provider the tests use.
+    fn openrouter() -> &'static super::Provider {
+        provider_for("openrouter").expect("OpenRouter should be a provider")
+    }
+
+    #[test]
+    fn a_key_is_stored_and_found_again() {
+        let path = scratch("round-trip");
+        let id = put_key(&path, openrouter(), "sk-or-v1-secret-value", None, Standing::default())
+            .expect("the key should be stored");
+
+        let index = ensure_index(&path).expect("the index should be readable");
+        let group = index.providers.get("openrouter").expect("the provider should be there");
+        assert_eq!(group.keys.len(), 1);
+        assert_eq!(group.active_key_id.as_deref(), Some(id.as_str()));
+        assert_eq!(
+            read_credential(&format!("{KEY_USER_PREFIX}{id}")).expect("the credential should read"),
+            Some("sk-or-v1-secret-value".to_string())
+        );
+
+        let _ = take_key(&path, &id).expect("the key should be removable");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn adding_a_second_key_does_not_change_the_one_in_use() {
+        let path = scratch("second-key");
+        let first = put_key(&path, openrouter(), "sk-or-v1-first", None, Standing::default())
+            .expect("the first key should be stored");
+        let second = put_key(&path, openrouter(), "sk-or-v1-second", None, Standing::default())
+            .expect("the second key should be stored");
+
+        let index = ensure_index(&path).expect("the index should be readable");
+        let group = index.providers.get("openrouter").expect("the provider should be there");
+        assert_eq!(group.keys.len(), 2);
+        /* The first key is still the one in use: adding a second must never
+           change which account is billed. */
+        assert_eq!(group.active_key_id.as_deref(), Some(first.as_str()));
+        assert_ne!(first, second);
+
+        let _ = take_key(&path, &first).ok();
+        let _ = take_key(&path, &second).ok();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn the_active_pointer_moves_when_it_is_moved() {
+        let path = scratch("active");
+        let first = put_key(&path, openrouter(), "sk-or-v1-first", None, Standing::default())
+            .expect("the first key should be stored");
+        let second = put_key(&path, openrouter(), "sk-or-v1-second", None, Standing::default())
+            .expect("the second key should be stored");
+
+        put_active(&path, &second).expect("the pointer should move");
+
+        let index = ensure_index(&path).expect("the index should be readable");
+        let group = index.providers.get("openrouter").expect("the provider should be there");
+        assert_eq!(group.active_key_id.as_deref(), Some(second.as_str()));
+
+        let _ = take_key(&path, &first).ok();
+        let _ = take_key(&path, &second).ok();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn taking_away_the_key_in_use_leaves_the_provider_with_none() {
+        let path = scratch("removed");
+        let id = put_key(&path, openrouter(), "sk-or-v1-only", None, Standing::default())
+            .expect("the key should be stored");
+
+        take_key(&path, &id).expect("the key should be removable");
+
+        let index = ensure_index(&path).expect("the index should be readable");
+        let group = index.providers.get("openrouter").expect("the provider should be there");
+        assert!(group.keys.is_empty());
+        /* There is no quiet fallback to another key. */
+        assert_eq!(group.active_key_id, None);
+        assert_eq!(
+            read_credential(&format!("{KEY_USER_PREFIX}{id}")).expect("the credential should read"),
+            None
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn the_sidecar_keeps_the_previous_copy() {
+        let path = scratch("backup");
+        let id = put_key(&path, openrouter(), "sk-or-v1-first", None, Standing::default())
+            .expect("the key should be stored");
+        put_name(&path, &id, "Renamed").expect("the key should be renamed");
+
+        let backup = path.with_extension("json.bak");
+        assert!(backup.exists(), "the previous copy should be kept beside it");
+        let previous = std::fs::read_to_string(&backup).expect("the copy should be readable");
+        assert!(previous.contains("sk-or-v1-first") == false || previous.contains("OpenRouter"));
+
+        let _ = take_key(&path, &id).ok();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_sidecar_that_cannot_be_parsed_is_reported() {
+        let path = scratch("corrupt");
+        std::fs::write(&path, "{ this is not json").expect("the file should be written");
+
+        /* A file that is there and cannot be parsed is a problem to report,
+           not an empty store to overwrite. */
+        let error = read_index(&path).expect_err("the file should be refused");
+        assert!(error.contains("could not be read"), "the error should say so: {error}");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_secret_replaced_is_the_one_that_is_read_back() {
+        let path = scratch("replaced");
+        let id = put_key(&path, openrouter(), "sk-or-v1-old", None, Standing::default())
+            .expect("the key should be stored");
+
+        put_secret(&path, &id, "sk-or-v1-new", Standing::default())
+            .expect("the secret should be replaced");
+
+        assert_eq!(
+            read_credential(&format!("{KEY_USER_PREFIX}{id}")).expect("the credential should read"),
+            Some("sk-or-v1-new".to_string())
+        );
+
+        let _ = take_key(&path, &id).ok();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_key_that_is_not_one_the_app_holds_is_refused() {
+        let path = scratch("unknown");
+        let index = ensure_index(&path).expect("the index should be readable");
+        assert!(find_key(&index, "not-a-key").is_err());
+        assert!(put_active(&path, "not-a-key").is_err());
+        assert!(take_key(&path, "not-a-key").is_err());
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
 
     /// The key moves from the name it had before there was more than one
     /// provider to the name it has now, and the old one is cleaned up.
