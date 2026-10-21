@@ -44,6 +44,14 @@ export type SlimModel = {
   outputModalities: string[];
   promptPrice: number;
   completionPrice: number;
+  /**
+   * The price of a token the provider has already cached.
+   *
+   * Null when the provider publishes no such price. Cached input is billed at
+   * its own rate, and pricing it at the full input rate over-reports what a
+   * request costs.
+   */
+  cachedInputPrice: number | null;
 }
 
 /** A model, as the provider names it. */
@@ -154,15 +162,29 @@ const openRouterEffort = (
  * effort, and does not publish a separate thinking *mode*. That is a gateway
  * fact, not a universal one — it is why this records no thinking-mode options
  * rather than inventing `enabled`/`disabled`.
+ *
+ * It does publish two things about the same question, and they are read here:
+ *
+ * - `mandatory` means reasoning cannot be turned off for this model at all.
+ *   A model like that gets information, not a control that would do nothing.
+ * - `default_enabled` says whether the model reasons unless told otherwise.
  */
 const openRouterThinkingMode = (
+  reasoning: OpenRouterReasoningMeta | undefined,
   source: CapabilitySource,
-): ThinkingModeCapability => ({
-  status: "unknown",
-  defaultKnown: false,
-  canDisable: "unknown",
-  source,
-});
+): ThinkingModeCapability => {
+  const mandatory = reasoning?.mandatory === true;
+  const defaultEnabled = reasoning?.default_enabled;
+
+  return {
+    status: "unknown",
+    defaultKnown: defaultEnabled !== undefined,
+    defaultEnabled: defaultEnabled === undefined ? undefined : defaultEnabled,
+    alwaysOn: mandatory,
+    canDisable: mandatory ? "unsupported" : "unknown",
+    source,
+  };
+};
 
 /** What a model can do, as the gateway describes it. */
 export const openRouterCapabilities = (
@@ -188,7 +210,7 @@ export const openRouterCapabilities = (
     target,
     reasoningCapability: reasoningExists ? "supported" : "unknown",
     effort,
-    thinkingMode: openRouterThinkingMode(source),
+    thinkingMode: openRouterThinkingMode(raw.reasoning, source),
     thinkingBudget: {
       // `supports_max_tokens` is a genuine per-model signal for a numeric
       // reasoning budget, but the gateway publishes no bounds for it.
@@ -236,12 +258,23 @@ export const projectModel = (
   const raw = (model.raw ?? {}) as {
     context_length?: number;
     architecture?: { input_modalities?: string[]; output_modalities?: string[] };
-    pricing?: { prompt?: string; completion?: string };
+    pricing?: {
+      prompt?: string;
+      completion?: string;
+      input_cache_read?: string;
+    };
     supported_parameters?: string[];
   };
 
   const promptPrice = toNumber(raw.pricing?.prompt);
   const completionPrice = toNumber(raw.pricing?.completion);
+  /* A provider that publishes no cached-input price is not saying the cached
+     input is free; it is saying nothing, and the full input rate is the only
+     honest figure to quote. */
+  const cachedInputPrice =
+    raw.pricing?.input_cache_read === undefined
+      ? null
+      : toNumber(raw.pricing.input_cache_read);
 
   return {
     id: model.id,
@@ -256,6 +289,7 @@ export const projectModel = (
     outputModalities: raw.architecture?.output_modalities ?? ["text"],
     promptPrice,
     completionPrice,
+    cachedInputPrice,
   };
 };
 

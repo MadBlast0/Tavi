@@ -11,11 +11,13 @@ import {
   ComboboxList,
   ComboboxStatus,
 } from "@/components/combobox"
+import { Button } from "@/components/button"
 import {
   DEFAULT_FONT_FAMILY,
   applyFontFamily,
   listInstalledFonts,
   readFontFamily,
+  requestInstalledFonts,
   writeFontFamily,
   type FontDiscoveryResult,
 } from "@/lib/fonts"
@@ -98,9 +100,9 @@ function buildOptions(families: string[], saved: string | null): string[] {
  * is on the field itself for anyone who asks.
  */
 export function FontPicker({ className }: { className?: string }) {
-  const [families, setFamilies] = React.useState<string[]>([])
-  const [scanned, setScanned] = React.useState(false)
+  const [result, setResult] = React.useState<FontDiscoveryResult | null>(null)
   const [saved, setSaved] = React.useState<string | null>(null)
+  const [asking, setAsking] = React.useState(false)
 
   /* Read on mount rather than passed in, so the picker and anything else
      reading the preference cannot disagree about what is chosen. The face is
@@ -115,22 +117,39 @@ export function FontPicker({ className }: { className?: string }) {
      touching the system again. */
   React.useEffect(() => {
     let live = true
-    listInstalledFonts().then((result: FontDiscoveryResult) => {
+    listInstalledFonts().then((found: FontDiscoveryResult) => {
       if (!live) return
-      if (result.ok) setFamilies(result.families)
-      setScanned(true)
+      setResult(found)
     })
     return () => {
       live = false
     }
   }, [])
 
+  /* The families, and only the families that were actually obtained. An
+     answer that was not obtained is not an empty answer. */
+  const families = result?.ok ? result.families : []
+  const scanned = result !== null
   const options = buildOptions(families, saved)
   const current = saved ?? DEFAULT_FONT_FAMILY
   /* The saved family is missing from a list that genuinely answered — as
      opposed to a scan that failed, which tells us nothing either way. */
   const unavailable =
     scanned && families.length > 0 && !families.includes(current)
+
+  /**
+   * What is said about the list.
+   *
+   * A count is only ever stated when the count was obtained. "0 fonts
+   * installed" is a falsehood in a browser — and the list underneath it, with
+   * the app's own face on it, is what makes the falsehood obvious. Where the
+   * list could not be obtained, the reason is said instead.
+   */
+  const status = !result
+    ? "Reading installed fonts."
+    : result.ok
+      ? `${result.families.length} fonts installed.`
+      : result.message
 
   function onSelect(family: string) {
     /* The default face is stored as "no preference" rather than as its name, so
@@ -142,6 +161,22 @@ export function FontPicker({ className }: { className?: string }) {
        installed still shows as chosen while the app renders in the fallback —
        which is what actually happens. */
     applyFontFamily(next ?? DEFAULT_FONT_FAMILY)
+  }
+
+  /**
+   * Asks the browser for the installed fonts.
+   *
+   * Only ever done because the person pressed the button: the browser asks
+   * its own permission prompt, and a prompt nobody asked for is a prompt
+   * nobody wants.
+   */
+  async function ask() {
+    setAsking(true)
+    try {
+      setResult(await requestInstalledFonts())
+    } finally {
+      setAsking(false)
+    }
   }
 
   return (
@@ -217,14 +252,28 @@ export function FontPicker({ className }: { className?: string }) {
             )}
           </ComboboxList>
           {/* Announced rather than shown: the visible state is the field's own
-              placeholder, and a screen reader is told what the list holds. */}
-          <ComboboxStatus className="sr-only">
-            {scanned
-              ? `${families.length} fonts installed.`
-              : "Reading installed fonts."}
-          </ComboboxStatus>
+              placeholder, and a screen reader is told what the list holds. A
+              count is only ever stated when the count was obtained; otherwise
+              the reason is stated, which is the truth. */}
+          <ComboboxStatus className="sr-only">{status}</ComboboxStatus>
         </ComboboxContent>
       </Combobox>
+
+      {/* Where the browser can list the fonts on the machine, it is asked
+          for — behind its own permission prompt, and only because the person
+          pressed the button. */}
+      {result && !result.ok && result.reason === "permission-required" ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          className="mt-2"
+          loading={asking}
+          onClick={() => void ask()}
+        >
+          List installed fonts
+        </Button>
+      ) : null}
     </div>
   )
 }

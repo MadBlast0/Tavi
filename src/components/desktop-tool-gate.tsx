@@ -1,6 +1,6 @@
 import { useAuiToolOverrides } from "@assistant-ui/react";
 
-import { isDesktopApp } from "@/lib/desktop";
+import { isDesktopApp } from "@/lib/platform";
 
 /**
  * Hides the desktop-only tools when the app is running in a browser.

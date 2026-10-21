@@ -7,10 +7,10 @@ import {
   MarkdownTextPrimitive,
   type MarkdownTextPrimitiveProps,
   memoizeMarkdownComponents,
-  useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useMemo, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import { type FC, memo, useDeferredValue, useMemo, useRef } from "react";
 import type { TextMessagePartProps } from "@assistant-ui/react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
@@ -65,6 +65,51 @@ const MarkdownTextImpl: FC<MarkdownTextProps> = ({
 };
 
 export const MarkdownText = memo(MarkdownTextImpl);
+
+/**
+ * Markdown, from a string.
+ *
+ * The live surface has the text of an answer, not a message part, so this is
+ * the shape it wants. The renderer and the styles are the same ones the
+ * assistant-ui branch uses — one set of styles for Markdown in this app, not
+ * two that drift apart.
+ *
+ * `status` says whether the answer is still arriving. The stylesheet draws a
+ * pulsing mark after the last line while it is, which is where a cursor
+ * belongs: inside the last paragraph, next to the text, and not on a line of
+ * its own below it.
+ *
+ * The parsing is deferred, so a long answer arriving token by token does not
+ * hold up the typing or the scrolling. The final text always renders.
+ */
+export const MarkdownBody = ({
+  text,
+  status,
+  className,
+}: {
+  text: string;
+  /** `"running"` while the answer is still arriving. */
+  status?: "running" | undefined;
+  className?: string;
+}) => {
+  const deferred = useDeferredValue(text);
+  const components = useMemo(
+    () => memoizeMarkdownComponents(defaultComponents),
+    [],
+  );
+
+  return (
+    <div
+      className={cn("aui-md", className)}
+      data-status={status}
+      data-slot="markdown-body"
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {deferred}
+      </ReactMarkdown>
+    </div>
+  );
+};
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
@@ -253,18 +298,22 @@ const defaultComponents = memoizeMarkdownComponents({
     <pre
       className={cn(
         "aui-md-pre border-border/50 bg-muted/30 overflow-x-auto rounded-t-none rounded-b-xl border border-t-0 p-3.5 text-[13px] leading-relaxed",
+        /* The code inside a block is not inline code, so it does not carry the
+           inline code's chip. The reset is a descendant rule, which outranks
+           the chip's own class however the stylesheet is ordered — and it
+           means the rule lives in one place rather than in a context that
+           only one of the two renderers provides. */
+        "[&_code]:bg-transparent [&_code]:rounded-none [&_code]:p-0 [&_code]:text-[1em]",
         className,
       )}
       {...props}
     />
   ),
   code: function Code({ className, ...props }) {
-    const isCodeBlock = useIsMarkdownCodeBlock();
     return (
       <code
         className={cn(
-          !isCodeBlock &&
-            "aui-md-inline-code bg-muted rounded-md px-1.5 py-0.5 font-mono text-[0.85em]",
+          "aui-md-inline-code bg-muted rounded-md px-1.5 py-0.5 font-mono text-[0.85em]",
           className,
         )}
         {...props}

@@ -285,6 +285,21 @@ struct CachedCatalogue {
     body: String,
 }
 
+/// A catalogue, and how old it is.
+///
+/// The age is part of the answer because a catalogue that is three weeks old
+/// names models that no longer exist and prices that have changed. Serving
+/// it silently is what the website already warns about; the desktop served
+/// the same copy with no signal at all.
+struct Catalogue {
+    body: String,
+    /// When it was fetched, in unix seconds.
+    fetched_at: u64,
+    /// Whether the provider could not be reached and this is the last good
+    /// copy. The one state a user can act on.
+    degraded: bool,
+}
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -304,8 +319,13 @@ pub(crate) fn http() -> reqwest::Client {
 ///
 /// It is cached, because it is large and it does not change often. A catalogue
 /// that cannot be fetched is served from the cache if there is one: a picker
-/// that lists last week's models is better than an empty one.
-async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<String, String> {
+/// that lists last week's models is better than an empty one — and the copy
+/// says how old it is, so nobody is told a stale list is a current one.
+async fn catalogue(
+    app: &AppHandle,
+    provider: &Provider,
+    force: bool,
+) -> Result<Catalogue, String> {
     let path = appfile::data_path(app, CATALOGUE_FILE);
 
     if !force {
@@ -313,7 +333,11 @@ async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<
             if let Some(raw) = appfile::read_string(path) {
                 if let Ok(cached) = serde_json::from_str::<CachedCatalogue>(&raw) {
                     if now_secs().saturating_sub(cached.fetched_at) < CATALOGUE_TTL_SECS {
-                        return Ok(cached.body);
+                        return Ok(Catalogue {
+                            body: cached.body,
+                            fetched_at: cached.fetched_at,
+                            degraded: false,
+                        });
                     }
                 }
             }
@@ -326,7 +350,11 @@ async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<
             if let Some(path) = path.as_ref() {
                 if let Some(raw) = appfile::read_string(path) {
                     if let Ok(cached) = serde_json::from_str::<CachedCatalogue>(&raw) {
-                        return Ok(cached.body);
+                        return Ok(Catalogue {
+                            body: cached.body,
+                            fetched_at: cached.fetched_at,
+                            degraded: true,
+                        });
                     }
                 }
             }
@@ -334,9 +362,10 @@ async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<
         }
     };
 
+    let fetched_at = now_secs();
     if let Some(path) = path.as_ref() {
         let cached = CachedCatalogue {
-            fetched_at: now_secs(),
+            fetched_at,
             body: fetched.clone(),
         };
         if let Ok(json) = serde_json::to_string(&cached) {
@@ -344,7 +373,11 @@ async fn catalogue(app: &AppHandle, provider: &Provider, force: bool) -> Result<
         }
     }
 
-    Ok(fetched)
+    Ok(Catalogue {
+        body: fetched,
+        fetched_at,
+        degraded: false,
+    })
 }
 
 /// Fetches a URL and returns its body.
@@ -374,16 +407,26 @@ async fn fetch_text(
 }
 
 /// The model catalogue, for the picker.
+///
+/// The catalogue and the age of the copy being served, so the picker can say
+/// how old it is. The age is not decoration: a catalogue is a list of models
+/// with prices, and a list that is three weeks old names models that no
+/// longer exist.
 #[tauri::command]
-pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<String, String> {
+pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<Value, String> {
     /* The catalogue comes from the provider, and a provider is only reachable
        with a key. Without one there is nothing to list: the list would be of
        models that cannot be called. The rule is here rather than in the
        composer because a rule the client can ignore is not a rule. */
-    if crate::keys::get_api_key()?.is_none() {
+    if crate::keys::get_api_key(&app)?.is_none() {
         return Err("No provider key is set. Add one in the settings.".to_string());
     }
-    catalogue(&app, &Provider::new(), force).await
+    let catalogue = catalogue(&app, &Provider::new(), force).await?;
+    Ok(json!({
+        "body": catalogue.body,
+        "fetchedAt": catalogue.fetched_at,
+        "degraded": catalogue.degraded,
+    }))
 }
 
 /* -------------------------------------------------------------------------- */
@@ -557,9 +600,13 @@ pub async fn chat(
 ) -> Result<(), String> {
     let provider = Provider::new();
 
-    let key = crate::keys::get_api_key()
+    let key = crate::keys::get_api_key(&app)
         .map_err(|error| error)?
         .ok_or("No provider key is set. Add one in the settings.")?;
+
+    /* The key has just been used, and the app knows that for certain — it is
+       the app's own use, not the provider's, which would need an admin API. */
+    crate::keys::note_key_use(&app);
 
     /* The catalogue is only fetched when there is an effort to check against
        it, because a request that names no effort does not need it. */
@@ -571,7 +618,10 @@ pub async fn chat(
         .filter(|effort| !effort.is_empty())
         .is_some()
     {
-        let raw = catalogue(&app, &provider, false).await.unwrap_or_default();
+        let raw = catalogue(&app, &provider, false)
+            .await
+            .map(|catalogue| catalogue.body)
+            .unwrap_or_default();
         Some(serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null))
     } else {
         None
@@ -825,81 +875,67 @@ where
 /* The key's standing                                                          */
 /* -------------------------------------------------------------------------- */
 
-/// What the provider says about the key.
-///
-/// The key itself is never in the answer, and the label is redacted: a key is
-/// shown as the first few characters and nothing else.
-#[tauri::command]
-pub async fn key_status() -> Result<Value, String> {
-    let provider = Provider::new();
-    let Some(key) = crate::keys::get_api_key().map_err(|error| error)? else {
-        return Ok(json!({ "valid": false, "reason": "No key configured." }));
-    };
-
-    let response = http()
-        .get(provider.key_url())
-        .bearer_auth(&key)
-        .send()
-        .await
-        .map_err(|e| format!("Could not reach the provider: {e}"))?;
-
-    if !response.status().is_success() {
-        return Ok(json!({ "valid": false }));
-    }
-
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Could not read the provider's answer: {e}"))?;
-    let Ok(raw) = serde_json::from_str::<Value>(&body) else {
-        return Ok(json!({ "valid": false }));
-    };
-
-    /* The answer is nested under `data`, but a gateway in front of the provider
-       may answer flat. Both are read, and neither is invented. Reading only
-       the top level meant the account name was never found. */
-    let data = raw.get("data").unwrap_or(&raw);
-
-    let label = data
-        .get("label")
-        .and_then(Value::as_str)
-        .map(|label| redact(label));
-
-    Ok(json!({
-        "valid": true,
-        "label": label,
-        "limit": data.get("limit"),
-        "remaining": data.get("remaining"),
-        "usage": data.get("usage"),
-        "isFreeTier": data.get("is_free_tier"),
-    }))
-}
-
-/// Hides a key in a label.
-///
-/// The whole key is replaced, not most of it: a key is shown as `sk-***` or
-/// not at all.
+/**
+ * Hides a key in a label.
+ *
+ * A label is free-form text from the network and should never be trusted to
+ * stay masked, so anything key-shaped in it is hidden again. The rule is a
+ * shape rather than one vendor's prefix: a long run of the characters a key
+ * is made of, with a digit in it, is a key until shown otherwise.
+ *
+ * A token the provider has already truncated is left alone — the ellipsis
+ * after it means the far end did the masking, and taking the visible head
+ * off as well would throw away the one piece of the name that is safe to
+ * show.
+ *
+ * The same rule lives in `src/lib/redact.ts`, and a test says the two agree.
+ */
 pub(crate) fn redact(label: &str) -> String {
+    const PREFIXES: [&str; 10] = [
+        "sk-", "sk_", "nvapi-", "gsk_", "xai-", "AIza", "hf_", "r8_", "csk-", "api-",
+    ];
+
+    let characters: Vec<char> = label.chars().collect();
     let mut out = String::new();
-    let mut rest = label;
-    while let Some(position) = rest.find("sk-") {
-        out.push_str(&rest[..position]);
-        let after = &rest[position + 3..];
-        let length = after
-            .chars()
-            .take_while(|character| {
-                character.is_ascii_alphanumeric() || *character == '-' || *character == '_'
-            })
-            .count();
-        if length >= 6 {
-            out.push_str("sk-***");
-            rest = &after[length..];
+    let mut index = 0;
+
+    while index < characters.len() {
+        let character = characters[index];
+        if !character.is_ascii_alphanumeric() && character != '-' && character != '_' {
+            out.push(character);
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        while index < characters.len()
+            && (characters[index].is_ascii_alphanumeric()
+                || characters[index] == '-'
+                || characters[index] == '_')
+        {
+            index += 1;
+        }
+        let token: String = characters[start..index].iter().collect();
+
+        let already_masked = characters
+            .get(index)
+            .map(|next| *next == '…')
+            .unwrap_or(false)
+            || characters
+                .get(index..index + 3)
+                .map(|rest| rest == ['.', '.', '.'])
+                .unwrap_or(false);
+
+        let secret = PREFIXES.iter().any(|prefix| token.starts_with(prefix))
+            || (token.chars().count() >= 16 && token.chars().any(|c| c.is_ascii_digit()));
+
+        if already_masked || !secret {
+            out.push_str(&token);
         } else {
-            out.push_str("sk-");
-            rest = after;
+            out.push_str("***");
         }
     }
-    out.push_str(rest);
+
     out
 }
 
@@ -1333,13 +1369,29 @@ mod tests {
 
     #[test]
     fn a_key_label_keeps_nothing_of_the_key() {
-        assert_eq!(redact("sk-or-v1-abcdefghijkl"), "sk-***");
-        assert_eq!(redact("a key: sk-or-v1-abcdefghijkl (free)"), "a key: sk-*** (free)");
+        assert_eq!(redact("sk-or-v1-abcdefghijkl"), "***");
+        assert_eq!(redact("a key: sk-or-v1-abcdefghijkl (free)"), "a key: *** (free)");
+    }
+
+    /// A key in any vendor's format is hidden, not only one vendor's prefix.
+    #[test]
+    fn a_key_of_any_format_is_hidden() {
+        assert_eq!(redact("nvapi-abcdefghijklmnopqrst"), "***");
+        assert_eq!(redact("AIzaSyABCDEFGHIJKLMNOP"), "***");
+        /* A long run with a digit in it is a key until shown otherwise. */
+        assert_eq!(redact("account 0123456789abcdef"), "account ***");
+    }
+
+    /// A name the provider has already masked is left as it is.
+    #[test]
+    fn an_already_masked_label_is_left_alone() {
+        assert_eq!(redact("sk-or-v1-au7…890"), "sk-or-v1-au7…890");
     }
 
     #[test]
     fn a_label_with_no_key_in_it_is_left_alone() {
         assert_eq!(redact("Some User"), "Some User");
+        assert_eq!(redact("Production key for the client"), "Production key for the client");
     }
 
     #[test]

@@ -37,9 +37,11 @@ import type {
 const REASONING_GUIDE = "https://platform.openai.com/docs/guides/reasoning";
 
 /**
- * Values documented for OpenAI's reasoning effort. `max` is deliberately absent:
- * OpenAI's enum stops at `xhigh`, and `max` belongs to Anthropic's effort
- * vocabulary. It is not borrowed from `verbosity`, which is a different control.
+ * Values documented for OpenAI's reasoning effort.
+ *
+ * `max` is at the top: OpenAI's Chat Completions reference documents
+ * `none, minimal, low, medium, high, xhigh, max`. It is not borrowed from
+ * `verbosity`, which is a different control.
  */
 const DOCUMENTED_EFFORT_VALUES = [
   "none",
@@ -48,6 +50,7 @@ const DOCUMENTED_EFFORT_VALUES = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ] as const;
 
 const EFFORT_INTENSITY: Record<string, EffortValue["intensity"]> = {
@@ -57,6 +60,7 @@ const EFFORT_INTENSITY: Record<string, EffortValue["intensity"]> = {
   medium: "medium",
   high: "high",
   xhigh: "maximum",
+  max: "maximum",
 };
 
 const EFFORT_LABELS: Record<string, string> = {
@@ -66,6 +70,7 @@ const EFFORT_LABELS: Record<string, string> = {
   medium: "Medium",
   high: "High",
   xhigh: "Extra high",
+  max: "Max",
 };
 
 /** When the curated table below was last checked against the guide. */
@@ -221,7 +226,11 @@ export const openaiAdapter: ModelProviderAdapter = {
     }
 
     // Exact wire value, unmodified. Never translated or renamed.
-    return { kind: "payload", fields: { reasoning: { effort: value } } };
+    //
+    // The Chat Completions surface takes `reasoning_effort` at the top level.
+    // The nested `reasoning: { effort }` shape belongs to the Responses
+    // surface, and sending it here is a request the provider refuses.
+    return { kind: "payload", fields: { reasoning_effort: value } };
   },
 };
 

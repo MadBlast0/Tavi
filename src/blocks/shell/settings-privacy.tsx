@@ -1,7 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { DownloadIcon, ShieldCheckIcon, Trash2Icon, UploadIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  FolderXIcon,
+  ShieldCheckIcon,
+  Trash2Icon,
+  UploadIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/button"
 import {
@@ -11,6 +17,7 @@ import {
 } from "@/lib/backup"
 import { clearChats } from "@/lib/chats"
 import { clearSessions } from "@/lib/sessions"
+import { forgetAllWorkspaces } from "@/lib/workspace"
 import { cn } from "@/lib/utils"
 
 /**
@@ -57,6 +64,38 @@ function Row({
 }
 
 /**
+ * What is about to be removed.
+ *
+ * The names are the ones the pane uses elsewhere, so the question and the
+ * button beside it say the same thing.
+ */
+type Removal = "chats" | "sessions" | "folders" | "everything"
+
+/** What each removal takes with it, in words. */
+const REMOVAL: Record<Removal, { title: string; detail: string }> = {
+  chats: {
+    title: "Delete every chat?",
+    detail:
+      "Every chat is removed from this machine. There is no copy afterwards unless you have exported one.",
+  },
+  sessions: {
+    title: "Delete every code session?",
+    detail:
+      "Every code session is removed from this machine. There is no copy afterwards unless you have exported one.",
+  },
+  folders: {
+    title: "Forget every folder?",
+    detail:
+      "Tavi gives up its access to every folder you granted it. The folders themselves are not touched — they stay where they are, on your disk — but Tavi can no longer read them, and you would have to grant it access again.",
+  },
+  everything: {
+    title: "Delete everything?",
+    detail:
+      "Every chat, every code session, and every folder grant are removed from this machine. The folders themselves are not touched, but Tavi can no longer read them. There is no copy of anything afterwards unless you have exported it.",
+  },
+}
+
+/**
  * The Privacy section.
  *
  * Everything here is about the user's own data: where it is, how to take a
@@ -64,12 +103,17 @@ function Row({
  * is the one people look for and cannot find, and it is the one that has to be
  * findable — a control that removes everything should be easy to reach and
  * impossible to do by accident.
+ *
+ * There is one control for everything and one for each thing, because those
+ * are two different needs. Somebody tidying up wants the folders back and the
+ * chats gone; somebody who wants the machine clean wants the lot. Neither
+ * should have to guess what the other button does.
  */
 export function PrivacySettings() {
   const [where, setWhere] = React.useState<string | null>(null)
   const [message, setMessage] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
-  const [confirming, setConfirming] = React.useState(false)
+  const [removing, setRemoving] = React.useState<Removal | null>(null)
 
   React.useEffect(() => {
     let current = true
@@ -114,13 +158,73 @@ export function PrivacySettings() {
         : `Added ${result.added}.`
     })
 
-  const clearAll = () =>
+  /** Removes what the button named, and says what was removed. */
+  const remove = (what: Removal) =>
     run(async () => {
-      await clearChats()
-      await clearSessions()
-      setConfirming(false)
-      return "Your conversations were removed from this machine."
+      const removed: string[] = []
+      if (what === "chats" || what === "everything") {
+        await clearChats()
+        removed.push("every chat")
+      }
+      if (what === "sessions" || what === "everything") {
+        await clearSessions()
+        removed.push("every code session")
+      }
+      if (what === "folders" || what === "everything") {
+        const folders = await forgetAllWorkspaces()
+        removed.push(
+          folders === 0
+            ? "no folder grants"
+            : `${folders} folder grant${folders === 1 ? "" : "s"}`,
+        )
+      }
+      setRemoving(null)
+      const said = removed.join(", ")
+      return `Removed ${said} from this machine.`
     })
+
+  /**
+   * The confirmation for a removal.
+   *
+   * The button that was pressed turns into the one that does it, so the
+   * thing that happens is the thing that was asked for.
+   */
+  const confirm = (
+    what: Removal,
+    label: string,
+    icon: React.ReactNode = <Trash2Icon className="size-4" />,
+  ) =>
+    removing === what ? (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={busy}
+          onClick={() => void remove(what)}
+        >
+          {icon}
+          {label}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => setRemoving(null)}
+        >
+          Keep them
+        </Button>
+      </div>
+    ) : (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => setRemoving(what)}
+      >
+        {icon}
+        {label}
+      </Button>
+    )
 
   return (
     <div className="flex flex-col gap-8">
@@ -178,44 +282,43 @@ export function PrivacySettings() {
             Import
           </Button>
         </Row>
+      </Group>
+
+      <Group title="What to remove">
+        <Row
+          label="Delete every chat"
+          description="Remove every chat from this machine, and leave the code sessions alone."
+        >
+          {confirm("chats", "Delete chats")}
+        </Row>
+
+        <Row
+          label="Delete every code session"
+          description="Remove every code session from this machine, and leave the chats alone."
+        >
+          {confirm("sessions", "Delete sessions")}
+        </Row>
+
+        <Row
+          label="Forget every folder"
+          description="Give up Tavi's access to every folder you granted it. The folders stay where they are; you would have to grant access again."
+        >
+          {confirm("folders", "Forget folders", <FolderXIcon className="size-4" />)}
+        </Row>
 
         <Row
           label="Delete everything"
-          description="Remove every chat and every session from this machine. There is no copy afterwards unless you have exported one."
+          description="Remove every chat, every code session and every folder grant from this machine. The folders themselves are not touched. There is no copy afterwards unless you have exported one."
         >
-          {confirming ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={busy}
-                onClick={() => void clearAll()}
-              >
-                <Trash2Icon className="size-4" />
-                Delete them
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => setConfirming(false)}
-              >
-                Keep them
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => setConfirming(true)}
-            >
-              <Trash2Icon className="size-4" />
-              Delete everything
-            </Button>
-          )}
+          {confirm("everything", "Delete everything")}
         </Row>
       </Group>
+
+      {removing ? (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {REMOVAL[removing].title} {REMOVAL[removing].detail}
+        </p>
+      ) : null}
 
       {message ? (
         <p

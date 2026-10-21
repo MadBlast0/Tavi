@@ -58,15 +58,23 @@ import {
   type StoredUsage,
 } from "@/lib/threads"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
-import { fetchModels, streamChat, type ChatRequest } from "@/lib/transport"
-import { listApiKeys, type ApiKeyInfo } from "@/lib/secret"
+import {
+  cancelClone,
+  cloneRepository,
+  fetchModels,
+  listProjects,
+  listProviderKeys,
+  streamChat,
+  type ChatRequest,
+  type ProviderKey,
+} from "@/lib/api"
 import { SETTINGS_CLOSED } from "@/lib/open-settings"
-import { cancelClone, cloneRepository, listProjects } from "@/lib/projects"
 import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
 } from "@/lib/modes"
 import type { Side } from "@/lib/sides"
+import { ACTIVE_PROVIDER_ID } from "@/lib/providers"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
 
@@ -83,6 +91,16 @@ const MORPH = {
   duration: duration.morph / 1000,
   ease: easeOut as unknown as [number, number, number, number],
 } as const
+
+/**
+ * Whether there is a key the app can reach a model with.
+ *
+ * The provider the app talks to is the one that matters. A key for another
+ * provider is stored and can be checked, but nothing in the app speaks to
+ * those providers yet, so it cannot be what a request goes out with.
+ */
+const hasKey = (keys: ProviderKey[]): boolean =>
+  keys.some((key) => key.active && key.provider === ACTIVE_PROVIDER_ID)
 
 /** Collapse/expand of a region that only exists in one variant. */
 const variantRegion = {
@@ -1161,7 +1179,7 @@ export function PromptBlock() {
    * models that cannot be called is a list of things that will fail. The
    * picker says what is missing instead.
    */
-  const [keys, setKeys] = React.useState<ApiKeyInfo[] | null>(null)
+  const [keys, setKeys] = React.useState<ProviderKey[] | null>(null)
   /**
    * What the server said when the models could not be read.
    *
@@ -1170,13 +1188,25 @@ export function PromptBlock() {
    * are shown: it knows what went wrong, and this does not.
    */
   const [modelsError, setModelsError] = React.useState<string | null>(null)
+  /**
+   * How old the catalogue is, and whether it is the last good copy.
+   *
+   * A catalogue is a list of models and prices. One that is three weeks old
+   * names models that no longer exist, so the age is shown rather than
+   * assumed, and the one state a person can act on — the provider could not
+   * be reached and this is the last good copy — is called out.
+   */
+  const [catalogueFreshness, setCatalogueFreshness] = React.useState<{
+    fetchedAt: number
+    degraded: boolean
+  } | null>(null)
 
   React.useEffect(() => {
     let current = true
     let timer: number | undefined
 
     const read = (attempt = 0) => {
-      void listApiKeys()
+      void listProviderKeys()
         .then((list) => {
           if (current) setKeys(list)
         })
@@ -1222,12 +1252,16 @@ export function PromptBlock() {
   React.useEffect(() => {
     /* No key, no models. Nothing is fetched from a provider the app cannot
        reach, and the picker says what is missing. */
-    if (!keys || keys.length === 0) return
+    if (!keys || !hasKey(keys)) return
     let current = true
     fetchModels()
       .then((data) => {
         if (!current) return
         setModelsError(null)
+        setCatalogueFreshness({
+          fetchedAt: data.fetchedAt,
+          degraded: data.degraded,
+        })
         const list: Array<{
           id: string
           name: string
@@ -1235,6 +1269,7 @@ export function PromptBlock() {
           contextLength: number | null
           promptPrice: number
           completionPrice: number
+          cachedInputPrice: number | null
           capabilities?: ModelReasoningCapabilities
         }> = data.models ?? []
         const free = list.filter((m) => m.free)
@@ -1270,7 +1305,9 @@ export function PromptBlock() {
                 limit: m.contextLength ?? null,
                 pricing: {
                   input: m.promptPrice ?? 0,
-                  cachedInput: 0,
+                  /* Cached input is billed at its own rate, and pricing it at
+                     the full input rate over-reports what a request costs. */
+                  cachedInput: m.cachedInputPrice ?? 0,
                   output: m.completionPrice ?? 0,
                 },
               },
@@ -1887,8 +1924,9 @@ export function PromptBlock() {
       effort={effort}
       onEffortChange={setEffort}
       recommended="medium"
-      noKey={keys !== null && keys.length === 0}
+      noKey={keys !== null && !hasKey(keys)}
       error={modelsError}
+      catalogue={catalogueFreshness}
     />
   )
 

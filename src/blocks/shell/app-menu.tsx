@@ -1,8 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { getCurrentWindow } from "@tauri-apps/api/window"
 import { TextAlignJustifyStartIcon } from "lucide-react"
 
 import { Button } from "@/components/button"
@@ -16,7 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu"
 import { useNewThread } from "@/blocks/prompt-input/thread-bridge"
-import { isDesktopApp } from "@/lib/desktop"
+import { hideWindow, quitApp } from "@/lib/desktop"
+import { isDesktopApp } from "@/lib/platform"
 
 /**
  * The application menu.
@@ -50,6 +49,24 @@ type MenuEntry = {
 type MenuAction = "new-chat" | "new-session" | "close-window" | "exit"
 
 const NOT_BUILT = "Not built yet"
+
+/**
+ * The commands only the desktop app can run, and why.
+ *
+ * "Close window" puts the app away and "Exit" leaves it, and both are things
+ * the operating system owns. A browser tab can be neither hidden nor closed
+ * from the page it is showing, so in a browser these two are rendered
+ * disabled with the reason said on hover — the same thing every other
+ * command in this menu that does not exist yet does.
+ *
+ * Leaving them looking live would be the one kind of lie this menu cannot
+ * tell: the entry is there, it is enabled, and pressing it does nothing.
+ */
+const DESKTOP_ONLY: Partial<Record<MenuAction, string>> = {
+  "close-window":
+    "A browser tab cannot be put away. This command belongs to the desktop app.",
+  exit: "A browser tab cannot be closed from the page. This command belongs to the desktop app.",
+}
 
 /**
  * The menu's contents.
@@ -181,19 +198,38 @@ function MenuEntries({
   entries: MenuEntry[]
   run: (action: MenuAction) => void
 }) {
-  return entries.map((entry) =>
-    entry.children ? (
-      <DropdownMenuSub key={entry.label}>
-        <DropdownMenuSubTrigger>{entry.label}</DropdownMenuSubTrigger>
-        <DropdownMenuSubContent>
-          <MenuEntries entries={entry.children} run={run} />
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
-    ) : entry.action ? (
-      <DropdownMenuItem key={entry.label} onClick={() => run(entry.action!)}>
-        {entry.label}
-      </DropdownMenuItem>
-    ) : (
+  return entries.map((entry) => {
+    /* An entry with an action this build cannot honour is drawn disabled,
+       with the reason said on hover. It stays in the tree, so it is still
+       discoverable — a menu that quietly dropped the rows would be a
+       different menu in each build. */
+    const blocked = entry.action ? DESKTOP_ONLY[entry.action] : undefined
+    const inert = blocked !== undefined && !isDesktopApp()
+
+    if (entry.children) {
+      return (
+        <DropdownMenuSub key={entry.label}>
+          <DropdownMenuSubTrigger>{entry.label}</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <MenuEntries entries={entry.children} run={run} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )
+    }
+
+    if (entry.action) {
+      return inert ? (
+        <DropdownMenuItem key={entry.label} disabled title={blocked}>
+          {entry.label}
+        </DropdownMenuItem>
+      ) : (
+        <DropdownMenuItem key={entry.label} onClick={() => run(entry.action!)}>
+          {entry.label}
+        </DropdownMenuItem>
+      )
+    }
+
+    return (
       <DropdownMenuItem
         key={entry.label}
         disabled
@@ -201,8 +237,8 @@ function MenuEntries({
       >
         {entry.label}
       </DropdownMenuItem>
-    ),
-  )
+    )
+  })
 }
 
 /**
@@ -231,10 +267,10 @@ export function AppMenu() {
       }
       if (!isDesktopApp()) return
       if (action === "close-window") {
-        void getCurrentWindow().hide().catch(() => {})
+        void hideWindow().catch(() => {})
         return
       }
-      void invoke("quit_app").catch(() => {})
+      void quitApp().catch(() => {})
     },
     [newThread],
   )

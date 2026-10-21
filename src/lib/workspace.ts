@@ -19,11 +19,12 @@ import {
   listWorkspaceEntries,
   listWorkspaces as listRustWorkspaces,
   grantWorkspace as grantRustWorkspace,
+  pickDirectory as pickRustDirectory,
   readWorkspaceFile as readRustWorkspaceFile,
   relinkWorkspace as relinkRustWorkspace,
   revokeWorkspace as revokeRustWorkspace,
 } from "./desktop.ts"
-import { isDesktopApp } from "./desktop.ts"
+import { isDesktopApp } from "./platform.ts"
 import {
   MAX_READ_BYTES,
   MAX_WALK_DEPTH,
@@ -106,15 +107,14 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
  */
 export const pickWorkspace = async (): Promise<Workspace | null> => {
   if (isDesktopApp()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ directory: true, multiple: false });
-    if (!picked || Array.isArray(picked)) return null;
-    const grant = await grantRustWorkspace(picked);
-    return { id: grant.id, name: grant.name };
+    const picked = await pickRustDirectory()
+    if (!picked) return null
+    const grant = await grantRustWorkspace(picked)
+    return { id: grant.id, name: grant.name }
   }
-  const folder = await pickFolder();
-  return folder ? { id: folder.id, name: folder.name } : null;
-};
+  const folder = await pickFolder()
+  return folder ? { id: folder.id, name: folder.name } : null
+}
 
 /**
  * Points a folder at its new place.
@@ -125,10 +125,9 @@ export const pickWorkspace = async (): Promise<Workspace | null> => {
  */
 export const relinkWorkspace = async (id: string): Promise<Workspace | null> => {
   if (isDesktopApp()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ directory: true, multiple: false });
-    if (!picked || Array.isArray(picked)) return null;
-    const grant = await relinkRustWorkspace(id, picked);
+    const picked = await pickRustDirectory()
+    if (!picked) return null
+    const grant = await relinkRustWorkspace(id, picked)
     return { id: grant.id, name: grant.name, missing: grant.missing };
   }
 
@@ -151,6 +150,24 @@ export const forgetWorkspace = async (id: string): Promise<void> => {
   }
   await forgetFolder(id);
 };
+
+/**
+ * Gives up access to every folder.
+ *
+ * The folders on disk are not touched. This is about what this app may
+ * reach, and a folder the user gave us once is still their folder
+ * afterwards.
+ *
+ * The count is returned so the app can say what happened rather than leaving
+ * the reader to work it out.
+ */
+export const forgetAllWorkspaces = async (): Promise<number> => {
+  const folders = await listWorkspaces()
+  for (const folder of folders) {
+    await forgetWorkspace(folder.id)
+  }
+  return folders.length
+}
 
 /**
  * The files inside a workspace that are worth reading.

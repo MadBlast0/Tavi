@@ -47,12 +47,23 @@ const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
  * `thinking.type` values and how each behaves. `enabled` is manual extended
  * thinking with a caller-set `budget_tokens`; that is Anthropic's term and is
  * only used where the API expects it.
+ *
+ * `between_tools` is the low-thinking alternative Anthropic publishes: the
+ * model thinks between tool calls without extended thinking for the whole
+ * turn. It matters because Anthropic documents that `disabled` is rejected at
+ * high effort on the newest models, and `between_tools` is what is left.
  */
 const THINKING_TYPES = {
   adaptive: {
     label: "Adaptive",
     description: "The model decides whether and how much to think.",
     behavior: "adaptive",
+  },
+  between_tools: {
+    label: "Between tools",
+    description:
+      "The model thinks between tool calls, without extended thinking for the whole turn.",
+    behavior: "between_tools",
   },
   enabled: {
     label: "Extended thinking",

@@ -2,11 +2,14 @@
 
 import * as React from "react"
 import {
+  CircleAlertIcon,
   CircleCheckIcon,
+  CircleHelpIcon,
   ClipboardPasteIcon,
   ExternalLinkIcon,
   KeyRoundIcon,
   PlusIcon,
+  RefreshCwIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -58,6 +61,7 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
+  ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/item"
@@ -66,51 +70,199 @@ import {
   NativeSelectOption,
 } from "@/components/native-select"
 import { Skeleton } from "@/components/skeleton"
-import { openExternal } from "@/lib/open-external"
-import { PROVIDERS, providerFor } from "@/lib/providers"
 import {
-  clearApiKey,
-  isKeyStoreAvailable,
-  listApiKeys,
-  saveApiKey,
-  type ApiKeyInfo,
-} from "@/lib/secret"
+  activateProviderKey,
+  checkProviderKey,
+  listProviderKeys,
+  openExternal,
+  removeProviderKey,
+  renameProviderKey,
+  replaceProviderKey,
+  recheckProviderKey,
+  saveProviderKey,
+  type ProviderKey,
+} from "@/lib/api"
+import { ACTIVE_PROVIDER_ID, PROVIDERS, providerFor } from "@/lib/providers"
+import { isDesktopApp } from "@/lib/platform"
 import { cn } from "@/lib/utils"
-
-/**
- * Credits, as the provider reports them.
- *
- * Only one provider reports a limit at all, so this is used in one place and
- * the other rows say nothing about money.
- */
-const MONEY = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-})
-
-/** What the pane says about the keys, on the desktop. */
-const DESKTOP_NOTE =
-  "A key lets Tavi reach a provider as you. Each one is kept in this computer's credential store, and none of them is ever read back into the app. A development build also reads a key from .env.local, so a key can be given to the app without being pasted in."
-
-/** What the pane says about the keys, in a browser. */
-const WEB_NOTE =
-  "A key lets Tavi reach a provider as you. Each one is kept by this computer's server, and none of them is ever read back into the app. A key in the environment the server was started with — the .env.local file in development — is used too, and cannot be changed from here."
 
 /**
  * The API keys pane.
  *
- * A list, one row per provider that has a key, and nothing else. The key
- * itself is never shown — it is never read back out of where it is kept, and
- * never reaches this code at all — so a row can say whether the provider
- * accepts it and whose key it is, and can put a new one in or take the old one
- * away, and can do nothing else with it.
+ * A list of the keys the app holds, grouped by the provider they are for —
+ * because the provider is a property of the key, and two keys for one
+ * provider have to sit together to be told apart.
+ *
+ * The key itself is never shown. It is never read back out of where it is
+ * kept, and on the desktop it never reaches this code at all — so a row can
+ * say whether the provider accepts it and whose key it is, and can put a new
+ * one in, rename it, choose between two, and take one away, and can do
+ * nothing else with it.
  *
  * The heading is drawn here rather than by the settings card because it
  * carries two things the card's shared heading has no room for: how many keys
  * there are, and the button that adds one. `tall` is the card's narrow shape,
  * where the strip of tabs has already named the section and saying it again
  * would say it twice.
+ */
+
+/**
+ * The pane's own inset.
+ *
+ * The `Item` component insets its own content, so a row's icon tile would
+ * start a little to the right of the heading above it and its actions would
+ * stop a little to the left of the button beside the heading. One value, put
+ * on the element itself, so the two cannot drift: an inline style beats a
+ * class, whichever order the stylesheet happens to emit them in.
+ */
+const PANE_INSET = { "--item-px": "0px" } as React.CSSProperties
+
+/** What the pane says about the keys, on the desktop. */
+const DESKTOP_NOTE =
+  "A key lets Tavi reach a provider as you. Each one is kept in this computer's credential store — never written to disk by Tavi, never sent to a browser, and never logged. A development build also reads a key from .env.local, so a key can be given to the app without being pasted in."
+
+/** What the pane says about the keys, in a browser. */
+const WEB_NOTE =
+  "A key lets Tavi reach a provider as you. Each one is kept by this computer's server — never sent back to the browser, and never logged. A key in the environment the server was started with — the .env.local file in development — is used too, and cannot be changed from here."
+
+/** The window a provider's spending cap resets on, in words. */
+const WINDOW_NAME: Record<string, string> = {
+  daily: "today",
+  weekly: "this week",
+  monthly: "this month",
+}
+
+/**
+ * Money, in the provider's own unit.
+ *
+ * The unit is a field on the key, never an assumption: a silent "$" on a
+ * provider that counts credits would be a lie about the number.
+ *
+ * An amount that rounds away to nothing is not nothing, so a figure smaller
+ * than a cent is shown with the digits it actually has rather than as zero.
+ */
+function money(value: number, currency: string | null): string {
+  const format = (digits: number) =>
+    currency
+      ? new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency,
+          maximumFractionDigits: digits,
+        }).format(value)
+      : new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(
+          value,
+        )
+
+  const rounded = format(2)
+  const shown = Number(rounded.replace(/[^0-9.-]/g, ""))
+  if (value !== 0 && shown === 0) {
+    return format(6)
+  }
+  return rounded
+}
+
+/** A date, in the short form. */
+function shortDate(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+/** How long ago something happened, in words. */
+function ago(seconds: number): string {
+  const delta = Math.floor(Date.now() / 1000) - seconds
+  if (delta < 60) return "just now"
+  if (delta < 3600) {
+    const minutes = Math.floor(delta / 60)
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+  }
+  if (delta < 86_400) {
+    const hours = Math.floor(delta / 3600)
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  }
+  const days = Math.floor(delta / 86_400)
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`
+  return `on ${shortDate(seconds)}`
+}
+
+/**
+ * What the provider's answer means, as a badge.
+ *
+ * The states are separate because they are separate facts. A key whose
+ * account is out of credit is not a key that was refused, and a key that was
+ * never checked is not a key that is broken.
+ */
+type Standing = { label: string; tone: "default" | "destructive" }
+
+function standingOf(key: ProviderKey): Standing {
+  const { valid, checkReason } = key
+  if (valid === true) {
+    if (checkReason === "rate-limited") return { label: "Rate limited", tone: "default" }
+    return { label: "Accepted", tone: "default" }
+  }
+  if (valid === false) {
+    if (checkReason === "no-credit") return { label: "No credit", tone: "destructive" }
+    return { label: "Not accepted", tone: "destructive" }
+  }
+  if (checkReason === "unreachable") return { label: "Not checked", tone: "default" }
+  return { label: "Not checked", tone: "default" }
+}
+
+/**
+ * What a key says about itself.
+ *
+ * The allowance is the usage **in the cap's window**, not the all-time
+ * figure: a cap that resets monthly compared with a lifetime total is a
+ * sentence about two different things.
+ */
+function allowanceOf(key: ProviderKey): string | null {
+  const { limit, limitRemaining, limitReset, usage, usageInWindow } = key
+  const unit = key.limitCurrency
+
+  if (limit === null && limitRemaining === null) {
+    if (usage === null) return null
+    return `${money(usage, unit)} spent in total`
+  }
+
+  const used = usageInWindow ?? usage
+  if (used === null || limit === null) {
+    return "No spending limit"
+  }
+
+  if (used > limit) {
+    return `${money(used - limit, unit)} over`
+  }
+
+  const left = limitRemaining ?? limit - used
+  const window = limitReset ? WINDOW_NAME[limitReset] : null
+  return (
+    `${money(used, unit)} of ${money(limit, unit)} used` +
+    (window ? ` ${window}` : "") +
+    ` · ${money(left, unit)} left`
+  )
+}
+
+/**
+ * Where a key is, when it is not in the store this pane writes to.
+ *
+ * A key in the development file, or in the environment the website's server
+ * was started with, is somewhere else entirely. The buttons would write a
+ * second key somewhere the pane can reach and leave the one in use unchanged,
+ * which is worse than not offering them at all.
+ */
+const isElsewhere = (key: ProviderKey) =>
+  key.source === "dev-file" || key.source === "env"
+
+/** What is said about a key that is somewhere else. */
+const SOURCE_NOTE: Record<string, string> = {
+  "dev-file": "From .env.local, for development",
+  env: "From the environment this server was started with",
+}
+
+/**
+ * The pane.
  */
 export function KeySettings({
   label,
@@ -126,17 +278,18 @@ export function KeySettings({
      the same list, the same buttons, the same dialog — because a person
      setting a key should not have to learn a second version of the screen
      depending on where the app is running. */
-  const held = isKeyStoreAvailable()
+  const held = isDesktopApp()
 
-  const [keys, setKeys] = React.useState<ApiKeyInfo[] | null>(null)
+  const [keys, setKeys] = React.useState<ProviderKey[] | null>(null)
   const [addOpen, setAddOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<string | null>(null)
-  const [removing, setRemoving] = React.useState<ApiKeyInfo | null>(null)
+  const [renaming, setRenaming] = React.useState<ProviderKey | null>(null)
+  const [replacing, setReplacing] = React.useState<ProviderKey | null>(null)
+  const [removing, setRemoving] = React.useState<ProviderKey | null>(null)
   const [removingOpen, setRemovingOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
     try {
-      setKeys(await listApiKeys())
+      setKeys(await listProviderKeys())
     } catch {
       /* The list could not be read. Nothing is claimed about what is stored. */
       setKeys([])
@@ -147,12 +300,22 @@ export function KeySettings({
     void load()
   }, [load])
 
-  const stored = (keys ?? []).filter((key) => key.stored)
+  const stored = (keys ?? []).filter((key) => key.source !== "dev-file")
+
+  /* The keys, grouped by the provider they are for. The order is the
+     provider table's own, so the groups do not move about between visits. */
+  const groups = PROVIDERS.map((provider) => ({
+    provider,
+    keys: stored.filter((key) => key.provider === provider.id),
+  })).filter((group) => group.keys.length > 0)
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
+      {/* The heading and the action are siblings on the first line, so the
+          button's centre and the heading's centre are the same height. The
+          description sits below, where a reference layout puts it. */}
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <h2
             className={cn(
               "flex items-center gap-2 text-base leading-snug font-semibold text-pretty",
@@ -166,54 +329,66 @@ export function KeySettings({
               </Badge>
             )}
           </h2>
-          <p
-            className={cn(
-              "max-w-prose text-sm text-pretty text-muted-foreground",
-              !tall && "mt-1"
-            )}
-          >
-            {held ? DESKTOP_NOTE : WEB_NOTE}
-          </p>
-        </div>
 
-        <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-          <PlusIcon className="size-4" />
-          Add key
-        </Button>
+          <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
+            <PlusIcon className="size-4" />
+            Add key
+          </Button>
+        </div>
+        <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+          {held ? DESKTOP_NOTE : WEB_NOTE}
+        </p>
       </div>
 
       {keys === null ? (
         <SkeletonRows />
-      ) : stored.length === 0 ? (
+      ) : groups.length === 0 ? (
         <EmptyKeys onAdd={() => setAddOpen(true)} />
       ) : (
-        <div className="flex flex-col">
-          {stored.map((key) => (
-            <KeyRow
-              key={key.provider}
-              info={key}
-              onEdit={() => setEditing(key.provider)}
-              onRemove={() => {
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <KeyGroup
+              key={group.provider.id}
+              provider={group.provider.id}
+              label={group.provider.label}
+              keys={group.keys}
+              onRename={setRenaming}
+              onReplace={setReplacing}
+              onRemove={(key) => {
                 setRemoving(key)
                 setRemovingOpen(true)
               }}
+              onChanged={() => void load()}
             />
           ))}
         </div>
       )}
 
       <KeyDialog
-        open={addOpen || editing !== null}
-        onOpenChange={(open) => {
-          setAddOpen(open)
-          if (!open) {
-            setEditing(null)
-          }
-        }}
-        provider={editing ?? undefined}
+        open={addOpen}
+        onOpenChange={setAddOpen}
         keys={keys ?? []}
         held={held}
         onSaved={() => void load()}
+      />
+      <RenameKeyDialog
+        key={renaming?.id ?? "none"}
+        open={renaming !== null}
+        info={renaming}
+        onOpenChange={(open) => {
+          if (!open) setRenaming(null)
+        }}
+        onRenamed={() => void load()}
+      />
+      <ReplaceKeyDialog
+        key={replacing?.id ?? "none"}
+        open={replacing !== null}
+        info={replacing}
+        held={held}
+        onOpenChange={(open) => {
+          if (!open) setReplacing(null)
+        }}
+        onReplaced={() => void load()}
       />
       <RemoveKeyDialog
         open={removingOpen}
@@ -248,72 +423,257 @@ function SkeletonRows() {
 }
 
 /**
- * One provider's key.
+ * One provider's keys.
  *
- * Two lines: which provider it is for, and what that provider says about it.
- * The status is a badge rather than a word in the sentence, because it is the
- * one thing about a key that decides whether it can be used, and it should be
- * the same shape on every row so the eye can run down the column.
+ * The keys sit together because the provider is a property of the key, and
+ * two keys for one provider are only tellable apart by being side by side.
+ */
+function KeyGroup({
+  provider,
+  label,
+  keys,
+  onRename,
+  onReplace,
+  onRemove,
+  onChanged,
+}: {
+  provider: string
+  label: string
+  keys: ProviderKey[]
+  onRename: (key: ProviderKey) => void
+  onReplace: (key: ProviderKey) => void
+  onRemove: (key: ProviderKey) => void
+  onChanged: () => void
+}) {
+  const details = providerFor(provider)
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm leading-snug font-semibold text-pretty">
+          {label}
+        </h3>
+        <Badge appearance="muted" shape="pill" size="sm">
+          {keys.length}
+        </Badge>
+      </div>
+
+      <ItemGroup variant="default">
+        {keys.map((key) => (
+          <KeyRow
+            key={key.id}
+            info={key}
+            onRename={() => onRename(key)}
+            onReplace={() => onReplace(key)}
+            onRemove={() => onRemove(key)}
+            onChanged={onChanged}
+          />
+        ))}
+      </ItemGroup>
+
+      {details ? (
+        <p className="max-w-prose text-xs text-pretty text-muted-foreground">
+          If you think a {label} key has been exposed: replace it here, then
+          revoke it at {label} and check {label}&apos;s usage and request logs.
+        {details.logsUrl ? (
+          <>
+            {" "}
+            <a
+              href={details.logsUrl}
+              onClick={(event) => {
+                event.preventDefault()
+                void openExternal(details.logsUrl!)
+              }}
+              className="inline-flex items-center gap-1 underline underline-offset-4"
+            >
+              Usage and logs
+              <ExternalLinkIcon className="size-3" />
+            </a>
+          </>
+        ) : null}
+        {details.limitsUrl ? (
+          <>
+            {" "}
+            <a
+              href={details.limitsUrl}
+              onClick={(event) => {
+                event.preventDefault()
+                void openExternal(details.limitsUrl!)
+              }}
+              className="inline-flex items-center gap-1 underline underline-offset-4"
+            >
+              Spending limits
+              <ExternalLinkIcon className="size-3" />
+            </a>
+          </>
+        ) : null}
+        .
+      </p>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * One key.
+ *
+ * The title is the key's own name — the only thing that tells two keys for
+ * the same provider apart. Beneath it is what the provider says about the
+ * key, and the buttons are named after it, so a screen-reader user moving
+ * down the list hears which row each button belongs to.
  */
 function KeyRow({
   info,
-  onEdit,
+  onRename,
+  onReplace,
   onRemove,
+  onChanged,
 }: {
-  info: ApiKeyInfo
-  onEdit: () => void
+  info: ProviderKey
+  onRename: () => void
+  onReplace: () => void
   onRemove: () => void
+  onChanged: () => void
 }) {
+  const [checking, setChecking] = React.useState(false)
+  const standing = standingOf(info)
+  const provider = providerFor(info.provider)
+  const elsewhere = isElsewhere(info)
+
+  const check = async () => {
+    setChecking(true)
+    try {
+      await recheckProviderKey(info.id)
+      onChanged()
+    } catch {
+      /* The provider could not be asked. The row keeps the standing it had. */
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const makeActive = async () => {
+    try {
+      await activateProviderKey(info.id)
+      onChanged()
+    } catch {
+      /* The pointer did not move. The list is re-read either way. */
+      onChanged()
+    }
+  }
+
   return (
-    <Item size="sm" className="border-b last:border-b-0">
+    <Item size="sm" className="border-b last:border-b-0" style={PANE_INSET}>
       <ItemMedia variant="icon">
         <KeyRoundIcon />
       </ItemMedia>
 
       <ItemContent>
-        <ItemTitle>{info.label}</ItemTitle>
+        <ItemTitle>
+          {info.name}
+          {info.active ? (
+            <Badge appearance="muted" shape="pill" size="sm">
+              In use
+            </Badge>
+          ) : null}
+          <Badge
+            variant={standing.tone === "destructive" ? "destructive" : "default"}
+            appearance="outline"
+            size="sm"
+          >
+            {standing.tone === "destructive" ? (
+              <>
+                <TriangleAlertIcon />
+                {standing.label}
+              </>
+            ) : standing.label === "Accepted" ? (
+              <>
+                <CircleCheckIcon />
+                {standing.label}
+              </>
+            ) : standing.label === "Rate limited" ? (
+              <>
+                <CircleAlertIcon />
+                {standing.label}
+              </>
+            ) : (
+              standing.label
+            )}
+          </Badge>
+        </ItemTitle>
+
         <ItemDescription>{detail(info)}</ItemDescription>
+
+        <p className="text-xs text-pretty text-muted-foreground">
+          {[
+            `Added ${shortDate(info.createdAt)}`,
+            info.lastUsedAt
+              ? `Last used by Tavi ${ago(info.lastUsedAt)}`
+              : "Not used by Tavi yet",
+            info.expiresAt ? `Expires ${shortDate(info.expiresAt)}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
       </ItemContent>
 
       <ItemActions>
-        <Badge
-          variant={info.valid === false ? "destructive" : "default"}
-          appearance="outline"
-          size="sm"
-        >
-          {info.valid === false ? (
-            <>
-              <TriangleAlertIcon />
-              Not accepted
-            </>
-          ) : info.valid === true ? (
-            <>
-              <CircleCheckIcon />
-              Accepted
-            </>
-          ) : (
-            "Not checked"
-          )}
-        </Badge>
-
-        {/* A key that is not in the store is not in the store: there is
-            nothing here to edit or to take away. The buttons would write a
-            second key somewhere else and leave the one in use unchanged,
-            which is worse than not offering them. */}
-        {isElsewhere(info) ? null : (
+        {/* A key that is not in the store this pane writes to is not in it:
+            there is nothing here to edit or to take away. The buttons would
+            write a second key somewhere else and leave the one in use
+            unchanged, which is worse than not offering them. */}
+        {elsewhere ? null : (
           <>
+            {info.active ? null : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={`Make active ${info.name}`}
+                onClick={() => void makeActive()}
+              >
+                Make active
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={onEdit}
+              aria-label={`Rename ${info.name}`}
+              onClick={onRename}
             >
-              Edit
+              Rename
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`Replace key ${info.name}`}
+              onClick={onReplace}
+            >
+              Replace key
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`Check ${info.name} now`}
+              title={
+                provider?.validation === "inference-probe"
+                  ? "Checking this key costs one request. NVIDIA does not publish a key check, so this is a real inference."
+                  : undefined
+              }
+              loading={checking}
+              onClick={() => void check()}
+            >
+              <RefreshCwIcon className="size-4" />
+              Check now
             </Button>
             <Button
               type="button"
               variant="ghost-destructive"
               size="sm"
+              aria-label={`Remove ${info.name}`}
               onClick={onRemove}
             >
               <Trash2Icon className="size-4" />
@@ -327,57 +687,58 @@ function KeyRow({
 }
 
 /**
- * Where a key is, when it is not in the store this pane writes to.
- *
- * A key in the development file, or in the environment the website's server
- * was started with, is somewhere else entirely. The buttons would write a
- * second key somewhere the pane can reach and leave the one in use unchanged,
- * which is worse than not offering them at all.
- */
-const isElsewhere = (info: ApiKeyInfo) =>
-  info.source === "dev-file" || info.source === "env"
-
-/** What is said about a key that is somewhere else. */
-const SOURCE_NOTE: Record<string, string> = {
-  "dev-file": "From .env.local, for development",
-  env: "From the environment this server was started with",
-}
-
-/**
  * What a provider says about its key, in one line.
  *
  * The account name is the provider's own — the label OpenRouter puts on a
- * key — and it is already masked by the provider. Nothing here is the key.
+ * key — and it is already masked by the provider and masked again here.
+ * Nothing here is the key.
  */
-function detail(info: ApiKeyInfo): string {
+function detail(info: ProviderKey): string {
   const parts: string[] = []
 
   /* Where the key came from is said first, because it decides what can be
      done with it: a key that is elsewhere is edited where it is. */
-  if (info.source && info.source !== "store") {
+  if (info.source && info.source !== "keyring" && info.source !== "server-file") {
     parts.push(SOURCE_NOTE[info.source] ?? "From somewhere else")
-  }
-
-  if (info.valid === false) {
-    parts.push(info.reason ?? "The provider did not accept this key.")
-    return parts.join(" · ")
-  }
-  if (info.valid !== true) {
-    parts.push(
-      "The provider could not be reached, so this key's standing is unknown.",
-    )
-    return parts.join(" · ")
   }
 
   if (info.account) {
     parts.push(`Signed in as “${info.account}”`)
+  } else if (info.maskedValue) {
+    /* The provider did not say whose key this is, so the app's own mask is
+       what the user has to match against the provider's console. When the
+       provider does say, its name is the better answer and the two are not
+       printed one after the other. */
+    parts.push(info.maskedValue)
   }
+
+  if (info.valid === false) {
+    parts.push(
+      info.checkReason === "no-credit"
+        ? "The provider accepts this key, but the account has no credit left."
+        : "The provider did not accept this key.",
+    )
+    return parts.join(" · ")
+  }
+
+  if (info.valid !== true) {
+    parts.push(
+      info.checkReason === "unreachable"
+        ? "The provider could not be reached, so this key's standing is unknown."
+        : "This key has not been checked.",
+    )
+    return parts.join(" · ")
+  }
+
   if (info.isFreeTier) {
     parts.push("Free tier")
   }
-  if (info.limit != null && info.usage != null) {
-    parts.push(`${MONEY.format(info.usage)} of ${MONEY.format(info.limit)} used`)
+
+  const allowance = allowanceOf(info)
+  if (allowance) {
+    parts.push(allowance)
   }
+
   if (parts.length === 0) {
     parts.push("The provider accepts this key.")
   }
@@ -415,7 +776,7 @@ function EmptyKeys({ onAdd }: { onAdd: () => void }) {
 }
 
 /**
- * Adding a key, or putting a new one in place of an old one.
+ * Adding a key.
  *
  * The provider is chosen first and the key is entered for it, because a key
  * means nothing without the provider it belongs to. The value is held in
@@ -425,45 +786,50 @@ function EmptyKeys({ onAdd }: { onAdd: () => void }) {
 function KeyDialog({
   open,
   onOpenChange,
-  provider: fixed,
   keys,
   held,
   onSaved,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The provider being edited. Undefined when a key is being added. */
-  provider?: string
   /** What is already stored, so the picker can say which are taken. */
-  keys: ApiKeyInfo[]
+  keys: ProviderKey[]
   /** Whether the keys are kept in this computer's credential store. */
   held: boolean
   onSaved: () => void
 }) {
   const [chosen, setChosen] = React.useState("")
+  const [name, setName] = React.useState("")
   const [value, setValue] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  const [checking, setChecking] = React.useState(false)
+  const [checked, setChecked] = React.useState<string | null>(null)
   const formRef = React.useRef<HTMLFormElement>(null)
 
-  const taken = new Set(keys.filter((key) => key.stored).map((key) => key.provider))
+  const counts = new Map<string, number>()
+  for (const key of keys) {
+    counts.set(key.provider, (counts.get(key.provider) ?? 0) + 1)
+  }
 
-  /* The provider a key is added for: the one being edited, or else the first
-     provider that has no key yet. */
+  /* The provider a key is added for: the first one that has no key yet. */
   const fallback =
-    PROVIDERS.find((provider) => !taken.has(provider.id))?.id ?? PROVIDERS[0].id
+    PROVIDERS.find((provider) => !counts.has(provider.id))?.id ?? PROVIDERS[0].id
 
   React.useEffect(() => {
     if (!open) {
       return
     }
-    setChosen(fixed ?? fallback)
+    setChosen(fallback)
+    setName("")
     setValue("")
     setError(null)
-  }, [open, fixed, fallback])
+    setChecked(null)
+  }, [open, fallback])
 
   const provider = providerFor(chosen)
-  const editing = fixed !== undefined
+  const editing = false
+  const probe = provider?.validation === "inference-probe"
 
   const store = async () => {
     const key = value.trim()
@@ -473,7 +839,7 @@ function KeyDialog({
     setSaving(true)
     setError(null)
     try {
-      await saveApiKey(provider.id, key)
+      await saveProviderKey(provider.id, key, name.trim() || undefined)
       setValue("")
       onOpenChange(false)
       onSaved()
@@ -497,13 +863,49 @@ function KeyDialog({
       if (text.trim()) {
         setValue(text.trim())
         setError(null)
+        setChecked(null)
       }
     } catch (problem) {
       setError(
         problem instanceof Error
           ? problem.message
-          : "The clipboard could not be read. Paste the key into the field instead.",
+          : "The clipboard cannot be read. Paste the key into the field instead.",
       )
+    }
+  }
+
+  /**
+   * Checks a key that has not been stored.
+   *
+   * Only offered for the providers whose check costs a request, and only ever
+   * when the person presses the button — the list must never quietly spend
+   * the user's quota.
+   */
+  const check = async () => {
+    if (!provider) return
+    const key = value.trim()
+    if (!key) return
+    setChecking(true)
+    setError(null)
+    try {
+      const standing = await checkProviderKey(provider.id, key, true)
+      setChecked(
+        standing.valid === true
+          ? `${provider.label} accepts this key.`
+          : standing.valid === false
+            ? standing.checkReason === "no-credit"
+              ? `${provider.label} accepts this key, but the account has no credit left.`
+              : `${provider.label} did not accept this key.`
+            : `${provider.label} could not be reached, so this key's standing is unknown.`,
+      )
+    } catch (problem) {
+      setError(
+        problem instanceof Error
+          ? problem.message
+          : "The provider could not be asked about this key.",
+      )
+    } finally {
+      setChecking(false)
     }
   }
 
@@ -511,11 +913,9 @@ function KeyDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit API key" : "Add API key"}</DialogTitle>
+          <DialogTitle>Add API key</DialogTitle>
           <DialogDescription>
-            {editing
-              ? `Put a new ${provider?.label ?? "provider"} key in place of the one stored. The old one is overwritten in the credential store.`
-              : "Choose a provider, then paste the key you already have for it."}
+            Choose a provider, then paste the key you already have for it.
           </DialogDescription>
         </DialogHeader>
 
@@ -536,15 +936,22 @@ function KeyDialog({
                   size="default"
                   className="min-w-0 flex-1"
                   value={chosen}
-                  disabled={editing}
-                  onChange={(event) => setChosen(event.target.value)}
+                  onChange={(event) => {
+                    setChosen(event.target.value)
+                    setChecked(null)
+                  }}
                 >
-                  {PROVIDERS.map((option) => (
-                    <NativeSelectOption key={option.id} value={option.id}>
-                      {option.label}
-                      {taken.has(option.id) ? " — already has a key" : ""}
-                    </NativeSelectOption>
-                  ))}
+                  {PROVIDERS.map((option) => {
+                    const count = counts.get(option.id) ?? 0
+                    return (
+                      <NativeSelectOption key={option.id} value={option.id}>
+                        {option.label}
+                        {count > 0
+                          ? ` — already has ${count} key${count === 1 ? "" : "s"}`
+                          : ""}
+                      </NativeSelectOption>
+                    )
+                  })}
                 </NativeSelect>
                 {provider ? (
                   <Button
@@ -561,6 +968,25 @@ function KeyDialog({
             </Field>
 
             <Field>
+              <FieldLabel htmlFor="key-name">Name</FieldLabel>
+              <input
+                id="key-name"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={64}
+                placeholder={provider?.label ?? "Provider"}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring"
+              />
+              <FieldDescription>
+                What this key is for, so you can tell two keys for the same
+                provider apart. Left empty, it is named after the provider.
+              </FieldDescription>
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor="provider-api-key">
                 {provider?.label ?? "Provider"} API key
               </FieldLabel>
@@ -573,7 +999,10 @@ function KeyDialog({
                   spellCheck={false}
                   placeholder="Paste the key"
                   value={value}
-                  onChange={(event) => setValue(event.target.value)}
+                  onChange={(event) => {
+                    setValue(event.target.value)
+                    setChecked(null)
+                  }}
                 />
                 <InputGroupAddon align="inline-end">
                   <InputGroupButton
@@ -593,6 +1022,30 @@ function KeyDialog({
               </FieldDescription>
             </Field>
 
+            {probe ? (
+              <Alert appearance="soft">
+                <CircleHelpIcon />
+                <AlertTitle>This one cannot be checked for free</AlertTitle>
+                <AlertDescription>
+                  NVIDIA does not publish a key check, so Tavi cannot confirm
+                  this key without spending a request on a real inference. The
+                  key is saved either way, and you can check it afterwards with
+                  “Check now”.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {checked ? (
+              <Alert appearance="soft">
+                {checked.includes("accepts this key") ? (
+                  <CircleCheckIcon />
+                ) : (
+                  <TriangleAlertIcon />
+                )}
+                <AlertTitle>{checked}</AlertTitle>
+              </Alert>
+            ) : null}
+
             {error ? (
               <Alert variant="destructive" appearance="soft">
                 <TriangleAlertIcon />
@@ -604,6 +1057,16 @@ function KeyDialog({
         </DialogBody>
 
         <DialogFooter>
+          {probe && value.trim() ? (
+            <Button
+              type="button"
+              variant="outline"
+              loading={checking}
+              onClick={() => void check()}
+            >
+              Check this key
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -626,11 +1089,245 @@ function KeyDialog({
 }
 
 /**
- * Taking a key out.
+ * Renaming a key.
+ *
+ * The name is the only thing that tells two keys for the same provider
+ * apart, so it is the one thing worth editing.
+ */
+function RenameKeyDialog({
+  open,
+  info,
+  onOpenChange,
+  onRenamed,
+}: {
+  open: boolean
+  info: ProviderKey | null
+  onOpenChange: (open: boolean) => void
+  onRenamed: () => void
+}) {
+  const [name, setName] = React.useState("")
+  const [error, setError] = React.useState<string | null>(null)
+  const [saving, setSaving] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!open) return
+    setName(info?.name ?? "")
+    setError(null)
+  }, [open, info])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Rename key</DialogTitle>
+          <DialogDescription>
+            The name is only for you. It is how two {info?.providerLabel ?? "provider"}{" "}
+            keys are told apart.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogBody>
+          <Field>
+            <FieldLabel htmlFor="rename-key">Name</FieldLabel>
+            <input
+              id="rename-key"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={64}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="h-9 w-full rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring"
+            />
+          </Field>
+
+          {error ? (
+            <Alert variant="destructive" appearance="soft" className="mt-4">
+              <TriangleAlertIcon />
+              <AlertTitle>The key was not renamed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+        </DialogBody>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            loading={saving}
+            disabled={!name.trim()}
+            onClick={async () => {
+              if (!info) return
+              setSaving(true)
+              setError(null)
+              try {
+                await renameProviderKey(info.id, name.trim())
+                onOpenChange(false)
+                onRenamed()
+              } catch (problem) {
+                setError(
+                  problem instanceof Error
+                    ? problem.message
+                    : "The key could not be renamed.",
+                )
+              } finally {
+                setSaving(false)
+              }
+            }}
+          >
+            Save name
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Putting a new secret in place of an old one.
+ *
+ * The new key is checked first, so a key the provider refuses leaves the old
+ * one exactly as it was. The old secret stays until it is removed here, and
+ * it stays live at the provider until it is revoked there.
+ */
+function ReplaceKeyDialog({
+  open,
+  info,
+  held,
+  onOpenChange,
+  onReplaced,
+}: {
+  open: boolean
+  info: ProviderKey | null
+  held: boolean
+  onOpenChange: (open: boolean) => void
+  onReplaced: () => void
+}) {
+  const [value, setValue] = React.useState("")
+  const [error, setError] = React.useState<string | null>(null)
+  const [saving, setSaving] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!open) return
+    setValue("")
+    setError(null)
+  }, [open])
+
+  const provider = info ? providerFor(info.provider) : undefined
+  const probe = provider?.validation === "inference-probe"
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Replace key</DialogTitle>
+          <DialogDescription>
+            Put a new {provider?.label ?? "provider"} key in place of the one
+            stored. The old one keeps working until you remove it, and it stays
+            live at {provider?.label ?? "the provider"} until you revoke it
+            there.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogBody>
+          <Field>
+            <FieldLabel htmlFor="replace-key">
+              {provider?.label ?? "Provider"} API key
+            </FieldLabel>
+            <InputGroup>
+              <InputGroupInput
+                id="replace-key"
+                type="password"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="Paste the new key"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupPasswordToggle />
+              </InputGroupAddon>
+            </InputGroup>
+            <FieldDescription>
+              {held
+                ? "Kept in this computer's credential store. It is never written to disk in plaintext, and it is never read back into the app."
+                : "Kept by this computer's server. It is never sent back to the browser, and it is never read back into the app."}
+            </FieldDescription>
+          </Field>
+
+          {probe ? (
+            <Alert appearance="soft" className="mt-4">
+              <CircleHelpIcon />
+              <AlertTitle>This one cannot be checked for free</AlertTitle>
+              <AlertDescription>
+                NVIDIA does not publish a key check, so Tavi cannot confirm this
+                key without spending a request on a real inference.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {error ? (
+            <Alert variant="destructive" appearance="soft" className="mt-4">
+              <TriangleAlertIcon />
+              <AlertTitle>The key was not replaced</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+        </DialogBody>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            loading={saving}
+            disabled={!value.trim()}
+            onClick={async () => {
+              if (!info) return
+              setSaving(true)
+              setError(null)
+              try {
+                await replaceProviderKey(info.id, value.trim())
+                setValue("")
+                onOpenChange(false)
+                onReplaced()
+              } catch (problem) {
+                setError(
+                  problem instanceof Error
+                    ? problem.message
+                    : "The key could not be replaced.",
+                )
+              } finally {
+                setSaving(false)
+              }
+            }}
+          >
+            Replace key
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Taking a key away.
  *
  * Removing the key stops the app reaching that provider, so it is asked for
- * rather than done. The question names the provider, because "are you sure"
- * on its own does not say what is about to stop working.
+ * rather than done. The question names the key, because "are you sure" on
+ * its own does not say what is about to stop working.
  */
 function RemoveKeyDialog({
   open,
@@ -639,9 +1336,7 @@ function RemoveKeyDialog({
   onRemoved,
 }: {
   open: boolean
-  /** The key being taken out. It stays while the dialog closes, so the
-   *  question keeps naming the provider it is about. */
-  info: ApiKeyInfo | null
+  info: ProviderKey | null
   onOpenChange: (open: boolean) => void
   onRemoved: () => void
 }) {
@@ -654,14 +1349,21 @@ function RemoveKeyDialog({
     setError(null)
   }, [open])
 
+  const wasActive = info?.active
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Remove the {info?.label} key?</AlertDialogTitle>
+          <AlertDialogTitle>Remove “{info?.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
             The key is deleted from this computer&apos;s credential store. Tavi
-            will not be able to reach {info?.label} until another one is added.
+            will not be able to reach {info?.providerLabel} with it
+            {wasActive
+              ? ", and this provider will have no key in use until another one is added"
+              : ""}
+            . Removing it here does not revoke it at {info?.providerLabel} —
+            only {info?.providerLabel} can do that.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -681,7 +1383,7 @@ function RemoveKeyDialog({
                 return
               }
               try {
-                await clearApiKey(info.provider)
+                await removeProviderKey(info.id)
                 onRemoved()
               } catch (problem) {
                 setError(

@@ -11,9 +11,12 @@
  * asks a store for threads and does not care where they came from.
  */
 
-import { invoke } from "@tauri-apps/api/core"
-
-import { isDesktopApp } from "./desktop.ts"
+import {
+  clearThreads as clearDesktopThreads,
+  readThreads as readDesktopThreads,
+  writeThreads as writeDesktopThreads,
+} from "./desktop.ts"
+import { isDesktopApp } from "./platform.ts"
 import { forgetStorage, readStorage, writeStorage } from "./storage.ts"
 
 /** The two collections of conversations there are. */
@@ -107,10 +110,10 @@ export const migrateConversations = async (
  */
 const desktopRepository = (kind: ThreadKind, legacyKey: string): ThreadRepository => {
   const durable = {
-    read: () => invoke<string>("read_threads", { kind }),
+    read: () => readDesktopThreads(kind),
     write: async (records: string) => {
       try {
-        await invoke("write_threads", { kind, records })
+        await writeDesktopThreads(kind, records)
         return true
       } catch {
         return false
@@ -122,7 +125,7 @@ const desktopRepository = (kind: ThreadKind, legacyKey: string): ThreadRepositor
     read: durable.read,
     write: durable.write,
     clear: async () => {
-      await invoke("clear_threads", { kind })
+      await clearDesktopThreads(kind)
     },
     migrate: () => migrateConversations(durable, legacyKey),
   }

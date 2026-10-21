@@ -26,6 +26,7 @@ what removes it.
 |---|---|---|---|---|
 | Chats and code sessions | The app's own file on the desktop; `localStorage` on the web | The user's own conversations. Never sent anywhere but the provider they chose | Until the user deletes it. The newest 50 of each kind are kept | Deleting a thread, or **Settings ? Privacy ? Delete everything** |
 | The provider key | The OS credential store on the desktop; the server's own file on the website | A credential. Never logged, never sent back to a browser | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
+| The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
 | Preferences: model, effort, agent mode, the rail's open state | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
@@ -232,23 +233,34 @@ than leaving stale paths on screen.
 
 ### Secrets - OS credential store
 
-`src/lib/secret.ts` → `invoke("set_api_key")` → the `keyring` crate in
+`src/lib/secret.ts` → `invoke("save_provider_key")` → the `keyring` crate in
 `src-tauri/src/keys.rs`.
 
 The key is never written to `localStorage`, never logged, never placed in the
 DOM. `server/main.ts` logs neither headers nor request bodies.
 
-The credential is stored under the service name `tavi`, and each provider's
-key is filed under its own name within it: `api-key:openrouter`,
-`api-key:anthropic`, `api-key:openai`, `api-key:nvidia-nim`. One key per
-provider.
+#### What a credential store is, and what it is not
 
-The app was called something else when the key was first entered, and the
-credential is still under that name: it is moved to the current one the first
-time the app asks for it, so the rename does not cost the user their key. The
-new credential is written before the old one is removed - a key that exists in
-both places is one the user has already set, and losing it would be worse than
-leaving a duplicate behind.
+The store is an **at-rest** control. It protects a key from being read off
+the disk when the profile is stolen: the Windows DPAPI blob, the macOS
+keychain item and the Linux keyring all need the login secret, so a copy of
+the profile is not a copy of the key.
+
+It is **not** an authorisation control. A process running as the same OS user
+can read the key on all three platforms: Windows `CredRead` needs no prompt,
+because the credential set belongs to the logon session; macOS prompts for
+*other* applications and remembers the answer; on Linux "any application can
+easily read any secret if the keyring is unlocked". A local administrator can
+read it everywhere, which is out of scope for any desktop app.
+
+So the app never says a key is "secure" or "protected". It names the threat it
+does address: the key is not a plaintext file on the disk.
+
+One OS account per person is assumed. Two people sharing one Windows account
+share one credential set, and the second person's app can read the first
+person's key with no prompt. The naming scheme carries no user id, because
+all three stores are already partitioned by OS user and a uid would be
+redundant and brittle - Windows has no uid.
 
 Where the OS puts it:
 
@@ -258,26 +270,86 @@ Where the OS puts it:
 | Windows | Credential Manager |
 | Linux | Secret Service (`libsecret`) - GNOME Keyring, KWallet |
 
-On the **website** there is no credential store, so the server keeps its own
-keys in a file of its own, under `~/Documents/Tavi/keys` (`TAVI_KEYS_DIR` moves
-it), written so that only the owner can read it. The key never reaches the
-browser: the browser is told whether a provider has a key and what that
-provider says about it, and nothing else. A key in the environment is used
-when the file has none.
+#### The secret, and the sidecar
+
+The credential is stored under the service name `tavi`, and each key is filed
+under its own id within it: `api-key:<keyId>`. There can be several keys for
+one provider — a personal key and a work key — and the id is what tells them
+apart.
+
+**The credential store cannot be enumerated.** `keyring` 3.6.3, the version
+pinned in `src-tauri/Cargo.toml`, exposes only per-entry `get` / `set` /
+`delete` / `attributes`. There is no `list` and no `find_all`, so the app
+cannot ask the operating system "which keys do I have?".
+
+**It cannot hold portable metadata either.** `update_attributes` "ignores
+(without error) any specified attributes that aren't supported by that store",
+and the attributes map to `username` / `comment` / `target_alias` on Windows,
+`label` on macOS, and arbitrary attributes on Secret Service. A key's name and
+its date cannot be relied on to live beside the secret.
+
+So the metadata lives in a **sidecar**: `provider-keys.json` in the app's data
+directory, beside `window-state.json`. It holds the key's id, its provider,
+its name, when it was added, when it was last used, the provider's own masked
+account name, and the masked value — the vendor's prefix and the last four
+characters, computed when the key was written, because that is the only moment
+the app holds the secret.
+
+**It holds no secret.** That is the whole point of the split, and it is why
+the sidecar is written `0600` on macOS and Linux rather than being treated as
+public. The directory is `0700`.
+
+#### The migration
+
+The app was called something else when the key was first entered, and the
+credential is still under that name: it is moved to the current one the first
+time the app asks for it, so the rename does not cost the user their key. The
+new credential is written before the old one is removed - a key that exists in
+both places is one the user has already set, and losing it would be worse than
+leaving a duplicate behind.
+
+The same move happens for the shape of the store itself. The app used to keep
+one key per provider, filed under the provider's name; it now keeps a key of
+its own with an id, and an explicit pointer to the one in use. The migration
+is all or nothing: the new entries are written and read back, the sidecar is
+written, and only then are the old entries removed. A sidecar that cannot be
+written leaves the old keys exactly where they were, because a half-migrated
+store leaves the app unable to find a key it has.
+
+#### On the website
+
+There is no credential store in a browser, so the server keeps its keys in a
+file of its own, under `~/.config/tavi/keys` (`%APPDATA%\Tavi\keys` on
+Windows). `TAVI_KEYS_DIR` moves it. The folder is `0700` and the file `0600`,
+written atomically with the previous copy kept beside it, and a file that
+cannot be parsed is reported rather than treated as an empty store — one
+unreadable moment followed by one write used to be enough to lose every other
+provider's key.
+
+It is deliberately **not** in the documents folder: that one is commonly synced
+to somebody else's server, and a plaintext key does not belong there.
+
+The key never reaches the browser: the browser is told whether a provider has a
+key and what that provider says about it, and nothing else. A key in the
+environment is used when the file has none.
+
+#### The development file
 
 A **development build** of the desktop app reads `.env.local` for a key when
 the credential store has none, so a developer does not have to paste the same
-key in by hand on every machine. It is read in Rust, it never crosses into
-the webview, and it is not copied anywhere — removing it from the file removes
+key in by hand on every machine. It is read in Rust, it never crosses into the
+webview, and it is not copied anywhere — removing it from the file removes
 it. The settings pane says which one a key came from. A release build does
 not contain the code that looks for the file at all, so a shipped app has no
 key on a machine that only ever had `.env.local`.
 
 The settings pane is the same in both — the same list, the same buttons, the
 same dialog — because a person setting a key should not have to learn a
-second version of the screen depending on where the app is running. Changing
-the server's keys is only offered to a request from the same machine: it
-changes what every request through the server spends.
+second version of the screen depending on where the app is running. The server
+holds the **operator's own** keys and listens on the loopback interface; the
+routes that change one are refused unless the request came from this machine,
+was addressed to a name the server answers to, and carried the header that
+makes a browser ask first.
 
 ---
 

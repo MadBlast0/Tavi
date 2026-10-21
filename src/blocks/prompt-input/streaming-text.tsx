@@ -3,6 +3,8 @@
 import * as React from "react"
 import { cn } from "cn"
 
+import { MarkdownBody } from "@/components/markdown-text"
+
 import { useSmoothText } from "./use-smooth-text"
 
 const freshTokens = 16
@@ -14,6 +16,22 @@ type StreamingTextProps = Omit<React.ComponentProps<"div">, "children"> & {
   charsPerSecond?: number
 }
 
+/**
+ * A model's answer, as it arrives and after it has.
+ *
+ * The answer is Markdown, because models answer in Markdown and a reader who
+ * sees `**bold**` and `|` and `#` where a heading and a table were meant has
+ * been shown the transport rather than the answer. The renderer is the same
+ * one the assistant-ui branch uses, so there is one set of styles for
+ * Markdown in this app rather than two.
+ *
+ * The text is revealed smoothly while it arrives, and the whole answer is
+ * parsed as Markdown throughout — including the half-finished sentence — so
+ * the formatting never jumps at the end of the turn. The stylesheet draws a
+ * pulsing mark after the last line while the answer is arriving, which is
+ * where a cursor belongs: inside the last paragraph, where the text is, and
+ * not on a line of its own below it.
+ */
 function StreamingText({
   text,
   streaming = false,
@@ -28,32 +46,16 @@ function StreamingText({
     charsPerSecond,
   })
   const active = streaming || visible.animating
-  const tokens = visible.text.split(/(\s+)/)
-  const freshFrom = active ? Math.max(0, tokens.length - freshTokens) : tokens.length
 
   return (
     <div
       aria-busy={active}
       aria-live="polite"
       data-streaming={active ? "" : undefined}
-      className={cn("whitespace-pre-wrap", className)}
+      className={cn("text-base/relaxed", className)}
       {...props}
     >
-      {tokens.slice(0, freshFrom).join("")}
-      {tokens.slice(freshFrom).map((token, index) => (
-        <span
-          key={freshFrom + index}
-          className="motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0"
-        >
-          {token}
-        </span>
-      ))}
-      {active ? (
-        <span
-          aria-hidden="true"
-          className="ms-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 rounded-xs bg-foreground/60 motion-safe:animate-pulse"
-        />
-      ) : null}
+      <MarkdownBody text={visible.text} status={active ? "running" : undefined} />
     </div>
   )
 }

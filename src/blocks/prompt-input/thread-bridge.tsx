@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { invoke } from "@tauri-apps/api/core"
 
-import { isDesktopApp } from "@/lib/desktop"
+import { takeIntent } from "@/lib/desktop"
+import { isDesktopApp } from "@/lib/platform"
 import type { Side } from "@/lib/sides"
 import { useComposerVariant } from "./composer-variant"
 
@@ -97,7 +97,7 @@ export function useNewThread() {
       /* Any request the system tray is still holding is answered by what the
          user has just done instead. */
       if (isDesktopApp()) {
-        void invoke("take_intent").catch(() => {})
+        void takeIntent().catch(() => {})
       }
       setVariant(side)
       bridge.functions.current?.reset(side)

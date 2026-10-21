@@ -1,118 +1,163 @@
-import { invoke } from "@tauri-apps/api/core";
-
 /**
- * Provider API key access.
+ * What a provider key is.
  *
- * The key lives in the OS credential store. It is written there and cleared
- * from there, and it is never read back out: the desktop app's provider
- * request is made in Rust, which reads the key itself. A key in JavaScript is
- * a key in every script on the page, and there was no reason for it to be
- * there.
+ * A key is not a string. It is a credential with an identity: it acts as a
+ * person or a service account, it belongs to a provider, it has a name the
+ * user gave it, and it can be one of several for the same provider. That is
+ * the model Anthropic publishes for its own keys — a personal key, a service
+ * account key, a workspace key — and it is the model every console surveyed
+ * uses: a name, an owner, a status and an expiry.
  *
- * One key per provider. The providers are the ones in `src/lib/providers.ts`,
- * which the website's server reads the same list from.
+ * This file is the **vocabulary**: what a key is called and what can be known
+ * about one. The operations live in `src/lib/api.ts`, the Tauri side in
+ * `src/lib/desktop.ts` and the server side in `server/`.
+ *
+ * The secret is never in this shape. A key in this shape can be put in a
+ * response, written to a file or shown on a screen without leaking anything;
+ * the secret is held by the credential store or by the server's own file, and
+ * is read only where a provider's request is made.
  */
 
-const isDesktop = () =>
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-
-export const isKeyStoreAvailable = () => isDesktop();
+/**
+ * Where a key's secret is kept.
+ *
+ * - `keyring` — the operating system's credential store, on the desktop.
+ * - `server-file` — the website's server's own file, which the pane writes.
+ * - `env` — the environment a process was started with.
+ * - `dev-file` — the `.env.local` file, which only a development build reads.
+ *
+ * The last two are not changeable from the pane, and the pane says so rather
+ * than offering a button that would write somewhere else.
+ */
+export type KeySource = "keyring" | "server-file" | "env" | "dev-file";
 
 /**
- * What the app knows about one provider's key.
+ * Why a key is not simply "accepted".
  *
- * The key itself is never in this. What is here is whether a key is stored,
- * whether the provider accepts it, and — for the one provider that says so —
- * whose key it is and how much of its allowance is gone.
+ * A key that was refused and a key whose account is out of credit are
+ * different facts, and a key that has not been checked is a third. Collapsing
+ * them into "not accepted" would say a working key is broken.
  */
-export type ApiKeyInfo = {
-  provider: string;
-  label: string;
-  stored: boolean;
+export type KeyCheckReason =
+  /** The provider refused the key. */
+  | "not-accepted"
+  /** The provider accepted the key but is rate limiting it. */
+  | "rate-limited"
+  /** The provider accepted the key but the account has no credit left. */
+  | "no-credit"
+  /** The key was not checked, because checking it would cost a request. */
+  | "not-checked"
+  /** The provider could not be reached, so nothing is known. */
+  | "unreachable";
+
+/** The window a provider's spending cap resets on. */
+export type LimitWindow = "daily" | "weekly" | "monthly";
+
+/**
+ * What a provider says about a key.
+ *
+ * Every field is nullable, and a null means "the provider did not say", not
+ * "there is none". The three-valued distinction the app already uses for a
+ * model's capabilities — unknown, unsupported, supported — is the same one:
+ * an absent answer is never rendered as a zero.
+ */
+export type KeyStanding = {
   /**
-   * Where the key came from, when one is stored.
+   * Whether the provider accepts the key.
    *
-   * "store" is the operating system's credential store, or the server's own
-   * file. "dev-file" is the development key file, which only a development
-   * build reads. "env" is the environment the website's server was started
-   * with — the `.env.local` file in development. The pane says which one it
-   * is, because a key that is somewhere else is a key the user cannot change
-   * from that screen.
+   * `null` means it was not checked or could not be checked. It is never
+   * `false` for "not checked".
    */
-  source?: "store" | "dev-file" | "env";
-  valid?: boolean;
-  reason?: string;
-  account?: string;
-  limit?: number | null;
-  usage?: number | null;
-  remaining?: number | null;
-  isFreeTier?: boolean;
+  valid: boolean | null;
+  /** Why, when the answer is not a plain yes. */
+  checkReason: KeyCheckReason | null;
+  /** When the provider was asked, in unix seconds. */
+  checkedAt: number | null;
+  /**
+   * The provider's own name for the account the key acts as.
+   *
+   * The provider's, and masked: it is free-form text from the network and is
+   * hidden again before it is shown.
+   */
+  account: string | null;
+  /** The organisation the key acts for, where the provider publishes one. */
+  organizationId: string | null;
+  /** The workspace the key belongs to, where the provider publishes one. */
+  workspaceId: string | null;
+  /** Who made the key, where the provider publishes it. */
+  creatorUserId: string | null;
+  /** When the key stops working, where the provider publishes it. */
+  expiresAt: number | null;
+  /** The spending cap, in the provider's own unit. */
+  limit: number | null;
+  /** What is left of the cap. */
+  limitRemaining: number | null;
+  /** Which window the cap resets on. */
+  limitReset: LimitWindow | null;
+  /** The unit the cap is in. Never assumed by the formatter. */
+  limitCurrency: string | null;
+  /** All-time usage. Not the same figure as the one under the cap. */
+  usage: number | null;
+  /** Usage in the cap's window — the figure that belongs beside the cap. */
+  usageInWindow: number | null;
+  /** Whether the account has ever paid. */
+  isFreeTier: boolean | null;
 };
 
 /**
- * Every provider, and what is known about its key.
+ * One key, as the app knows it.
  *
- * A provider with no key is listed without one, so the pane can show what
- * could be added as well as what is there.
+ * The same shape on both sides of the app and on both servers, so the pane and
+ * the account row read one thing whichever build they are in.
  */
-export const listApiKeys = async (): Promise<ApiKeyInfo[]> => {
-  if (isDesktop()) {
-    return invoke<ApiKeyInfo[]>("list_api_keys");
-  }
-
-  const response = await fetch("/api/keys");
-  if (!response.ok) {
-    throw new Error(`The keys are unavailable (${response.status}).`);
-  }
-  return (await response.json()) as ApiKeyInfo[];
+export type ProviderKey = KeyStanding & {
+  /**
+   * The key's own id.
+   *
+   * Generated by the app and stable across a rename. Never derived from the
+   * secret and never from the name: the same rule the app already applies to
+   * a folder's handle, for the same reason.
+   */
+  id: string;
+  /** Which provider the key is for. */
+  provider: string;
+  /**
+   * The provider's name.
+   *
+   * Never called `label`. The word is used for the key's own name, and a
+   * shape where one word means two things is a trap for whoever adds a field
+   * next.
+   */
+  providerLabel: string;
+  /** The name the user gave the key. */
+  name: string;
+  /** True until the user renames it, so "Personal" is not shown as a choice. */
+  nameIsDefault: boolean;
+  /** When the app stored it, in unix seconds. */
+  createdAt: number;
+  /** When the app last changed it, in unix seconds. */
+  updatedAt: number;
+  /** When the app last made a request with it, in unix seconds. */
+  lastUsedAt: number | null;
+  /** The vendor's prefix and the last four characters, computed at write time. */
+  maskedValue: string | null;
+  /** Where the secret is kept. */
+  source: KeySource;
+  /**
+   * Whether this is the key the app's requests go out with.
+   *
+   * Exactly one key per provider is active, and it is a pointer the user
+   * sets — never an inference from which key is newest or which one the
+   * provider last accepted.
+   */
+  active: boolean;
 };
 
 /**
- * Store a key for a provider.
+ * A provider's answer about a key, before the key is stored.
  *
- * The desktop app puts it in the operating system's credential store. The
- * website's server has no such thing, so it keeps the key in its own file
- * instead — the same place the environment variable it replaces lives.
+ * The same fields as a key's standing, with the time of the answer.
  */
-export const saveApiKey = async (provider: string, key: string) => {
-  if (isDesktop()) {
-    await invoke("set_api_key", { provider, key });
-    return;
-  }
-
-  const response = await fetch("/api/keys", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider, key }),
-  });
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(detail?.error ?? "The key could not be stored.");
-  }
-};
-
-/**
- * Take a provider's key out.
- *
- * The desktop app takes it out of the credential store; the website's server
- * takes it out of its own file.
- */
-export const clearApiKey = async (provider: string) => {
-  if (isDesktop()) {
-    await invoke("clear_api_key", { provider });
-    return;
-  }
-
-  const response = await fetch(
-    `/api/keys?provider=${encodeURIComponent(provider)}`,
-    { method: "DELETE" },
-  );
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(detail?.error ?? "The key could not be removed.");
-  }
+export type KeyStandingReport = KeyStanding & {
+  checkedAt: number;
 };

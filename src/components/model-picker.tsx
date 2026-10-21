@@ -16,7 +16,12 @@ import {
 } from "@/components/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PREF, readPref, sidePref, writePref } from "@/lib/prefs";
-import { fetchKeyStatus, fetchModels, type KeyStatus } from "@/lib/transport";
+import {
+  fetchModels,
+  listProviderKeys,
+  type ProviderKey,
+} from "@/lib/api";
+import type { SlimModel } from "@/lib/catalogue";
 import type { Side } from "@/lib/sides";
 
 import {
@@ -60,35 +65,13 @@ const describeThinking = (model: SlimModel): string => {
   return options.map((option) => option.label).join(" · ");
 };
 
-type SlimModel = {
-  id: string;
-  name: string;
-  provider: string;
-  contextLength: number | null;
-  free: boolean;
-  supportsTools: boolean;
-  supportsReasoning: boolean;
-  /** Full normalised reasoning profile for this model, straight from the adapter. */
-  capabilities: ModelReasoningCapabilities;
-  inputModalities: string[];
-  outputModalities: string[];
-  promptPrice: number;
-  completionPrice: number;
-};
-
 type CatalogResponse = {
   models?: SlimModel[];
-  stale?: boolean;
+  degraded?: boolean;
   error?: string;
 };
 
 type Hovered = { model: SlimModel; top: number; left: number } | null;
-
-const EFFORTS = [
-  { id: "low", name: "Low" },
-  { id: "medium", name: "Medium" },
-  { id: "high", name: "High" },
-] as const;
 
 const modelLabel = (model: SlimModel) =>
   model.name.replace(/\s*\(free\)$/, "");
@@ -196,9 +179,9 @@ export const ComposerModelPicker = ({
 
   const [catalog, setCatalog] = useState<SlimModel[]>([]);
   const [freeOnly, setFreeOnly] = useState(true);
-  const [stale, setStale] = useState(false);
+  const [degraded, setDegraded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [key, setKey] = useState<KeyStatus | null>(null);
+  const [key, setKey] = useState<ProviderKey | null>(null);
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<Hovered>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -227,13 +210,16 @@ export const ComposerModelPicker = ({
         if (cancelled) return;
         if (!data.models) return setError("No catalog");
         setCatalog(data.models);
-        setStale(Boolean(data.stale));
+        setDegraded(Boolean(data.degraded));
       })
       .catch(() => !cancelled && setError("Catalog unreachable"));
 
-    fetchKeyStatus()
-      .then((s) => !cancelled && setKey(s))
-      .catch(() => !cancelled && setKey({ valid: false }));
+    listProviderKeys()
+      .then((keys) => {
+        if (cancelled) return;
+        setKey(keys.find((entry) => entry.active) ?? null);
+      })
+      .catch(() => !cancelled && setKey(null));
 
     return () => {
       cancelled = true;
@@ -425,13 +411,16 @@ export const ComposerModelPicker = ({
                   aria-label="Reasoning effort"
                   className="flex items-center gap-0.5"
                 >
-                  {EFFORTS.map((option) => (
+                  {/* The levels the model itself publishes. There is no
+                      universal list, and an invented one asserts support for
+                      models that publish something else. */}
+                  {availableEffort(selected.capabilities.effort).map((level) => (
                     <DropdownMenuRadioItem
-                      key={option.id}
-                      value={option.id}
+                      key={level.value}
+                      value={level.value}
                       className="cursor-pointer rounded-md px-2 py-1 text-xs"
                     >
-                      {option.name}
+                      {level.label}
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
@@ -447,8 +436,10 @@ export const ComposerModelPicker = ({
                   ? key.isFreeTier
                     ? "Key valid · free tier"
                     : "Key valid"
-                  : "Key not recognised"}
-                {stale ? " · cached catalog" : ""}
+                  : key.valid === false
+                    ? "Key not accepted"
+                    : "Key not checked"}
+                {degraded ? " · last good catalog" : ""}
               </p>
             </>
           )}

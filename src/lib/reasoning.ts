@@ -9,7 +9,7 @@
  * model. That was wrong twice over:
  *
  * 1. It is a *universal* set, but no provider defines one. OpenAI's effort enum
- *    is `none, minimal, low, medium, high, xhigh`; Anthropic's is
+ *    is `none, minimal, low, medium, high, xhigh, max`; Anthropic's is
  *    `low, medium, high, xhigh, max`; Gemini's `thinking_level` is a different
  *    set again. Publishing one list makes it look like every model accepts every
  *    level, and a value that happens to be in the list but not in a model's real
@@ -107,6 +107,13 @@ export type ThinkingModeCapability = {
   options?: ThinkingModeOption[];
   defaultValue?: string;
   defaultKnown: boolean;
+  /**
+   * Whether the model reasons unless it is told otherwise.
+   *
+   * Only where the provider publishes it. Absent means "not looked up", which
+   * is not the same as "no".
+   */
+  defaultEnabled?: boolean;
   /**
    * Only when authoritative metadata says so. A model that reasons regardless
    * should show an information state, never a switch that does nothing.

@@ -1,7 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
-
-import { isDesktopApp } from "./desktop";
-import { PREF, readPref, writePref } from "./prefs";
+import { listInstalledFonts as listInstalledFontsDesktop } from "./desktop.ts";
+import { isDesktopApp } from "./platform.ts";
+import { PREF, readPref, writePref } from "./prefs.ts";
 
 /**
  * Installed font families, from the operating system.
@@ -13,16 +12,26 @@ import { PREF, readPref, writePref } from "./prefs";
  * The list is whatever this machine actually has, which is a question only the
  * OS can answer.
  *
- * Only the desktop app can ask it. A web page has no access to the system font
- * registry: there is no standard API for it, and the Chromium-only Local Font
- * Access API would mean a permission prompt and a different answer depending on
- * the browser. So the web target reports the same failure the rest of the
- * native tools do rather than pretending.
+ * Two builds can answer it, and neither of them is the whole answer:
+ *
+ * - The desktop app asks the operating system, and gets the whole list.
+ * - A browser can only report the fonts it is *able* to see, and even then
+ *   only in Chromium, and only after the user grants the `local-fonts`
+ *   permission. Everywhere else there is no list at all, and the app says so
+ *   rather than inventing one.
+ *
+ * A count is only ever stated when the list was actually obtained. "0 fonts
+ * installed" is a falsehood in a browser, and the list right underneath it —
+ * the app's own face — is what makes it obvious.
  */
 
 export type FontDiscoveryResult =
   | { ok: true; families: string[] }
-  | { ok: false; reason: "unsupported" | "failed"; message: string };
+  | {
+      ok: false;
+      reason: "unsupported" | "failed" | "permission-required";
+      message: string;
+    };
 
 /**
  * The face the app ships with, and the default of the picker.
@@ -47,6 +56,60 @@ let cached: FontDiscoveryResult | null = null;
 /** In flight, so several callers at once share one scan rather than racing. */
 let pending: Promise<FontDiscoveryResult> | null = null;
 
+/**
+ * Whether this browser can list the fonts on the machine.
+ *
+ * The Local Font Access API is Chromium-only: Chrome, Edge and Opera have it,
+ * Firefox and Safari do not. Calling it makes the browser ask the user for
+ * the `local-fonts` permission, which is the right way round — the browser
+ * knows who is asking and what for, and the answer is the user's.
+ */
+export const canQueryLocalFonts = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof (window as { queryLocalFonts?: unknown }).queryLocalFonts === "function";
+
+/**
+ * The font families the browser is able to see.
+ *
+ * The browser's own list of what it can render, which is a narrower thing
+ * than what the operating system has installed — but it is the list the page
+ * can actually use, and it is the truth about this browser.
+ */
+const queryLocalFonts = async (): Promise<FontDiscoveryResult> => {
+  if (!canQueryLocalFonts()) {
+    return {
+      ok: false,
+      reason: "unsupported",
+      message:
+        "This browser cannot list the fonts installed on this computer. Installed fonts can only be listed in the desktop app. Start it with `pnpm tauri dev`.",
+    };
+  }
+
+  try {
+    const query = (
+      window as unknown as {
+        queryLocalFonts: () => Promise<Array<{ family: string }>>;
+      }
+    ).queryLocalFonts;
+    const faces = await query();
+    const families = [
+      ...new Set(
+        faces
+          .map((face) => face.family.trim())
+          .filter((family) => family !== ""),
+      ),
+    ].sort((left, right) => left.localeCompare(right));
+    return { ok: true, families };
+  } catch {
+    return {
+      ok: false,
+      reason: "failed",
+      message:
+        "The browser did not grant access to the installed fonts. The list can be requested again, and the browser will ask.",
+    };
+  }
+};
+
 async function discover(): Promise<FontDiscoveryResult> {
   /* The call is the test, not an environment check made beforehand.
 
@@ -59,7 +122,7 @@ async function discover(): Promise<FontDiscoveryResult> {
 
      `isDesktopApp` now only chooses which message to show. */
   try {
-    const families = await invoke<string[]>("list_installed_fonts");
+    const families = await listInstalledFontsDesktop();
     return {
       ok: true,
       // The backend normalises; this is belt and braces for a build where the
@@ -67,15 +130,27 @@ async function discover(): Promise<FontDiscoveryResult> {
       families: families.filter((name) => name.trim() !== ""),
     };
   } catch {
-    const inDesktop = isDesktopApp();
+    /* Not the desktop. A browser may still be able to answer, behind its own
+       permission prompt — and asking is the user's to make, so the result
+       here says the list is available rather than asking for it. */
+  }
+
+  if (canQueryLocalFonts()) {
     return {
       ok: false,
-      reason: inDesktop ? "failed" : "unsupported",
-      message: inDesktop
-        ? "Could not read the installed fonts."
-        : "Installed fonts can only be listed in the desktop app. Start it with `pnpm tauri dev`.",
+      reason: "permission-required",
+      message:
+        "This browser can list the fonts installed on this computer. It will ask your permission first.",
     };
   }
+
+  return {
+    ok: false,
+    reason: isDesktopApp() ? "failed" : "unsupported",
+    message: isDesktopApp()
+      ? "Could not read the installed fonts."
+      : "Installed fonts can only be listed in the desktop app. Start it with `pnpm tauri dev`.",
+  };
 }
 
 /** The installed families, or why there are none. Uses the cached scan. */
@@ -86,6 +161,21 @@ export async function listInstalledFonts(): Promise<FontDiscoveryResult> {
   });
   cached = await pending;
   return cached;
+}
+
+/**
+ * Asks the browser for the installed fonts.
+ *
+ * Only ever called when the person presses the button, because the browser's
+ * permission prompt is theirs to answer and a prompt nobody asked for is a
+ * prompt nobody wants.
+ */
+export async function requestInstalledFonts(): Promise<FontDiscoveryResult> {
+  const result = await queryLocalFonts();
+  if (result.ok) {
+    cached = result;
+  }
+  return result;
 }
 
 /**
@@ -103,10 +193,11 @@ export async function listInstalledFonts(): Promise<FontDiscoveryResult> {
  * one, and a stale one is worse than none — it would offer families that no
  * longer exist and hide ones that now do. Because the cache lives only as long
  * as the process, a font installed since the last run is simply already there
- * next time the app opens.
+ * next to time the app opens.
  *
  * Only started in the desktop app, because in a browser there is no list to
- * find and the attempt would only be an exception.
+ * find without the user's permission, and the attempt would only be an
+ * exception.
  */
 export function warmInstalledFonts(): void {
   if (!isDesktopApp()) return;

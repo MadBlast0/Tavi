@@ -210,8 +210,8 @@ test("OpenAI: a single-level model does not gain any other", async () => {
   );
 });
 
-test("OpenAI: the documented enum excludes max", () => {
-  assert.ok(!openaiDocumentedValues.includes("max" as never));
+test("OpenAI: the documented enum includes max", () => {
+  assert.ok(openaiDocumentedValues.includes("max" as never));
   for (const entry of Object.values(openaiCurated)) {
     for (const level of entry.levels) {
       assert.ok(openaiDocumentedValues.includes(level as never), `${level} not documented`);
@@ -227,7 +227,10 @@ test("OpenAI: provider default omits; an explicit value is sent verbatim", async
       effort: { mode: "explicit", value: "none" },
       thinkingMode: { mode: "provider_default" },
     }),
-    { kind: "payload", fields: { reasoning: { effort: "none" } } },
+    // The Chat Completions surface takes `reasoning_effort` at the top level.
+    // The nested `reasoning: { effort }` shape belongs to the Responses
+    // surface, and sending it here is a request the provider refuses.
+    { kind: "payload", fields: { reasoning_effort: "none" } },
   );
 });
 
@@ -240,7 +243,14 @@ test("OpenAI: `none` is a level, not a thinking-off switch", async () => {
     thinkingMode: { mode: "provider_default" },
   });
   // It serialises as an effort value and does not fabricate a thinking field.
-  assert.deepEqual(out, { kind: "payload", fields: { reasoning: { effort: "none" } } });
+  assert.deepEqual(out, { kind: "payload", fields: { reasoning_effort: "none" } });
+});
+
+test("OpenAI: `max` is a documented effort value", () => {
+  assert.ok(
+    openaiDocumentedValues.includes("max"),
+    "`max` is in OpenAI's documented enum, and a request naming it is refused otherwise",
+  );
 });
 
 test("OpenAI: an uncurated model refuses an explicit effort rather than guessing", async () => {

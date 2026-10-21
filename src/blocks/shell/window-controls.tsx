@@ -1,10 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window"
 import { MinusIcon, SquareIcon, XIcon } from "lucide-react"
 
-import { isDesktopApp } from "@/lib/desktop"
+import { appWindow, type AppWindow } from "@/lib/desktop"
 import { cn } from "@/lib/utils"
 
 /**
@@ -65,15 +64,8 @@ function RestoreGlyph() {
  * it — so the handle is taken once, defensively, and the buttons are simply
  * not drawn when there is nothing to draw them for.
  */
-function useAppWindow(): Window | null {
-  return React.useMemo(() => {
-    if (!isDesktopApp()) return null
-    try {
-      return getCurrentWindow()
-    } catch {
-      return null
-    }
-  }, [])
+function useAppWindow(): AppWindow | null {
+  return React.useMemo(() => appWindow(), [])
 }
 
 /**

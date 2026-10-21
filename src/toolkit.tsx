@@ -9,8 +9,8 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 
+import type { WorkspaceEntry, WorkspaceFile } from "@/lib/api";
 import { listWorkspaceEntries, readWorkspaceFile } from "@/lib/desktop";
-import type { WorkspaceEntry, WorkspaceFile } from "@/lib/desktop";
 import { evaluateExpression } from "@/lib/expression";
 
 /**

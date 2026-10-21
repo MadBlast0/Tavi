@@ -120,14 +120,18 @@ pub fn run() {
         .manage(provider::Cancellations::default())
         .manage(projects::Clones::default())
         .invoke_handler(tauri::generate_handler![
-            keys::list_api_keys,
-            keys::set_api_key,
-            keys::clear_api_key,
+            keys::list_provider_keys,
+            keys::save_provider_key,
+            keys::replace_provider_key,
+            keys::rename_provider_key,
+            keys::activate_provider_key,
+            keys::remove_provider_key,
+            keys::check_provider_key,
+            keys::recheck_provider_key,
             list_installed_fonts,
             provider::chat,
             provider::cancel_chat,
             provider::model_catalogue,
-            provider::key_status,
             projects::list_projects,
             projects::clone_repository,
             projects::cancel_clone,

@@ -20,10 +20,22 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 
 export type { SlimModel };
 
-type CacheEntry = { models: SlimModel[]; fetchedAt: number };
+/**
+ * A catalogue that has been fetched.
+ *
+ * `degraded` is the one state worth showing: the provider could not be
+ * reached and this is the last good copy. The age is there so the picker can
+ * say how old the list is, because a list of models and prices that is three
+ * weeks old names models that no longer exist.
+ */
+type CacheEntry = {
+  models: SlimModel[];
+  fetchedAt: number;
+  degraded: boolean;
+};
 
 const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<SlimModel[]>>();
+const inFlight = new Map<string, Promise<void>>();
 
 const toNumber = (value: string | undefined): number => {
   const parsed = Number(value);
@@ -64,38 +76,71 @@ const fetchFor = async (connection: ProviderConnection): Promise<SlimModel[]> =>
 };
 
 /**
- * Cached catalogue for one connection.
+ * Fetches the catalogue and puts it in the cache.
  *
- * Stale data is served on upstream failure rather than failing the request, so a
- * provider hiccup does not empty the picker.
+ * A failure leaves whatever was there before, marked as degraded, so the
+ * picker can say the list is the last good copy rather than pretending it is
+ * current.
+ */
+const refresh = async (connection: ProviderConnection): Promise<void> => {
+  try {
+    const models = await fetchFor(connection);
+    cache.set(connection.id, {
+      models,
+      fetchedAt: Date.now(),
+      degraded: false,
+    });
+  } catch (error) {
+    const entry = cache.get(connection.id);
+    if (entry) {
+      cache.set(connection.id, { ...entry, degraded: true });
+    }
+    throw error;
+  }
+};
+
+/**
+ * The catalogue for one connection.
+ *
+ * Stale-while-revalidate: a catalogue that has been fetched before is served
+ * at once, and refreshed behind the caller's back. Blocking on the upstream
+ * fetch every time the TTL expired is what made the picker slow to open,
+ * and the copy that is already here is good enough to show while the new one
+ * arrives.
+ *
+ * The first fetch has to be waited for — there is nothing to serve until it
+ * has happened.
  */
 export const getCatalog = async (
   connection: ProviderConnection = defaultConnection(),
-): Promise<{ models: SlimModel[]; stale: boolean }> => {
-  const now = Date.now();
+): Promise<{ models: SlimModel[]; fetchedAt: number; degraded: boolean }> => {
   const hit = cache.get(connection.id);
-  if (hit && now - hit.fetchedAt < CACHE_TTL_MS) {
-    return { models: hit.models, stale: false };
+
+  if (!hit) {
+    await refresh(connection);
+    const entry = cache.get(connection.id)!;
+    return {
+      models: entry.models,
+      fetchedAt: entry.fetchedAt,
+      degraded: entry.degraded,
+    };
   }
 
-  if (!inFlight.has(connection.id)) {
-    inFlight.set(
-      connection.id,
-      fetchFor(connection)
-        .then((models) => {
-          cache.set(connection.id, { models, fetchedAt: Date.now() });
-          return models;
-        })
-        .finally(() => inFlight.delete(connection.id)),
-    );
+  if (Date.now() - hit.fetchedAt >= CACHE_TTL_MS && !inFlight.has(connection.id)) {
+    const pending = refresh(connection)
+      .catch(() => {
+        /* The copy that is already here is kept. The entry is marked
+           degraded, and the picker says so. */
+      })
+      .finally(() => inFlight.delete(connection.id));
+    inFlight.set(connection.id, pending);
   }
 
-  try {
-    return { models: await inFlight.get(connection.id)!, stale: false };
-  } catch (error) {
-    if (hit) return { models: hit.models, stale: true };
-    throw error;
-  }
+  return {
+    models: hit.models,
+    fetchedAt: hit.fetchedAt,
+    degraded: hit.degraded,
+  };
 };
 
 /** The OpenRouter connection, configured from the environment. */

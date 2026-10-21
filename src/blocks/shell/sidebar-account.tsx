@@ -26,8 +26,7 @@ import {
 } from "@/components/dropdown-menu"
 import { SidebarFooter } from "@/components/sidebar"
 import { formatHotkey, useIsApple } from "@/lib/hotkey"
-import { fetchKeyStatus } from "@/lib/transport"
-import { openExternal } from "@/lib/open-external"
+import { listProviderKeys, openExternal, type ProviderKey } from "@/lib/api"
 import { ACTIVE_PROVIDER_ID, providerFor } from "@/lib/providers"
 import { SETTINGS_HOTKEY } from "./settings-dialog"
 
@@ -79,12 +78,6 @@ function initialsOf(name: string): string {
   return (words[0][0] + words[words.length - 1][0]).toUpperCase()
 }
 
-/** What `/api/key` reports. The key itself never leaves the server. */
-type KeyStatus = {
-  valid: boolean
-  isFreeTier?: boolean
-}
-
 /**
  * The row at the bottom of the rail, and the menu it opens.
  *
@@ -103,18 +96,21 @@ type KeyStatus = {
  *
  * It opens upward, because below it is the edge of the window.
  *
- * The items are the account menu. Only the plan badge is real — it is read from
- * the provider key's own free-tier flag — because there is no account system
- * behind the rest of them yet. They are drawn at full strength because a menu
- * full of greyed rows is not the menu; each one carries a title saying what it
- * will do when it does something, so nothing here is quietly pretending.
+ * The items are the account menu. Only the plan badge is real — it is read
+ * from the provider key's own free-tier flag — because there is no account
+ * system behind the rest of them yet. They are drawn at full strength because
+ * a menu full of greyed rows is not the menu; each one carries a title saying
+ * what it will do when it does something, so nothing here is quietly pretending.
+ *
+ * The plan badge is read from the same list the settings pane reads, and from
+ * the same shape, so the two cannot disagree about which key is in use.
  */
 export function SidebarAccount({
   onOpenSettings,
 }: {
   onOpenSettings: () => void
 }) {
-  const [status, setStatus] = React.useState<KeyStatus | null>(null)
+  const [key, setKey] = React.useState<ProviderKey | null>(null)
   const apple = useIsApple()
   /**
    * A zero-width mark pinned to the row's left edge, used as the menu's anchor.
@@ -130,9 +126,16 @@ export function SidebarAccount({
 
   React.useEffect(() => {
     let cancelled = false
-    fetchKeyStatus()
-      .then((data: KeyStatus) => {
-        if (!cancelled) setStatus(data)
+    listProviderKeys()
+      .then((keys: ProviderKey[]) => {
+        if (cancelled) return
+        /* The key the app's own requests go out with — the same one the
+           settings pane marks "In use". */
+        setKey(
+          keys.find(
+            (entry) => entry.active && entry.provider === ACTIVE_PROVIDER_ID,
+          ) ?? null,
+        )
       })
       .catch(() => {
         /* Server unreachable. The badge is simply absent, which is true. */
@@ -182,7 +185,7 @@ export function SidebarAccount({
             <span className="min-w-0 truncate text-[0.8125rem] font-medium">
               {ACCOUNT.name}
             </span>
-            {status?.isFreeTier ? (
+            {key?.isFreeTier ? (
               <span className="shrink-0 text-xs text-muted-foreground">Free</span>
             ) : null}
             <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />

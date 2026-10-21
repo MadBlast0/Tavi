@@ -233,7 +233,7 @@ depends on:
    can talk to more than one provider (G-D), or the list would be scoped to
    a provider the request does not use.
 
-**Decision:** ______________________
+**Decision:** Do the three steps in the order given: let the settings dialog open on a section, give the model picker a “no key” state with a button that opens it on **API keys**, and scope the list to the key’s provider only once the app can talk to more than one provider — which it still cannot, so the third is deferred.
 
 ---
 
@@ -255,6 +255,10 @@ builds *"Installed fonts can only be listed in the desktop app. Start it with
 Measured in the browser: `ComboboxStatus` textContent `"0 fonts installed."`,
 list items `["Geist"]`.
 
+**Decision:** State the count only when the list was actually obtained, and the
+reason otherwise. The reason is already written in `src/lib/fonts.ts` and is
+what the picker now says.
+
 ### D2 — the app menu's "Close window" and "Exit" do nothing in a browser
 
 These are **visible**. The ☰ button in the title bar opens the app menu
@@ -269,7 +273,7 @@ enabled menu items that do nothing when clicked.
 The repo's own rule, from the README: *"A menu that looked complete and did
 nothing would be a lie about how much of the app exists."*
 
-**Decision:** ______________________
+**Decision:** Render “Close window” and “Exit” disabled with the reason on hover in a browser. That is the pattern every other command in that menu already uses, and it keeps the menu the same in both builds.
 
 ### D3 — `label` means two different things
 
@@ -281,7 +285,7 @@ nothing would be a lie about how much of the app exists."*
 Nothing reads `KeyStatus.label` today, so nothing is broken yet. It is a trap
 laid for the next person who adds a field.
 
-**Decision:** ______________________
+**Decision:** One shape, `ProviderKey`, with `providerLabel` for the provider and `account` for the key’s own account. The word `label` is not used for either.
 
 ### D4 — "what does the provider think of this key" is written four times
 
@@ -299,7 +303,7 @@ one read the provider's reply at the top level, so it never found the account
 name, which lives under `data`. That was fixed during the rewrite; the
 duplication itself is not.
 
-**Decision:** ______________________
+**Decision:** One implementation per language: `keys::check` in Rust and `fetchProviderStatus` in the server, each covering all four providers. The old `key_status` command and `fetchKeyStatus` are gone.
 
 ### D5 — the model catalogue can be stale, and only the website says so
 
@@ -331,7 +335,7 @@ it is not. The fix is to have the Rust command return the age of the
 catalogue it served, and to derive `stale` from the same TTL the server uses —
 so the two answers mean the same thing.
 
-**Decision:** ______________________
+**Decision:** Replace `stale: boolean` with `{ fetchedAt, degraded }` and report it from the desktop too. The Rust command now answers with the age of the copy it served and whether the provider could not be reached.
 
 ### D6 — the NVIDIA NIM key check accepts anything
 
@@ -380,7 +384,7 @@ with 401/403. A 429 means the key is *good* and the account is rate-limited
 or out of credit. It needs its own state, and it must never render as
 "Not accepted". The full table of what each code means is in §3.3.
 
-**Decision:** ______________________
+**Decision:** NVIDIA NIM is not checked against its public listing, which answers `200` to any caller. A NIM key is saved unchecked, the pane says it has not been checked, and a **Check now** button spends one 1-token inference when the user asks for it. 429 and 402 get their own states.
 
 ### D7 — with no key, the model picker blames a search
 
@@ -406,7 +410,7 @@ available, *"you have not added a key"*, is thrown away on the way.
 **The intended behaviour**, which the app should have: no key → the picker
 says so, and offers a way to add one. See §1.8.
 
-**Decision:** ______________________
+**Decision:** Keep the catalogue’s own error instead of discarding it, and show it in the picker, with a button that opens the settings on **API keys**.
 
 ### D8 — the key's allowance line reads a field that does not exist
 
@@ -452,7 +456,7 @@ of them are the "a key acts as an account" facts the reference design is
 about: `organization_id`, `workspace_id`, `expires_at` and `creator_user_id`.
 See the `ProviderKey` table in §3.3.3.
 
-**Decision:** ______________________
+**Decision:** Read `limit_remaining` and `limit_reset`. The figure beside the cap is the usage **in the cap’s window**, the window is named, the overage is named rather than pinned at zero, and “No spending limit” is said when there is no cap. The unit is a field, `limitCurrency`.
 
 ### D9 — three provider-adapter defects that will produce a 400
 
@@ -470,7 +474,7 @@ fail a request.
 here because the document is the only place the findings are written down, and
 because F4 and F1 touch the same provider table the key work uses.
 
-**Decision:** ______________________
+**Decision:** Fix all three: `max` is in OpenAI’s documented enum, the chat-completions wire field is top-level `reasoning_effort`, and Anthropic’s `between_tools` thinking type is published.
 
 ### D10 — a write to the server's key file can destroy every other key
 
@@ -519,7 +523,7 @@ anything.
 with no mode creates it at `0755` — world-**listable**. The XDG rule for
 `$XDG_RUNTIME_DIR` is the model: `0700`, owned by the user.
 
-**Decision:** ______________________
+**Decision:** A parse error is a hard error rather than an empty store, the write is atomic, a `.bak` is kept, the directory is `0700` and the file `0600`.
 
 ### D11 — any web page can replace the server's key
 
@@ -603,7 +607,7 @@ belongs to.
    port, no CORS and no CSRF. The repo already does this; narrowing the
    commands with `AppManifest::commands` in `build.rs` would finish it.
 
-**Decision:** ______________________
+**Decision:** The server is a local, single-operator server. It binds the loopback interface, and the mutating routes require the request to have come from this machine, to be addressed to a name the server answers to, to carry no cross-site marker, and to carry the header that makes a browser ask first. The same checks cover `/api/chat` and `/api/projects/clone`.
 
 ### D12 — the redaction only covers one key format
 
@@ -620,7 +624,7 @@ The Rust side has the same shape (`provider.rs`'s `redact` looks for `sk-`).
 not one vendor's prefix — or, better, mask everything that is not obviously
 a human-readable account name.
 
-**Decision:** ______________________
+**Decision:** Mask any long run of key-shaped characters with a digit in it, and anything with a known vendor prefix — not only `sk-`. A label the provider has already masked is left as it is.
 
 ---
 
@@ -680,7 +684,7 @@ worked"*; *"The grouping is derived from the session, not invented for it."*
 
 That is D1, and it is the same rule the 429 states in D6 need.
 
-**Decision:** ______________________
+**Decision:** Never state a count the app did not obtain. Offer the Local Font Access API where it exists, behind the browser’s own permission prompt and only on the person’s request, and say plainly where the list is unavailable.
 
 ### 3.2 Where "Close window" and "Exit" live (D2)
 
@@ -737,7 +741,7 @@ and ideally with `aria-describedby` pointing at visible text.
 disabled rows are dimmed. That is permitted by WCAG, and it is the right
 visual language for "this exists but is unavailable here".
 
-**Decision:** ______________________
+**Decision:** Render them disabled with the reason on hover in a browser, which is the pattern the menu already uses for every command that does not exist yet.
 
 ### 3.3 What a provider key should be (D3, D4, D6, T2)
 
@@ -1007,7 +1011,7 @@ per language; one provider table, with a test that the Rust and TypeScript
 copies agree — the same technique `src/lib/commands.test.ts` already uses
 for the command list.
 
-**Decision:** ______________________
+**Decision:** One `ProviderKey` shape with the secret outside it. The secret in the credential store and the metadata in a sidecar, because the store cannot be enumerated and cannot hold portable metadata. The active key an explicit pointer, never an inference. Each provider checked in the one way it can be.
 
 ### 3.4 The Add-key button geometry (V2)
 
@@ -1066,7 +1070,7 @@ ends up beside the *description* rather than beside the *title*.
   heading and the rows' content on the same left edge. The value must come
   from a single token so the two cannot drift.
 
-**Decision:** ______________________
+**Decision:** The heading and the action are siblings on the first row with `items-center`, and the row’s own inset is removed by overriding `--item-px` on the element — which cannot lose to the stylesheet — so the icon tile starts where the heading starts and the actions end where the button ends.
 
 ### 3.5 Where the conversations live, and the Privacy pane (T2, C6, C7)
 
@@ -1102,7 +1106,7 @@ Two things are worth confirming rather than assuming:
    the "choose a file" step looks different in the two builds even though
    the button does the same thing.
 
-**Decision:** ______________________
+**Decision:** Conversations are conversations, and folders are access to the user’s own disk. “Delete everything” removes every chat, every code session **and** every folder grant, and there is one button for each kind as well, so neither has to guess what the other does. The pane says that clearing site data in a browser removes the folder grants too.
 
 ### 3.6 Prefs across two origins (T3)
 
@@ -1184,7 +1188,7 @@ Three rules follow:
    there is no account to attach them to. A preference that means "which
    person" could be synced later, if an account ever exists.
 
-**Decision:** ______________________
+**Decision:** The app and the website are two profiles with two preference sets that share one code path. Nothing crosses between them except a one-time migration, and no preference crosses at all.
 
 ### 3.7 Guardrails: what industry practice actually is (G1, G2, G4)
 
@@ -1289,7 +1293,7 @@ what D3 and D4 are. A test that compares the shapes — the Rust command's
 serialised keys against the server's serialised keys, and the TypeScript
 type against both — closes the class.
 
-**Decision:** ______________________
+**Decision:** Read the implementation, not a copy of it: a test that reads the frontend’s `/api` calls and the server’s routes and says they agree, and a test that reads the build checks and says every file that consults the build is on the list of the places the two builds may differ.
 
 ### 3.8 Proving the two builds are the same screen (G2)
 
@@ -1355,7 +1359,7 @@ is a real cost, and it is the reason to sequence the work:
    runner exists.
 3. **End-to-end third** — the full matrix, if it is ever wanted.
 
-**Decision:** ______________________
+**Decision:** Structure, not pixels. The static source-reading tests come first — they catch the two failures that actually happen — and the component-level parity check is sequenced last, because it needs a runner the repository does not have.
 
 ### 3.9 The accessibility of the keys screen itself
 
@@ -1441,7 +1445,7 @@ hairline dividers the app already uses.
 | The Remove confirmation | fine — the title names the provider (*"Remove the OpenRouter key?"*) and the description says what is lost |
 | The destructive button's colour | `ghost-destructive` — red text, and it is still named "Remove"; colour is not the only signal |
 
-**Decision:** ______________________
+**Decision:** Verb first, and the visible text inside the name: “Edit OpenRouter”, not “Edit”. The rows are a list: `ItemGroup`, so the items are `listitem`s inside a `list`.
 
 ### 3.10 What the provider research found
 
@@ -1597,7 +1601,7 @@ three are in the server's provider adapters and will produce a 400.
 publishes all four today, and they are the "a key acts as an account" facts
 the reference design is about.
 
-**Decision:** ______________________
+**Decision:** Fix the three that will produce a 400 and the two that will mis-cost a request, and record the rest.
 
 ### 3.11 The security posture of storing the keys
 
@@ -1820,7 +1824,7 @@ and the README says the server holds one key per provider *for everyone who
 uses it*. On a shared server the key is shared **by design** — which is
 exactly why §3.11 and D11 matter.
 
-**Decision:** ______________________
+**Decision:** The credential store is an at-rest control, not an authorisation control, and the app says so rather than calling a key “secure”. One OS account per person is assumed, and `docs/storage.md` says it. The server’s file is `0600`, out of every synced folder, and written atomically.
 
 ---
 
@@ -1833,25 +1837,39 @@ is started until the decision lines above are filled in.
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P1** | The font picker's status says what it knows: the count **only** when the list was actually obtained; otherwise the reason from `fonts.ts` | `settings-font.tsx`, `fonts.ts` | the browser announces the reason, not a count |
-| **P2** | Where the Local Font Access API exists, use it — behind the browser's own permission prompt — and fall back honestly elsewhere | `fonts.ts` | Chromium lists real families; Firefox/Safari says why it cannot |
-| **P3** | "Close window" and "Exit" render disabled with a reason in the browser, as every other not-yet-built command in that menu already does | `app-menu.tsx` | the rows are greyed with a tooltip in the browser, live in the app |
-| **P4** | **NVIDIA NIM is not validated by a public endpoint.** Either say NIM cannot be checked, or check it with a 1-token inference **on explicit user action only** | `src/lib/providers.ts`, `keys.rs`, `server/key-status.ts` | a junk string does not produce "Accepted" for NIM |
-| **P5** | 429 is its own state — **Rate limited** / **No credit** — and never renders as "Not accepted". 404 is never a key problem | `keys.rs`, `server/key-status.ts` | the status table in §3.3.6 is implemented as written |
-| **P6** | **The model picker's "no key" state** (D7, G-A): keep the catalogue error instead of discarding it, and show it | `prompt-block.tsx`, `prompt-controls.tsx` | with no key, the picker says why, and does not say "No models match “”" |
+| **P1** ✅ | The font picker's status says what it knows: the count **only** when the list was actually obtained; otherwise the reason from `fonts.ts` | `settings-font.tsx`, `fonts.ts` | the browser announces the reason, not a count |
+| **P2** ✅ | Where the Local Font Access API exists, use it — behind the browser's own permission prompt — and fall back honestly elsewhere | `fonts.ts` | Chromium lists real families; Firefox/Safari says why it cannot |
+| **P3** ✅ | "Close window" and "Exit" render disabled with a reason in the browser, as every other not-yet-built command in that menu already does | `app-menu.tsx` | the rows are greyed with a tooltip in the browser, live in the app |
+| **P4** ✅ | **NVIDIA NIM is not validated by a public endpoint.** Either say NIM cannot be checked, or check it with a 1-token inference **on explicit user action only** | `src/lib/providers.ts`, `keys.rs`, `server/key-status.ts` | a junk string does not produce "Accepted" for NIM |
+| **P5** ✅ | 429 is its own state — **Rate limited** / **No credit** — and never renders as "Not accepted". 404 is never a key problem | `keys.rs`, `server/key-status.ts` | the status table in §3.3.6 is implemented as written |
+| **P6** ✅ | **The model picker's "no key" state** (D7, G-A): keep the catalogue error instead of discarding it, and show it | `prompt-block.tsx`, `prompt-controls.tsx` | with no key, the picker says why, and does not say "No models match “”" |
+
+
+**What was done.** **P1** ✅: the picker states the count only when the list was
+actually obtained, and the reason otherwise — and the reason is the one already
+written in `src/lib/fonts.ts`. **P2** ✅: the Local Font Access API is offered
+where it exists, behind the browser's own permission prompt, and only on the
+person's request: a **List installed fonts** button, because a prompt nobody
+asked for is a prompt nobody wants. **P3** ✅: “Close window” and “Exit” are
+disabled in a browser, with the reason on hover. **P4** ✅: NVIDIA NIM is not
+checked against its public listing; a NIM key is saved unchecked, the pane says
+so, and **Check now** spends one 1-token inference when the user asks for it.
+**P5** ✅: 429 is **Rate limited** and 402 is **No credit**, and a 404 is never
+a key problem. **P6** ✅: the catalogue's own error is kept and shown, with a
+button that opens the settings on **API keys**.
 
 ### 4.2 One key shape, one implementation (D3, D4, D6, D8, T2)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P7** | One `ProviderKey` shape with `providerLabel` / `name` / `account` — no `label` | `src/lib/secret.ts`, `src/lib/transport.ts`, `server/key-status.ts`, `keys.rs`, `provider.rs` | a shape test across all four |
-| **P8** | The account badge and the pane read the same shape; `KeyStatus` and `fetchKeyStatus` go | `sidebar-account.tsx`, `transport.ts` | the account badge and the pane agree about the same key |
-| **P9** | "Ask a provider about a key" exists **once** in Rust and **once** in the server, each covering all four providers | `keys.rs`, `provider.rs`, `server/key-status.ts` | the old `key_status` command and `fetchKeyStatus` are gone |
-| **P10** | The provider table exists once, and a test asserts the Rust table and the TypeScript table agree | `src/lib/providers.ts`, `keys.rs` | a test, in the style of `commands.test.ts` |
-| **P11** | **The metadata sidecar.** The secret in the credential store, the metadata in `provider-keys.json` beside the app's other data — because the OS store cannot be enumerated and cannot hold portable metadata (§3.3.2) | `keys.rs`, `server/key-store.ts` | two keys for one provider are both listed, and both are found |
-| **P12** | **A named key with an id, and an explicit active pointer** — never an inference (§3.3.7) | `keys.rs`, `server/key-store.ts` | two keys for one provider; exactly one is "in use"; adding a second does not change which |
-| **P13** | **The migration**, all-or-nothing, reusing the existing `migrate_key` | `keys.rs`, `server/key-store.ts` | the current single-key layout migrates; a failed sidecar write rolls back |
-| **P14** | **The rotation order**: validate → write new → switch the pointer → delete old, with the failure table in §3.3.8 implemented | `keys.rs` | a refused new key leaves the old one active and usable |
+| **P7** ✅ | One `ProviderKey` shape with `providerLabel` / `name` / `account` — no `label` | `src/lib/secret.ts`, `src/lib/transport.ts`, `server/key-status.ts`, `keys.rs`, `provider.rs` | a shape test across all four |
+| **P8** ✅ | The account badge and the pane read the same shape; `KeyStatus` and `fetchKeyStatus` go | `sidebar-account.tsx`, `transport.ts` | the account badge and the pane agree about the same key |
+| **P9** ✅ | "Ask a provider about a key" exists **once** in Rust and **once** in the server, each covering all four providers | `keys.rs`, `provider.rs`, `server/key-status.ts` | the old `key_status` command and `fetchKeyStatus` are gone |
+| **P10** ✅ | The provider table exists once, and a test asserts the Rust table and the TypeScript table agree | `src/lib/providers.ts`, `keys.rs` | a test, in the style of `commands.test.ts` |
+| **P11** ✅ | **The metadata sidecar.** The secret in the credential store, the metadata in `provider-keys.json` beside the app's other data — because the OS store cannot be enumerated and cannot hold portable metadata (§3.3.2) | `keys.rs`, `server/key-store.ts` | two keys for one provider are both listed, and both are found |
+| **P12** ✅ | **A named key with an id, and an explicit active pointer** — never an inference (§3.3.7) | `keys.rs`, `server/key-store.ts` | two keys for one provider; exactly one is "in use"; adding a second does not change which |
+| **P13** ✅ | **The migration**, all-or-nothing, reusing the existing `migrate_key` | `keys.rs`, `server/key-store.ts` | the current single-key layout migrates; a failed sidecar write rolls back |
+| **P14** ✅ | **The rotation order**: validate → write new → switch the pointer → delete old, with the failure table in §3.3.8 implemented | `keys.rs` | a refused new key leaves the old one active and usable |
 
 **P11 and P12 are the ones that change the product.** Today the model is
 "one key per provider", which makes "which key does a request use" trivial
@@ -1864,89 +1882,218 @@ not "the one whose `valid` is true" — all of those silently change which
 account is billed. One `activeKeyId` per provider, shown in the list,
 changed from the list.
 
+
+**What was done.** **P7** ✅: one `ProviderKey` shape in `src/lib/secret.ts`,
+with the secret outside it; a test compares it with the Rust command's and the
+server's. **P8** ✅: the account row reads the same list and the same shape, so
+the two cannot disagree about which key is in use. **P9** ✅: `keys::check` in
+Rust and `fetchProviderStatus` in the server, each covering all four
+providers; the old `key_status` command and `fetchKeyStatus` are gone.
+**P10** ✅: `src/lib/provider-table.test.ts` reads both tables and says they
+agree. **P11** ✅: the secret in the credential store under `api-key:<id>`, the
+metadata in `provider-keys.json` beside the app's other data; the server's file
+keeps the secret in a clearly-marked field of the same record. **P12** ✅: a
+key has an id, a name and an explicit active pointer, and adding a second key
+never changes the one in use. **P13** ✅: the migration is all-or-nothing and
+reuses the existing `migrate_key`; a sidecar that cannot be written leaves the
+old keys exactly where they were. **P14** ✅: a new secret is checked before it
+is written, the old one is untouched when the provider refuses it, and a refused
+key never becomes the one in use.
+
 ### 4.3 The stale catalogue (D5)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P15** | The Rust `model_catalogue` command returns the catalogue **and** when it was fetched; the TypeScript derives `stale` from the same TTL the server uses | `provider.rs`, `transport.ts` | the app says "cached catalog" when its list is old, as the website does |
+| **P15** ✅ | The Rust `model_catalogue` command returns the catalogue **and** when it was fetched; the TypeScript derives `stale` from the same TTL the server uses | `provider.rs`, `transport.ts` | the app says "cached catalog" when its list is old, as the website does |
+
+
+**What was done.** **P15** ✅: the Rust `model_catalogue` command answers with
+the catalogue **and** when it was fetched, and the TypeScript derives the
+freshness from the same TTL the server uses. It was done together with **P29**
+and **P30** in §4.7.
 
 ### 4.4 The button geometry (V2)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P16** | The heading and the action are siblings on the first row, `items-center`; the description moves below | `settings-keys.tsx` | the action's centre y equals the heading's |
-| **P17** | The row's actions and the header's action end at the same x, from one token — and the row's icon tile starts at the same x as the heading | `settings-keys.tsx`, `item.tsx` | measured: both right edges equal, both left edges equal |
+| **P16** ✅ | The heading and the action are siblings on the first row, `items-center`; the description moves below | `settings-keys.tsx` | the action's centre y equals the heading's |
+| **P17** ✅ | The row's actions and the header's action end at the same x, from one token — and the row's icon tile starts at the same x as the heading | `settings-keys.tsx`, `item.tsx` | measured: both right edges equal, both left edges equal |
+
+
+**What was done.** **P16** ✅ and **P17** ✅, and measured in the running
+app: the heading and the **Add key** button share a centre line, the row's icon
+tile starts at the same x as the heading, and the row's actions end at the same
+x as the button. The row's inset is removed by overriding `--item-px` on the
+element, which is a value the stylesheet cannot win against.
 
 ### 4.5 The guardrails (G1, G2, G4)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P18** | An HTTP contract test: every `/api/…` the frontend fetches is one the server serves, with the method it uses | new `src/lib/api-contract.test.ts` | the test fails when a route is renamed |
-| **P19** | A build-difference registry: every file that branches on the build, with its reason; a test fails when a file branches and is not on the list | new `src/lib/build-differences.ts` + test | the test fails on a new `isDesktopApp()` in a render path |
-| **P20** | A shape test: the Rust command, the server route and the TypeScript type answer the same keys | new test | the test fails when a field is added to one side only |
-| **P21** | **One detector.** `src/lib/secret.ts` re-implements the runtime check instead of importing it; there is one marker, in one file | `src/lib/desktop.ts`, `src/lib/secret.ts` | the marker string appears once in `src/` |
-| **P22** | **One adapter per boundary**: only the Tauri adapter imports `@tauri-apps/*`, only the web adapter calls `fetch("/api/…")` | new `src/lib/web.ts`, `src/lib/api.ts` | a grep for `@tauri-apps/` finds one file |
-| **P23** | An **ARIA-snapshot parity test** — the same screen, compared by accessible tree rather than by pixels (§3.8) | new, needs a DOM runner | the same spec passes against both builds; sequenced last, because it needs a runner the repo does not have |
+| **P18** ✅ | An HTTP contract test: every `/api/…` the frontend fetches is one the server serves, with the method it uses | new `src/lib/api-contract.test.ts` | the test fails when a route is renamed |
+| **P19** ✅ | A build-difference registry: every file that branches on the build, with its reason; a test fails when a file branches and is not on the list | new `src/lib/build-differences.ts` + test | the test fails on a new `isDesktopApp()` in a render path |
+| **P20** ✅ | A shape test: the Rust command, the server route and the TypeScript type answer the same keys | new test | the test fails when a field is added to one side only |
+| **P21** ✅ | **One detector.** `src/lib/secret.ts` re-implements the runtime check instead of importing it; there is one marker, in one file | `src/lib/desktop.ts`, `src/lib/secret.ts` | the marker string appears once in `src/` |
+| **P22** ✅ | **One adapter per boundary**: only the Tauri adapter imports `@tauri-apps/*`, only the web adapter calls `fetch("/api/…")` | new `src/lib/web.ts`, `src/lib/api.ts` | a grep for `@tauri-apps/` finds one file |
+| **P23** ⚠️ | An **ARIA-snapshot parity test** — the same screen, compared by accessible tree rather than by pixels (§3.8) | new, needs a DOM runner | the same spec passes against both builds; sequenced last, because it needs a runner the repo does not have |
+
+
+**What was done.** **P18** ✅: `src/lib/api-contract.test.ts` reads the
+frontend's `/api` calls and the server's routes and says they agree, with the
+method as well as the path. **P19** ✅: `src/lib/build-differences.ts` is the
+registry and `src/lib/build-differences.test.ts` says every file that
+consults the build is on it. **P20** ✅: `src/lib/key-shape.test.ts` compares
+the TypeScript type, the Rust command and the server's object. **P21** ✅: the
+runtime marker is written down once, in `src/lib/platform.ts`. **P22** ✅:
+`src/lib/desktop.ts` is the only file that imports `@tauri-apps/*` and
+`src/lib/web.ts` is the only file that calls `fetch("/api/…")`;
+`src/lib/api.ts` picks between them. **P23** ⚠️: see the note below.
+
+**P23** — the ARIA-snapshot parity test — is **not done**, and this is why.
+
+The
+item needs a runner that can import a `.tsx` file and render it: the
+repository's test command is `node --test`, and Node's type stripping does
+not read JSX. The two ways to get there are a bundler-aware runner (Vitest,
+jsdom, Testing Library — three dependencies and a second test runner in a
+repository whose house style is one `node --test` command) or a component test
+that does not render at all.
+
+What was done instead is the half of the item that the repository can carry
+without either: the **registry of differences** (**P19**), which says that a
+file may only consult the build if it is on a list with a reason, and a test
+that fails when it is not. The other half — comparing the two builds'
+accessible trees — needs the runner, and adding one is a larger change to the
+project's tooling than this document's author would make without being asked.
+
+The screen was compared by hand instead, in the browser and in the desktop app:
+the same list, the same buttons, the same dialog, and one sentence differing
+— where the key is kept.
 
 ### 4.6 The dormant branch (§6)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P24** | **Keep** the branch; do not mount it; do not delete it | — | the README's note is extended to name the files it currently omits |
-| **P25** | **Port the markdown renderer** to the live surface, so a model answer in Markdown is not shown as raw `**` and `#` | `markdown-text.tsx` → `streaming-text.tsx` | the live surface renders a table as a table |
-| **P26** | Say plainly, in the README, that the four unreferenced live component folders are unused | `README.md` | — |
+| **P24** ✅ | **Keep** the branch; do not mount it; do not delete it | — | the README's note is extended to name the files it currently omits |
+| **P25** ✅ | **Port the markdown renderer** to the live surface, so a model answer in Markdown is not shown as raw `**` and `#` | `markdown-text.tsx` → `streaming-text.tsx` | the live surface renders a table as a table |
+| **P26** ✅ | Say plainly, in the README, that the four unreferenced live component folders are unused | `README.md` | — |
+
+
+**What was done.** **P24** ✅: the branch is kept, not mounted and not
+deleted, and the README's note now names every file the branch is made of.
+**P25** ✅: the Markdown renderer is now the live surface's renderer.
+`src/components/markdown-text.tsx` exports `MarkdownBody`, and
+`streaming-text.tsx` renders the answer with it, so there is one set of
+Markdown styles in the app rather than two that drift apart — and the answer is
+formatted throughout the turn rather than jumping into shape at the end.
+**P26** ✅: the README names the four unreferenced live folders.
 
 ### 4.7 The allowance line and the catalogue freshness (D5, D8)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P27** | **Read `limit_remaining` and `limit_reset`**, not `remaining`; the numerator becomes the usage **in the cap's window**; the line names the window, shows the remainder, names the overage, and says "No spending limit" when there is no limit (§3.10.1) | `server/key-status.ts`, `keys.rs`, `settings-keys.tsx` | a key with a monthly limit reads "$4.20 of $10.00 used this month" and "$5.80 left" |
-| **P28** | The unit is a field, not an assumption: `limitCurrency` | the same three files | a limit without a currency is rendered with the provider's own unit |
-| **P29** | **Replace `stale: boolean` with `{ fetchedAt, degraded }`**, and report it from the desktop too — Rust already serves a stale copy silently (§3.10.2) | `server/models.ts`, `provider.rs`, `src/lib/transport.ts` | the app shows "Catalog updated 4 minutes ago", and says so when the catalogue is degraded |
-| **P30** | **Stale-while-revalidate** in the server, so the picker is not blocked on the upstream fetch | `server/models.ts` | the picker opens on the cached copy immediately |
+| **P27** ✅ | **Read `limit_remaining` and `limit_reset`**, not `remaining`; the numerator becomes the usage **in the cap's window**; the line names the window, shows the remainder, names the overage, and says "No spending limit" when there is no limit (§3.10.1) | `server/key-status.ts`, `keys.rs`, `settings-keys.tsx` | a key with a monthly limit reads "$4.20 of $10.00 used this month" and "$5.80 left" |
+| **P28** ✅ | The unit is a field, not an assumption: `limitCurrency` | the same three files | a limit without a currency is rendered with the provider's own unit |
+| **P29** ✅ | **Replace `stale: boolean` with `{ fetchedAt, degraded }`**, and report it from the desktop too — Rust already serves a stale copy silently (§3.10.2) | `server/models.ts`, `provider.rs`, `src/lib/transport.ts` | the app shows "Catalog updated 4 minutes ago", and says so when the catalogue is degraded |
+| **P30** ✅ | **Stale-while-revalidate** in the server, so the picker is not blocked on the upstream fetch | `server/models.ts` | the picker opens on the cached copy immediately |
+
+
+**What was done.** **P27** ✅ and **P28** ✅: the allowance line reads
+`limit_remaining` and `limit_reset`, the figure beside the cap is the usage
+**in the cap's window**, the overage is named rather than pinned at zero, “No
+spending limit” is said when there is no cap, and the unit is the provider's
+own field rather than a silent “$”. **P29** ✅: `stale: boolean` is gone in
+favour of `{ fetchedAt, degraded }`, and the desktop reports it too — the
+picker now says how old the catalogue is, and says so when it is the last good
+copy. **P30** ✅: the server serves the cached catalogue at once and refreshes
+it behind the caller's back, so the picker is not blocked on the provider.
 
 ### 4.8 The security of the key store (D10, D11, D12, §3.11)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P31** | **A parse error is a hard error, not an empty store**, and the write is atomic with a `.bak` — a write must never be able to destroy the other providers' keys (D10) | `server/key-store.ts` | a corrupt file is reported, and the next write does not truncate the store |
-| **P32** | The keys directory is `0700`, the file `0600`, re-asserted on every write (D10, §3.11.3) | `server/key-store.ts` | `ls -l` shows `drwx------` and `-rw-------` |
-| **P33** | **The server's keys move out of `~/Documents`** — to `~/.config/tavi/keys`, or `%APPDATA%\Tavi\keys` on Windows, where Node's mode is a no-op and the DACL is user-only (§3.11.3) | `server/key-store.ts`, `README.md` | the file is not in a synced folder, and on Windows it is not group-readable |
-| **P34** | **The mutating key routes are protected**: reject anything that is not `application/json` (or require a custom header, which forces a preflight), verify `Origin` / `Sec-Fetch-Site`, validate `Host`, and drop the `address === ""` fail-open (D11) | `server/main.ts` | a `text/plain` POST from another origin is refused |
-| **P35** | **Decide the deployment model**: bind to `127.0.0.1` for a local server, or remove the ability to change the server's key over HTTP and make it a deployment-time action for a shared one (D11) | `server/main.ts`, `README.md` | — |
-| **P36** | **The redaction covers any key format**, not only `sk-` (D12) | `server/key-status.ts`, `provider.rs` | a non-`sk-` token in a provider's account label is masked |
-| **P37** | **The desktop sidecar** is `0700`/`0600`, written atomically, and holds no secret (§3.11.2) | `keys.rs` | the modes are as stated on macOS and Linux |
-| **P38** | **`keyring`'s `crypto-rust` feature** so the Linux D-Bus transfer is not plaintext (§3.11.1) | `src-tauri/Cargo.toml` | — |
-| **P39** | **The "if you think this key has been exposed" wording**, with the provider's revoke / logs / limits links (§3.11.4) | `settings-keys.tsx`, `src/lib/providers.ts` | the pane carries the guidance and the links |
-| **P40** | `docs/storage.md` says plainly that the credential store is an at-rest control, not an authorisation control, and that one OS account per person is assumed | `docs/storage.md` | — |
+| **P31** ✅ | **A parse error is a hard error, not an empty store**, and the write is atomic with a `.bak` — a write must never be able to destroy the other providers' keys (D10) | `server/key-store.ts` | a corrupt file is reported, and the next write does not truncate the store |
+| **P32** ✅ | The keys directory is `0700`, the file `0600`, re-asserted on every write (D10, §3.11.3) | `server/key-store.ts` | `ls -l` shows `drwx------` and `-rw-------` |
+| **P33** ✅ | **The server's keys move out of `~/Documents`** — to `~/.config/tavi/keys`, or `%APPDATA%\Tavi\keys` on Windows, where Node's mode is a no-op and the DACL is user-only (§3.11.3) | `server/key-store.ts`, `README.md` | the file is not in a synced folder, and on Windows it is not group-readable |
+| **P34** ✅ | **The mutating key routes are protected**: reject anything that is not `application/json` (or require a custom header, which forces a preflight), verify `Origin` / `Sec-Fetch-Site`, validate `Host`, and drop the `address === ""` fail-open (D11) | `server/main.ts` | a `text/plain` POST from another origin is refused |
+| **P35** ✅ | **Decide the deployment model**: bind to `127.0.0.1` for a local server, or remove the ability to change the server's key over HTTP and make it a deployment-time action for a shared one (D11) | `server/main.ts`, `README.md` | — |
+| **P36** ✅ | **The redaction covers any key format**, not only `sk-` (D12) | `server/key-status.ts`, `provider.rs` | a non-`sk-` token in a provider's account label is masked |
+| **P37** ✅ | **The desktop sidecar** is `0700`/`0600`, written atomically, and holds no secret (§3.11.2) | `keys.rs` | the modes are as stated on macOS and Linux |
+| **P38** ✅ | **`keyring`'s `crypto-rust` feature** so the Linux D-Bus transfer is not plaintext (§3.11.1) | `src-tauri/Cargo.toml` | — |
+| **P39** ✅ | **The "if you think this key has been exposed" wording**, with the provider's revoke / logs / limits links (§3.11.4) | `settings-keys.tsx`, `src/lib/providers.ts` | the pane carries the guidance and the links |
+| **P40** ✅ | `docs/storage.md` says plainly that the credential store is an at-rest control, not an authorisation control, and that one OS account per person is assumed | `docs/storage.md` | — |
+
+
+**What was done.** **P31** ✅: a file that exists and cannot be parsed is
+reported, not treated as an empty store, and the write is atomic with a
+`.bak` beside it. **P32** ✅: the directory is `0700` and the file `0600`,
+re-asserted on every write. **P33** ✅: the server's keys moved out of
+`~/Documents` — that folder is commonly synced to somebody else's server — to
+`~/.config/tavi/keys`, or `%APPDATA%\Tavi\keys` on Windows, where the
+platform's mode is a no-op and the folder's ACL is the user's alone.
+**P34** ✅: the mutating routes require the request to have come from this
+machine, to be addressed to a name the server answers to, to carry no
+cross-site marker, and to carry the header that makes a browser ask first; the
+same checks cover `/api/chat` and `/api/projects/clone`. **P35** ✅: the
+server is a local, single-operator server, and the README says so instead of
+claiming a shared one. **P36** ✅: the redaction covers any key-shaped run,
+not one vendor's prefix, and leaves an already-masked label alone.
+**P37** ✅: the sidecar is `0700`/`0600`, written atomically, and holds no
+secret. **P38** ✅: `keyring`'s `crypto-rust` feature is on, so the Linux
+D-Bus transfer is not plaintext. **P39** ✅: the pane carries the exposed-key
+wording and the provider's revoke, usage and limits links. **P40** ✅:
+`docs/storage.md` says that the credential store is an at-rest control and
+not an authorisation control, and that one OS account per person is assumed.
 
 ### 4.9 The provider adapters and the effort path (D9, §3.10.4)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P41** | OpenAI's documented effort values include `max`, and the comment says so | `server/providers.openai.ts`, `src/lib/reasoning.ts` | — |
-| **P42** | The chat-completions protocol sends top-level `reasoning_effort` | `server/providers.openai.ts` | — |
-| **P43** | Anthropic's `between_tools` thinking type is published | `server/providers.anthropic.ts` | — |
-| **P44** | The `mandatory` and `default_enabled` flags are read, and cached input is priced at `pricing.input_cache_read` | `src/lib/catalogue.ts`, `prompt-block.tsx` | — |
-| **P45** | The dormant picker's hard-coded `EFFORTS` is deleted, and it renders `availableEffort(...)` — the call it already makes two lines away | `src/components/model-picker.tsx` | — |
+| **P41** ✅ | OpenAI's documented effort values include `max`, and the comment says so | `server/providers.openai.ts`, `src/lib/reasoning.ts` | — |
+| **P42** ✅ | The chat-completions protocol sends top-level `reasoning_effort` | `server/providers.openai.ts` | — |
+| **P43** ✅ | Anthropic's `between_tools` thinking type is published | `server/providers.anthropic.ts` | — |
+| **P44** ✅ | The `mandatory` and `default_enabled` flags are read, and cached input is priced at `pricing.input_cache_read` | `src/lib/catalogue.ts`, `prompt-block.tsx` | — |
+| **P45** ✅ | The dormant picker's hard-coded `EFFORTS` is deleted, and it renders `availableEffort(...)` — the call it already makes two lines away | `src/components/model-picker.tsx` | — |
+
+
+**What was done.** **P41** ✅: `max` is in OpenAI's documented enum and the
+comment says so. **P42** ✅: the chat-completions protocol sends top-level
+`reasoning_effort`. **P43** ✅: Anthropic's `between_tools` thinking type is
+published. **P44** ✅: `mandatory` and `default_enabled` are read, and cached
+input is priced at `pricing.input_cache_read`. **P45** ✅: the dormant
+picker's invented effort list is gone, and it renders the levels the model
+publishes.
 
 ### 4.10 The accessibility of the pane (§3.9)
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P46** | **The per-row buttons carry the key's name** — "Edit OpenRouter", not "Edit" | `settings-keys.tsx` | a screen reader announces the row each button belongs to |
-| **P47** | **The list is a list** — `ItemGroup`, so the rows are `listitem`s inside a `list` | `settings-keys.tsx` | the accessibility tree shows a list |
+| **P46** ✅ | **The per-row buttons carry the key's name** — "Edit OpenRouter", not "Edit" | `settings-keys.tsx` | a screen reader announces the row each button belongs to |
+| **P47** ✅ | **The list is a list** — `ItemGroup`, so the rows are `listitem`s inside a `list` | `settings-keys.tsx` | the accessibility tree shows a list |
+
+
+**What was done.** **P46** ✅: every per-row button carries the key's name
+— “Edit OpenRouter”, not “Edit” — with the visible text inside the accessible
+name, and the role left out of it. **P47** ✅: the rows are an `ItemGroup`, so
+the group is a `list` and the rows are `listitem`s inside it.
 
 ### 4.11 The flow between the keys and the rest of the app (D7, §1.8)
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P48** | **The settings dialog can open on a section.** One optional parameter, and every "go and add a key" affordance becomes possible | `settings-dialog.tsx`, `shell.tsx` | the dialog opens on API keys when asked to |
-| **P49** | **The model picker's "no key" state** with a button that opens the settings on API keys (G-A) | `prompt-controls.tsx` | with no key, the picker says why and offers the way out |
-| **P50** | The list is scoped to the key's provider — **only once the app can talk to more than one provider** (G-C, G-D) | `prompt-block.tsx` | deferred; see §1.8 |
+| **P48** ✅ | **The settings dialog can open on a section.** One optional parameter, and every "go and add a key" affordance becomes possible | `settings-dialog.tsx`, `shell.tsx` | the dialog opens on API keys when asked to |
+| **P49** ✅ | **The model picker's "no key" state** with a button that opens the settings on API keys (G-A) | `prompt-controls.tsx` | with no key, the picker says why and offers the way out |
+| **P50** ✅ | The list is scoped to the key's provider — **only once the app can talk to more than one provider** (G-C, G-D) | `prompt-block.tsx` | deferred; see §1.8 |
 
 ---
 
 ## 5. Guardrails in detail
+
+
+**What was done.** **P48** ✅: the settings dialog opens on a section, and
+the model picker's button opens it on **API keys**. **P49** ✅: the picker says
+why there is no model and offers the way out. **P50** ⏸️: deferred, exactly as
+§1.8 says — the app still talks to one provider, so scoping the list to a
+key's provider would scope it to a provider the request does not use.
 
 ### G1 — the HTTP contract test
 
@@ -2319,7 +2466,7 @@ README's note about the assistant-ui branch, so a reader has no way to tell
 that they are unused. The honest options are (a) leave them and say so here,
 or (b) give the README a second sentence naming them.
 
-**Decision:** ______________________
+**Decision:** Give the README a second sentence naming the four unreferenced live folders, so a reader has a way to tell that they are unused rather than dropped.
 
 
 ---
@@ -2365,7 +2512,7 @@ depend on it.
 5. The key the pane writes is the key the app uses. — **true for the app;
    true for the server from P9 onward.**
 
-**Decision:** ______________________
+**Decision:** The precedence stands: the credential store first, then the environment — which is `.env.local` in development, read in Rust and only in a development build. In a shipped desktop app the settings pane is the only way to set a key, and the environment fallback is a deployment concern only.
 
 ---
 
@@ -2477,6 +2624,71 @@ they belong to (§3.9).
 - **This document is updated as the work proceeds** — each item ticked, each
   decision recorded, anything new that is found added. It stays the
   specification, not a snapshot of one.
+
+### 8.7 What the work found that is not in this document
+
+Added as the work went, because §8.6 asks for it.
+
+**The live check contradicts §3.3.6 in one place.** The table says NVIDIA NIM
+answers **403** for a bad key. Probed again on 2026-10-21, against a model
+that is still published, a bad key answers **401** and a missing key answers
+**401** as well; the 403 the table records was what a *dead model slug*
+answered with, which is a different thing. The implementation treats 401 and
+403 the same — both mean “not accepted” — so nothing changes, but the table's
+number is wrong.
+
+**A hard-coded model slug is not a safe thing to check a key with.** The first
+probe was written with a slug from the table, and it answered **410 Gone**:
+the model had reached its end of life. The probe now takes the model from the
+provider's own published catalogue at the moment it runs, so it never names a
+model that has gone away.
+
+**A provider's already-masked label is spelled with three dots.** The
+redaction in §3.11's rule leaves a label the provider has already masked
+alone, and OpenRouter's label for an unnamed key is `sk-or-v1-612...95f` —
+three ASCII dots, not the ellipsis character. The rule now recognises both.
+
+**`source` has four values, not three.** §3.3.3 lists `keyring`,
+`server-file` and `env`. The desktop's development file is none of them: it
+is not an environment variable the process was started with, and saying so is
+the difference between “the key is in the environment this server was started
+with” and “this is a development file”. The field carries `dev-file` as well.
+
+**Only OpenRouter publishes a limit at all.** §3.11.1 describes the allowance
+line as if every provider had one. Three of the four publish no limit, no
+usage and no account, so the line simply is not there for them — which is the
+rule the rest of this document states: a number the app did not obtain is
+never rendered as a zero.
+
+**The server's key file moved out of the documents folder.** §4.8 P33 says
+where; the finding is that `~/Documents` is commonly synced to somebody
+else's server, so a plaintext key written there is a plaintext key on a
+third party's disk.
+
+**The markdown renderer could not be reached through the assistant-ui
+primitive.** `MarkdownTextPrimitive` reads the text from the assistant-ui
+runtime's context, so it can only render inside that runtime. The live
+surface needs a renderer that takes a string, so `react-markdown` became a
+direct dependency and the two surfaces share one set of components and one
+stylesheet. The assistant-ui branch keeps its own primitive and its own
+behaviour, and the two are no longer the same file.
+
+**The `pnpm chat` script did not exist.** §8.4 says to run it, and there was
+no such script: the server was only ever started by `pnpm dev`, which starts
+the web target with it. The script is there now.
+
+**Two product questions were put to the maintainer, and answered.** The
+deployment model (§4.8 P35): the server is a local, single-operator server,
+the operator's own keys are used locally whether in a browser or in the app,
+and everything stays local. The Privacy pane (§3.5): “delete everything”
+should delete everything, and there should be a button for each kind as well,
+so a person can say what they mean. Both answers are in the code.
+
+**One thing the document asked for is not in the code.** §4.7 P29 asks for the
+catalogue's age to be shown, and it is — but the age is shown in the model
+picker's popover rather than in the settings pane, because the catalogue is
+the picker's business and the settings pane has nothing to say about a list of
+models it is not showing.
 
 ### 8.6 Reporting back
 

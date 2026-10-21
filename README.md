@@ -94,23 +94,43 @@ nobody else has.
 
 ## Provider keys
 
-One key per provider. The providers are listed in `src/lib/providers.ts`, which
-the desktop app and the website's server both read, so the two call the same
-providers by the same names: OpenRouter, Anthropic, OpenAI and NVIDIA NIM.
+A key is a credential with an identity. It belongs to a provider, it has a name
+the user gave it, and there can be more than one for the same provider — a
+personal key and a work key for OpenRouter, which is the case every provider's
+own console has to answer for. The providers are listed in
+`src/lib/providers.ts`, which the desktop app and the website's server both
+read, so the two call the same providers by the same names: OpenRouter,
+Anthropic, OpenAI and NVIDIA NIM.
 
 **Settings → Platform → API keys** is where a key is set, and it is the same
 screen in the app and in the browser: the same list, the same buttons, the same
 dialog. What differs is where the key is kept.
 
-| Build | Where the key is kept | Notes |
+| Build | Where the secret is kept | Where the key's details are kept |
 |---|---|---|
-| Desktop | The OS credential store — Windows Credential Manager, macOS Keychain, or libsecret | One credential per provider, filed under the provider's name. A development build also reads `.env.local`, and says so in the pane. |
-| Website | The server's own file, under `~/Documents/Tavi/keys` | `TAVI_KEYS_DIR` moves it. Written so that only the owner can read it. |
+| Desktop | The OS credential store — Windows Credential Manager, macOS Keychain, or libsecret — filed under `api-key:<id>` | `provider-keys.json` in the app's data directory, beside `window-state.json` |
+| Website | The server's own file, `~/.config/tavi/keys` (`%APPDATA%\Tavi\keys` on Windows) | The same file, in the same record as the secret |
 
-A key that is in the environment is used when the file has none, so a
-deployment that sets `OPENROUTER_API_KEY` the usual way keeps working. One
-key can be set from the settings pane on the server too, and it wins over the
-environment variable.
+The split is not a choice, it is a fact about the platforms. The operating
+system's credential store cannot be enumerated — there is no "list" in it — and
+cannot hold portable metadata, so a sidecar file is the only design that works.
+The sidecar holds **no secret**: it holds the key's name, when it was added,
+when it was last used, and the provider's own masked account name.
+
+The sidecar on the desktop is `0700`/`0600` on macOS and Linux; on Windows the
+file inherits the app data folder's ACL, which is the user's alone. The
+server's file is `0700`/`0600` everywhere the platform has such a bit, written
+atomically with the previous copy kept beside it, and it is **not** in the
+documents folder — that one is commonly synced to somebody else's server.
+
+Which key a request goes out with is an explicit pointer, never an inference.
+"Newest wins", "first in the list" and "the one the provider last accepted" all
+silently change which account is billed. Exactly one key per provider is active,
+and the pane says which.
+
+A key that is in the environment is used when the store has none, so a
+deployment that sets `OPENROUTER_API_KEY` the usual way keeps working. A key
+set from the settings pane wins over the environment variable.
 
 The desktop app is the same in this respect: the credential store is where a
 key lives, and in a development build the `.env.local` file is read when the
@@ -123,11 +143,35 @@ in local storage, and never logged. On the desktop it is also never read into
 JavaScript: Rust takes it from the credential store, makes the request, and
 hands back the answer. There is no command that gives it out.
 
-> The website's server holds one key per provider for everyone who uses it,
-> and its settings pane can only be changed by a request from the same
-> machine. The app's own requests are made through OpenRouter, which is the
+### Checking a key
+
+Each provider is checked the only way it can be. OpenRouter, Anthropic and
+OpenAI publish a free endpoint that answers "no" for a bad key, and the app
+asks it. **NVIDIA NIM does not**: its model list is public and answers `200` to
+any caller, with a bad key and with no key at all, so it cannot tell a good key
+from a bad one. The only endpoint that can is the inference one, which costs a
+real request — so NIM keys are saved unchecked, the pane says they have not
+been checked, and a **Check now** button spends one request when the user asks
+for it.
+
+A `429` means the key is good and the account is rate limited; a `402` means
+the account is out of credit. Neither is ever shown as "Not accepted", and a
+`404` is never a key problem at all.
+
+### The server's keys are the operator's own
+
+> The website's server is a **local** server. It holds the operator's own keys,
+> it listens on the loopback interface only, and the routes that change a key
+> are refused unless the request comes from this machine, addressed to a name
+> the server answers to, and carries the header that makes a browser ask
+> first. The app's own requests are made through OpenRouter, which is the
 > provider the desktop app talks to; a key for another provider is stored and
 > can be checked, but nothing in the app speaks to those providers yet.
+
+A deployment that puts the server behind a proxy on another machine sets
+`TAVI_BIND_HOST` and `TAVI_ALLOWED_HOSTS`, and is then responsible for the
+routes it exposes: the server has no authentication of its own, and the app
+has no account system to authenticate with.
 
 ## Configuration
 
@@ -137,7 +181,9 @@ hands back the answer. There is no command that gives it out.
 | `ANTHROPIC_API_KEY` | — | Anthropic key. Server-side only. |
 | `OPENAI_API_KEY` | — | OpenAI key. Server-side only. |
 | `NVIDIA_API_KEY` | — | NVIDIA NIM key. Server-side only. |
-| `TAVI_KEYS_DIR` | `~/Documents/Tavi/keys` | Where the website's server keeps its keys. |
+| `TAVI_KEYS_DIR` | `~/.config/tavi/keys` (`%APPDATA%\Tavi\keys` on Windows) | Where the website's server keeps its keys. |
+| `TAVI_BIND_HOST` | `127.0.0.1` | Where the website's server listens. |
+| `TAVI_ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` | The names the server answers to. A request addressed to any other name is refused. |
 | `CHAT_SERVER_PORT` | `8787` | Chat server port. Must match the proxy target; both read this variable. |
 
 There is no default model. The server streams only the model the client sends,
@@ -587,22 +633,28 @@ so tool support is intermittent.
 
 ## Known limitations
 
-- **The API keys section holds one key per provider.** A key is filed under its
-  provider's name in the credential store, so OpenRouter, Anthropic, OpenAI
-  and NVIDIA NIM each have one slot and adding a key for a provider that
-  already has one replaces it. A key can also act for a particular account —
-  a personal key and a work key for the same provider — which would need a
-  name and an id per key, and a way to choose between them on every request.
-  The pane shows what the provider says about the key it holds: whether it is
-  accepted, which account it belongs to, whether it is on a free tier, and how
-  much of its allowance is gone. There is no billing behind any of it, because
-  a provider key is the only account the app has.
+- **A key is one of several for its provider.** A key is filed under its own
+  id, named by the user, and exactly one of a provider's keys is the one
+  requests go out with — an explicit pointer, never an inference from which
+  key is newest or which one the provider last accepted. The pane shows the
+  provider's own account name and masked value for each key, whether the
+  provider accepts it, whether it is on a free tier, and what is left of its
+  spending cap. There is no billing behind any of it, because a provider key
+  is the only account the app has.
+- **NVIDIA NIM keys cannot be checked for free.** Its model list is public and
+  answers `200` to any caller, so it cannot tell a good key from a bad one,
+  and the only endpoint that can is the inference one — which costs a request.
+  A NIM key is therefore saved unchecked, the pane says it has not been
+  checked, and a **Check now** button spends one request when the user asks
+  for it. The list never spends the user's quota on its own.
 - **The application menu is mostly a shape.** File, Edit, View, Go and Help are
   there with their submenus, so the app has the menu bar the machine expects,
   but only three of the commands do anything: New chat, Close window and Exit,
   which are the same three the system tray has. The rest are rendered disabled
-  and say why on hover. A menu that looked complete and did nothing would be
-  a lie about how much of the app exists.
+  and say why on hover. In a browser, "Close window" and "Exit" are disabled
+  too — a tab cannot be hidden or closed from the page — and they say so. A
+  menu that looked complete and did nothing would be a lie about how much of
+  the app exists.
 - **The account row is not an account.** It opens a menu on click and shows
   the two facts this app has about itself — the machine it is running on, and
   the provider key it can reach, including whether that key is on a free tier.
@@ -747,7 +799,10 @@ so tool support is intermittent.
   text is captured at send time so a restored thread keeps its context; the
   original `File` object cannot survive a reload.
 - **Streaming text is revealed by `requestAnimationFrame`.** In a background tab
-  the reveal pauses and catches up when the tab is focused again.
+  the reveal pauses and catches up when the tab is focused again. The answer is
+  rendered as Markdown throughout — including the half-finished sentence — so
+  the formatting never jumps at the end of the turn, and the parsing is
+  deferred so a long answer does not hold up the typing or the scrolling.
 - **Agent mode has no tool execution.** Modes change the system prompt only, and
   the server writes that prompt rather than the client. A model may describe
   commands it would run; it cannot run them.
@@ -782,17 +837,33 @@ helpers in `src/lib/{hotkey,motion}.ts` and `src/hooks/`. Many of them are
 what the app is drawn with — the rail, the menus, the dialogs, the composer —
 and the rest are additive and unreferenced, kept available for future UI work.
 
+Four of the unreferenced ones are worth naming, because a reader looking for
+them would otherwise assume they were once used and have since been dropped:
+`src/components/collapsible/`, `src/components/command/command.tsx`,
+`src/components/textarea/textarea.tsx` and `src/components/video-player/`.
+They are part of the library and nothing imports them.
+
 `src/blocks/prompt-input/` is the app's prompt-input block, and it **is** wired
 up: `src/App.tsx` renders it directly, and it is the surface the conversation
 is drawn and sent from.
 
 `src/assistant.tsx`, `src/components/thread.aui.tsx`, `src/toolkit.tsx`,
-`src/components/assistant-ui/**` and `src/components/model-picker.tsx` are the
+`src/components/assistant-ui/**`, `src/components/model-picker.tsx`,
+`src/components/model-selector.tsx`, `src/components/model-selector.aui.tsx`,
+`src/components/markdown-text.tsx`, `src/components/reasoning.tsx`,
+`src/components/media-player.tsx`, `src/components/surfaces.tsx`,
+`src/components/file.tsx`, `src/components/image.tsx`,
+`src/components/tooltip-icon-button.tsx` and `src/components/ui/**` are the
 **assistant-ui** equivalents. They are a reference implementation of the same
 idea in another runtime, kept for comparison; the app does not mount them.
 They are kept honest by writing the same preference keys the live composer
 does, so a reader is not misled by two halves of the app disagreeing about
 where a choice is remembered.
+
+One of them is not entirely dormant: `src/components/markdown-text.tsx` is the
+app's Markdown renderer, and the live surface renders a model's answer with
+it. The renderer and its styles are shared, so there is one set of Markdown
+styles in this app rather than two that drift apart.
 
 Test files and other unused archive data were removed on import.
 

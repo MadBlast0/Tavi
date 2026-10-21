@@ -13,9 +13,20 @@ import {
 } from "ai";
 import type { ToolSet, UIMessage } from "ai";
 
-import { fetchKeyStatus, listProviderKeys } from "./key-status.ts";
-import { removeKey, serverCredential, storeKey } from "./key-store.ts";
+import { fetchProviderStatus, listProviderKeys } from "./key-status.ts";
+import {
+  activateKey,
+  activeKey,
+  findKey,
+  keyWithoutSecret,
+  removeKey,
+  renameKey,
+  replaceSecret,
+  serverCredential,
+  storeKey,
+} from "./key-store.ts";
 import { providerFor } from "../src/lib/providers.ts";
+import { redact } from "../src/lib/redact.ts";
 import { defaultConnection, getCatalog, modelCapabilities } from "./models.ts";
 import {
   cloneRepository,
@@ -33,6 +44,56 @@ import { buildSystemPrompt, type Variant } from "./system.ts";
 
 const PORT = Number(process.env.CHAT_SERVER_PORT ?? 8787);
 
+/**
+ * Where the server listens.
+ *
+ * The loopback interface, and only the loopback interface. A server that
+ * binds every interface is reachable from every machine on the network, which
+ * is how the settings pane's key routes used to be open to a host on the
+ * LAN.
+ *
+ * A deployment that puts the server behind a proxy on another machine sets
+ * `TAVI_BIND_HOST` — and then has to answer for the routes it exposes, which
+ * is what the checks below are about.
+ */
+const BIND_HOST = process.env.TAVI_BIND_HOST?.trim() || "127.0.0.1";
+
+/**
+ * The names this server answers to.
+ *
+ * A request whose `Host` header is not one of these is not for this server.
+ * It is the mitigation for DNS rebinding, where a name that resolves to this
+ * machine is pointed at the server from a page the user happens to be
+ * visiting: the browser believes the page and the server are the same origin,
+ * and the only thing that says otherwise is the name in the header.
+ *
+ * A deployment behind a proxy adds its own name to `TAVI_ALLOWED_HOSTS`.
+ */
+const ALLOWED_HOSTS = new Set(
+  (
+    process.env.TAVI_ALLOWED_HOSTS ??
+    "localhost,127.0.0.1,[::1],::1"
+  )
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+/**
+ * The header a request that changes something has to carry.
+ *
+ * A `text/plain` POST is a CORS "simple request" and goes out with no
+ * preflight, which means any page the user visits could make the server do
+ * something — the browser will not let a page read the answer, but the change
+ * has already happened. A header the browser does not know is not on the
+ * safelist, so the browser has to ask first, and this server sends no CORS
+ * headers at all and so never answers that question.
+ *
+ * This is OWASP's recommended AJAX pattern, and it is client-side only: no
+ * token, no state.
+ */
+const REQUEST_HEADER = "x-tavi-request";
+
 type ChatConfig = {
   modelName?: string;
   /**
@@ -49,9 +110,11 @@ type ChatConfig = {
  * A provider's error quotes the request that failed, and a request that
  * failed for want of a key can quote the key. Anything that looks like one is
  * replaced before it is logged or sent.
+ *
+ * The rule is the app's own, in `src/lib/redact.ts`, so the server and the
+ * desktop's Rust mask the same things.
  */
-const scrub = (text: string): string =>
-  text.replace(/\b(sk-or-v1-|sk-)[A-Za-z0-9_-]{8,}/g, "$1***");
+const scrub = (text: string): string => redact(text);
 
 async function handleChat(request: Request): Promise<Response> {
   const body = (await request.json()) as {
@@ -262,15 +325,95 @@ const readBody = (req: IncomingMessage): Promise<Buffer> =>
  * Cloning runs `git` against this machine's filesystem, so it is only offered to
  * requests that originated here. Anything else is a different process making a
  * request the app has no reason to honour.
+ *
+ * An address the server cannot read is refused rather than allowed: a fail-open
+ * default in a security predicate is a default, not a convenience. Over TCP
+ * the address is always there.
  */
 const isLoopback = (req: IncomingMessage): boolean => {
   const address = req.socket.remoteAddress ?? "";
   return (
     address === "127.0.0.1" ||
     address === "::1" ||
-    address === "::ffff:127.0.0.1" ||
-    address === ""
+    address === "::ffff:127.0.0.1"
   );
+};
+
+/**
+ * The name in a `Host` header, without the port.
+ *
+ * A bracketed IPv6 literal keeps its brackets, because that is how it is
+ * written in a header and how it is compared.
+ */
+const hostName = (host: string | undefined): string => {
+  if (!host) return "";
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    return end === -1 ? trimmed : trimmed.slice(0, end + 1);
+  }
+  return trimmed.split(":")[0];
+};
+
+/**
+ * Whether the request came from a page this server is showing.
+ *
+ * `Origin` is the browser's own account of where the request came from, and
+ * it is the one thing a cross-site request cannot fake from a page: a browser
+ * sets it and will not let a page change it.
+ *
+ * The names are compared rather than the whole origins, because the origins
+ * differ by their port in every arrangement that matters — the dev server
+ * proxies to this one, and a deployment puts this one behind a proxy.
+ */
+const sameOrigin = (req: IncomingMessage): boolean => {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).hostname === hostName(req.headers.host);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The checks every request that changes something has to pass.
+ *
+ * Four things, and each of them stops a different attack:
+ *
+ * - the request came from this machine;
+ * - the name it was addressed to is one this server answers to;
+ * - the browser says it came from this origin, and says so in the way a
+ *   browser cannot be talked out of;
+ * - it carries the header that makes a browser ask first.
+ */
+const refused = (req: IncomingMessage): string | null => {
+  if (!isLoopback(req)) {
+    return "Only a request from this machine can change the server's keys.";
+  }
+  if (!ALLOWED_HOSTS.has(hostName(req.headers.host))) {
+    return "This server does not answer to that name.";
+  }
+  const site = req.headers["sec-fetch-site"];
+  if (typeof site === "string" && site === "cross-site") {
+    return "This request came from another site.";
+  }
+  if (!sameOrigin(req)) {
+    return "This request came from another site.";
+  }
+  if (!req.headers[REQUEST_HEADER]) {
+    return "This request did not come from the app.";
+  }
+  /* A request with a body has to say what the body is. A request without one
+     — a delete, which carries the key's id in the query — has nothing to
+     declare. */
+  if (req.method === "POST") {
+    const contentType = req.headers["content-type"] ?? "";
+    if (!contentType.toLowerCase().startsWith("application/json")) {
+      return "This request was not JSON.";
+    }
+  }
+  return null;
 };
 
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
@@ -310,8 +453,9 @@ const server = createServer(async (req, res) => {
   /* Runs on this machine, so it is restricted to loopback. A request that
      arrives from elsewhere is not from this app's own page. */
   if (url.pathname === "/api/projects/clone") {
-    if (!isLoopback(req)) {
-      sendJson(res, 403, { error: "Cloning is only available to the local app." });
+    const reason = refused(req);
+    if (reason) {
+      sendJson(res, 403, { error: reason });
       return;
     }
     let body: { url?: string; destination?: string };
@@ -340,8 +484,8 @@ const server = createServer(async (req, res) => {
       return;
     }
     try {
-      const { models, stale } = await getCatalog();
-      sendJson(res, 200, { models, stale });
+      const { models, fetchedAt, degraded } = await getCatalog();
+      sendJson(res, 200, { models, fetchedAt, degraded });
     } catch (error) {
       // Say so plainly rather than returning an empty picker.
       sendJson(res, 503, {
@@ -354,41 +498,36 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === "/api/key") {
-    const apiKey = serverCredential("OPENROUTER_API_KEY");
-    if (!apiKey) {
-      sendJson(res, 200, { valid: false, reason: "No key configured." });
-      return;
-    }
-    // Never logs or echoes the key.
-    sendJson(res, 200, await fetchKeyStatus(apiKey));
-    return;
-  }
-
-  /* Every provider's key, and what the provider says about it.
+  /* Every key the server holds, and what the provider says about it.
    *
    * The same list the desktop app keeps in the operating system's credential
    * store, and the same pane over it. Nothing here logs or echoes a key. */
   if (url.pathname === "/api/keys") {
     if (req.method === "GET") {
-      sendJson(res, 200, await listProviderKeys());
+      try {
+        sendJson(res, 200, await listProviderKeys());
+      } catch (error) {
+        sendJson(res, 500, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "The keys could not be read.",
+        });
+      }
       return;
     }
 
     /* Changing the server's key changes what every request through the
-       server spends, so it is only offered to a request that came from this
-       machine. Anything else is a different process asking for the server's
-       credential. */
-    if (!isLoopback(req)) {
-      sendJson(res, 403, {
-        error:
-          "Only a request from this machine can change the server's keys.",
-      });
+       server spends, so it is only offered to a request this server can
+       account for. */
+    const reason = refused(req);
+    if (reason) {
+      sendJson(res, 403, { error: reason });
       return;
     }
 
     if (req.method === "POST") {
-      let body: { provider?: unknown; key?: unknown };
+      let body: { provider?: unknown; key?: unknown; name?: unknown };
       try {
         body = JSON.parse((await readBody(req)).toString("utf8"));
       } catch {
@@ -398,6 +537,7 @@ const server = createServer(async (req, res) => {
 
       const provider = typeof body.provider === "string" ? body.provider : "";
       const key = typeof body.key === "string" ? body.key.trim() : "";
+      const name = typeof body.name === "string" ? body.name : undefined;
       if (!providerFor(provider)) {
         sendJson(res, 400, {
           error: "That provider is not one the app knows about.",
@@ -409,26 +549,174 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      storeKey(provider, key);
-      sendJson(res, 200, { ok: true });
+      /* The key is checked before it is stored, so a key the provider
+         refuses never becomes the one in use. A provider that could not be
+         reached is not a refusal, and a check that would cost a request is
+         not run here. */
+      const standing = await fetchProviderStatus(
+        providerFor(provider)!,
+        key,
+      );
+      if (standing.valid === false && standing.checkReason === "not-accepted") {
+        sendJson(res, 400, {
+          error: `${providerFor(provider)!.label} did not accept this key.`,
+        });
+        return;
+      }
+
+      try {
+        const stored = storeKey(provider, key, name);
+        sendJson(res, 200, { ok: true, id: stored.id });
+      } catch (error) {
+        sendJson(res, 500, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "The key could not be stored.",
+        });
+      }
       return;
     }
 
     if (req.method === "DELETE") {
-      const provider = url.searchParams.get("provider") ?? "";
-      if (!providerFor(provider)) {
-        sendJson(res, 400, {
-          error: "That provider is not one the app knows about.",
-        });
+      const id = url.searchParams.get("id") ?? "";
+      if (!id) {
+        sendJson(res, 400, { error: "Which key?" });
         return;
       }
-      removeKey(provider);
+      if (!findKey(id)) {
+        sendJson(res, 404, { error: "That key is not one the server holds." });
+        return;
+      }
+      removeKey(id);
       sendJson(res, 200, { ok: true });
       return;
     }
 
     res.writeHead(405, { allow: "GET, POST, DELETE" });
     res.end();
+    return;
+  }
+
+  /* The rest of the key routes, all of which change something and are all
+     held to the same checks. */
+  if (
+    url.pathname === "/api/keys/replace" ||
+    url.pathname === "/api/keys/rename" ||
+    url.pathname === "/api/keys/activate" ||
+    url.pathname === "/api/keys/check" ||
+    url.pathname === "/api/keys/recheck"
+  ) {
+    if (req.method !== "POST") {
+      res.writeHead(405, { allow: "POST" });
+      res.end();
+      return;
+    }
+
+    const reason = refused(req);
+    if (reason) {
+      sendJson(res, 403, { error: reason });
+      return;
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse((await readBody(req)).toString("utf8")) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      sendJson(res, 400, { error: "The request body is not JSON." });
+      return;
+    }
+
+    const id = typeof body.id === "string" ? body.id : "";
+
+    if (url.pathname === "/api/keys/replace") {
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      const stored = findKey(id);
+      if (!stored) {
+        sendJson(res, 404, { error: "That key is not one the server holds." });
+        return;
+      }
+      if (!key) {
+        sendJson(res, 400, { error: "Key must not be empty." });
+        return;
+      }
+      const provider = providerFor(stored.provider);
+      if (provider) {
+        const standing = await fetchProviderStatus(provider, key);
+        if (
+          standing.valid === false &&
+          standing.checkReason === "not-accepted"
+        ) {
+          sendJson(res, 400, {
+            error: `${provider.label} did not accept this key.`,
+          });
+          return;
+        }
+      }
+      replaceSecret(id, key);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/api/keys/rename") {
+      const name = typeof body.name === "string" ? body.name : "";
+      if (!name.trim()) {
+        sendJson(res, 400, { error: "A key needs a name." });
+        return;
+      }
+      if (!renameKey(id, name)) {
+        sendJson(res, 404, { error: "That key is not one the server holds." });
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/api/keys/activate") {
+      if (!activateKey(id)) {
+        sendJson(res, 404, { error: "That key is not one the server holds." });
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/api/keys/check") {
+      const provider = typeof body.provider === "string" ? body.provider : "";
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      const spend = body.spend === true;
+      const known = providerFor(provider);
+      if (!known) {
+        sendJson(res, 400, {
+          error: "That provider is not one the app knows about.",
+        });
+        return;
+      }
+      if (!key) {
+        sendJson(res, 400, { error: "Key must not be empty." });
+        return;
+      }
+      sendJson(res, 200, await fetchProviderStatus(known, key, spend));
+      return;
+    }
+
+    /* Re-checking a key the server already holds. */
+    const stored = findKey(id);
+    if (!stored) {
+      sendJson(res, 404, { error: "That key is not one the server holds." });
+      return;
+    }
+    const provider = providerFor(stored.provider);
+    if (!provider) {
+      sendJson(res, 400, {
+        error: "That provider is not one the app knows about.",
+      });
+      return;
+    }
+    sendJson(res, 200, await fetchProviderStatus(provider, stored.secret, true));
     return;
   }
 
@@ -440,6 +728,15 @@ const server = createServer(async (req, res) => {
   if (req.method !== "POST") {
     res.writeHead(405, { allow: "POST" });
     res.end();
+    return;
+  }
+
+  /* A chat spends the operator's credit, so it is held to the same checks as
+     everything else that changes something: a page the user visits must not
+     be able to make the server talk to the provider on their behalf. */
+  const reason = refused(req);
+  if (reason) {
+    sendJson(res, 403, { error: reason });
     return;
   }
 
@@ -487,8 +784,8 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[server] streaming route on http://localhost:${PORT}/api/chat`);
+server.listen(PORT, BIND_HOST, () => {
+  console.log(`[server] streaming route on http://${BIND_HOST}:${PORT}/api/chat`);
   console.log(
     `[server] no default model; key ${
       serverCredential("OPENROUTER_API_KEY") ? "found" : "MISSING"

@@ -1,11 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { invoke } from "@tauri-apps/api/core"
-import { listen } from "@tauri-apps/api/event"
 
 import { useNewThread } from "@/blocks/prompt-input/thread-bridge"
-import { isDesktopApp } from "@/lib/desktop"
+import {
+  listenForTray,
+  takeIntent,
+  type TrayIntent,
+} from "@/lib/desktop"
+import { isDesktopApp } from "@/lib/platform"
 
 /**
  * The events the system tray sends.
@@ -18,8 +21,10 @@ import { isDesktopApp } from "@/lib/desktop"
 export const NEW_CHAT = "tavi-new-chat"
 export const NEW_SESSION = "tavi-new-session"
 
-/** Which composer the tray asked for, in the shape the native side sends. */
-type Intent = "newChat" | "newSession"
+/**
+ * Which composer the tray asked for, in the shape the native side sends.
+ */
+export type { TrayIntent }
 
 /**
  * The tray's commands, carried into the app.
@@ -48,8 +53,8 @@ export function TrayBridge() {
     const unlisten: Array<() => void> = []
 
     const subscribe = async () => {
-      const offChat = await listen(NEW_CHAT, () => newThread("chat"))
-      const offSession = await listen(NEW_SESSION, () => newThread("code"))
+      const offChat = await listenForTray(NEW_CHAT, () => newThread("chat"))
+      const offSession = await listenForTray(NEW_SESSION, () => newThread("code"))
       /* The component can go away between asking to listen and being told
          that it is listening. The listeners are then released here, rather
          than left behind for an app that is no longer listening. */
@@ -82,7 +87,7 @@ export function TrayBridge() {
     if (!isDesktopApp()) return
 
     const take = () => {
-      void invoke<Intent | null>("take_intent")
+      void takeIntent()
         .then((intent) => {
           if (intent === "newChat") newThread("chat")
           else if (intent === "newSession") newThread("code")

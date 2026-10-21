@@ -731,6 +731,7 @@ function PromptInputModel({
   onEffortChange,
   noKey,
   error,
+  catalogue,
   ...props
 }: Omit<EffortProps, "value" | "onValueChange"> & {
   models: PromptModel[]
@@ -751,6 +752,15 @@ function PromptInputModel({
    * The server's own words: it knows what went wrong, and this does not.
    */
   error?: string | null
+  /**
+   * How old the catalogue is, and whether it is the last good copy.
+   *
+   * A catalogue is a list of models and prices, so a copy that is weeks old
+   * names models that no longer exist. The age is shown rather than assumed,
+   * and the one state worth acting on — the provider could not be reached —
+   * is called out.
+   */
+  catalogue?: { fetchedAt: number; degraded: boolean } | null
 }) {
   const context = usePromptInput("PromptInputModel")
   const listRef = React.useRef<HTMLDivElement>(null)
@@ -940,9 +950,42 @@ function PromptInputModel({
             <EffortPanel {...props} value={effort} onValueChange={onEffortChange} />
           </div>
         ) : null}
+        {catalogue ? (
+          <p className="text-muted-foreground border-t px-2 pt-2 text-xs">
+            {catalogue.degraded
+              ? `Could not reach the provider — showing the last good catalogue, from ${catalogueAge(catalogue.fetchedAt)}.`
+              : `Catalogue updated ${catalogueAge(catalogue.fetchedAt)}.`}
+          </p>
+        ) : null}
       </PopoverContent>
     </Popover>
   )
+}
+
+/**
+ * How long ago something was, in words.
+ *
+ * A catalogue that is four minutes old and one that is four weeks old are
+ * both "recent" to a machine, and neither is to a person choosing a model.
+ */
+function catalogueAge(fetchedAt: number): string {
+  const seconds = Math.floor(Date.now() / 1000) - fetchedAt
+  if (seconds < 60) return "just now"
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+  }
+  if (seconds < 86_400) {
+    const hours = Math.floor(seconds / 3600)
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  }
+  const days = Math.floor(seconds / 86_400)
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`
+  return `on ${new Date(fetchedAt * 1000).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })}`
 }
 
 function formatTokens(tokens: number) {
