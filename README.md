@@ -76,11 +76,16 @@ failure.
 
 Nothing here needs a `.env.local` — the app starts without one and says so when
 you try to chat. If you would rather keep the key in the environment than in
-the app, copy `.env.example` to `.env.local` and fill it in.
+the app, copy `.env.example` to `.env.local` and fill it in. A development build
+reads that file for the key as well, so the same file serves both targets: the
+website's server takes the key from its environment, and the desktop app reads
+the file itself. Neither copies it anywhere, and a release build does not look
+for it at all.
 
 `pnpm dev` starts Vite and the Node server together via `concurrently`.
-`pnpm dev:web` starts only Vite, which is all the desktop app needs.
-`pnpm dev:server` starts only the Node server.
+`pnpm dev:web` starts only Vite, and `pnpm dev:server` only the Node server.
+`pnpm tauri dev` starts both as well as the desktop window, so the browser at
+`http://localhost:1420` has a backend to talk to while the app is open.
 
 This project uses pnpm and ships `pnpm-lock.yaml`. Do not install with npm: it
 would resolve a different set of versions from the registry and put it in
@@ -99,13 +104,19 @@ dialog. What differs is where the key is kept.
 
 | Build | Where the key is kept | Notes |
 |---|---|---|
-| Desktop | The OS credential store — Windows Credential Manager, macOS Keychain, or libsecret | One credential per provider, filed under the provider's name. |
+| Desktop | The OS credential store — Windows Credential Manager, macOS Keychain, or libsecret | One credential per provider, filed under the provider's name. A development build also reads `.env.local`, and says so in the pane. |
 | Website | The server's own file, under `~/Documents/Tavi/keys` | `TAVI_KEYS_DIR` moves it. Written so that only the owner can read it. |
 
 A key that is in the environment is used when the file has none, so a
 deployment that sets `OPENROUTER_API_KEY` the usual way keeps working. One
 key can be set from the settings pane on the server too, and it wins over the
 environment variable.
+
+The desktop app is the same in this respect: the credential store is where a
+key lives, and in a development build the `.env.local` file is read when the
+store has none. The pane says which one a key came from, and does not offer to
+edit or remove one that is not in the store — there would be nothing there to
+change.
 
 A key is never written to disk in plaintext by the desktop app, never placed
 in local storage, and never logged. On the desktop it is also never read into

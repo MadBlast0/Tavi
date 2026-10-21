@@ -265,6 +265,14 @@ browser: the browser is told whether a provider has a key and what that
 provider says about it, and nothing else. A key in the environment is used
 when the file has none.
 
+A **development build** of the desktop app reads `.env.local` for a key when
+the credential store has none, so a developer does not have to paste the same
+key in by hand on every machine. It is read in Rust, it never crosses into
+the webview, and it is not copied anywhere — removing it from the file removes
+it. The settings pane says which one a key came from. A release build does
+not contain the code that looks for the file at all, so a shipped app has no
+key on a machine that only ever had `.env.local`.
+
 The settings pane is the same in both — the same list, the same buttons, the
 same dialog — because a person setting a key should not have to learn a
 second version of the screen depending on where the app is running. Changing

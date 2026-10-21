@@ -77,7 +77,7 @@ there is no default root and no fallback to the home directory.
 | Composer drafts | `localStorage` | `prompt-draft:<side>` (not namespaced) |
 | Folder handles | IndexedDB `tavi-fs` | stores `handles`, `recent-folders` |
 | Workspace grants | the app's own file | `workspaces.json` |
-| API key | OS credential store | service `tavi`, user `openrouter-api-key` |
+| API key | OS credential store | service `tavi`, user `api-key:<provider>`. A development build also reads `.env.local` |
 | Window geometry | app-data file | `window-state.json` |
 
 `src/lib/threads.ts` holds the vocabulary both thread stores share and the

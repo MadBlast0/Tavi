@@ -39,7 +39,17 @@ identity — ask the maintainer.
   limitations.
 - **No hidden fallbacks.** The server refuses a chat request that carries no
   model (`400`) rather than substituting a default. Keep it that way.
-- `server/main.ts` never logs request bodies, headers, or the API key.
+- **A provider is only reachable with a key.** The server refuses to serve the
+  model catalogue without one, and the Rust side does the same. The composer
+  asks the backend which providers it has keys for and shows that answer; it
+  does not decide for itself.
+- **One way to the key.** The credential store first, then the environment
+  (which is `.env.local` in development). The desktop app reads `.env.local`
+  itself, in Rust, and only in a development build — a release build does not
+  contain the code that looks for it.
+- `server/main.ts` never logs request bodies, headers, or the API key. The
+  SDK's `streamText` logs the whole error by default, which carries all three;
+  it is given an `onError` that writes only the reason.
 
 ## Icons
 
