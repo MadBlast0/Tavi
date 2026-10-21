@@ -576,7 +576,10 @@ function KeyGroup({
 
   return (
     <section className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-4">
+      {/* The provider's name and its own links. They wrap rather than crowd:
+          the pane can be narrow, and a link that has nowhere to go is better
+          on a line of its own than squeezed into nothing. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm leading-snug font-semibold text-pretty">
             {label}

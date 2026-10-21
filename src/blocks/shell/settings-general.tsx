@@ -4,6 +4,7 @@ import * as React from "react"
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 
 import { IconSwitch, type IconSwitchOption } from "@/components/icon-switch"
+import { SettingRow } from "@/components/setting-row"
 import { Switch } from "@/components/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
 import { useThemePreference, type ThemePreference } from "@/lib/theme"
@@ -21,54 +22,6 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
       <h3 className="pb-1 text-sm font-semibold text-pretty">{title}</h3>
       {children}
     </section>
-  )
-}
-
-/**
- * One setting: a name, what it is for, and the control that would change it.
- *
- * The control sits at the far end rather than under the name because these are
- * read as a table, not as prose — the eye runs down the names and across to
- * whatever is set. A control under its name would make every row twice as tall
- * and put the thing being changed as far from the thing changed as the card
- * allows.
- *
- * The name and its description stack on the left and the control stays put on
- * the right even when a description wraps to two lines, because `items-start`
- * pins the control to the first line rather than letting it drift to the
- * middle of the row.
- *
- * `why` is what a control with nothing behind it says when you try to use it.
- * It is on the row rather than under the control, because a greyed control on
- * its own is a mystery and a sentence next to it is an answer.
- */
-function Row({
-  label,
-  description,
-  why,
-  children,
-}: {
-  label: string
-  description?: string
-  /** Why this row cannot be changed yet. Omit it for a row that works. */
-  why?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div
-      className="flex items-start justify-between gap-6 border-b py-4 last:border-b-0"
-      title={why}
-    >
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{label}</div>
-        {description ? (
-          <p className="mt-0.5 text-sm text-muted-foreground text-pretty">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      <div className="shrink-0 pt-0.5">{children}</div>
-    </div>
   )
 }
 
@@ -152,14 +105,14 @@ function ThemeRow() {
   ]
 
   return (
-    <Row label="Theme" description="Whether the app follows your system setting or overrides it.">
+    <SettingRow label="Theme" description="Whether the app follows your system setting or overrides it.">
       <IconSwitch
         aria-label="Theme"
         value={preference}
         onValueChange={setPreference}
         options={options}
       />
-    </Row>
+    </SettingRow>
   )
 }
 
@@ -178,12 +131,12 @@ function ThemeRow() {
  */
 function PaletteRow() {
   return (
-    <Row
+    <SettingRow
       label="Colour palette"
       description="The colours every surface, border and accent is drawn from."
     >
       <PalettePicker />
-    </Row>
+    </SettingRow>
   )
 }
 
@@ -208,14 +161,14 @@ export function GeneralSettings() {
 
         <PaletteRow />
 
-        <Row
+        <SettingRow
           label="App font"
           description="The typeface the whole app is drawn in. Code stays monospaced."
         >
           <FontPicker />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Transcript text size"
           why={NOT_BUILT}
           description="Size of the conversation transcript text."
@@ -225,9 +178,9 @@ export function GeneralSettings() {
             options={["Small", "Medium", "Large"]}
             value="Medium"
           />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Transcript width"
           why={NOT_BUILT}
           description="Maximum width of the transcript and composer columns."
@@ -237,9 +190,9 @@ export function GeneralSettings() {
             options={["Narrow", "Medium", "Wide"]}
             value="Medium"
           />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Motion"
           why={NOT_BUILT}
           description="Reduce animation in streaming responses and other interface elements."
@@ -249,41 +202,41 @@ export function GeneralSettings() {
             options={["System", "Reduced"]}
             value="System"
           />
-        </Row>
+        </SettingRow>
       </Group>
 
       <Group title="Notifications">
-        <Row
+        <SettingRow
           label="Response completions"
           why={NOT_BUILT}
           description="Get notified when a response has finished. Useful for long-running tasks."
         >
           <PlaceholderSwitch label="Response completions" />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Mentions and replies"
           why={NOT_BUILT}
           description="Get an email when someone @mentions you on an artifact, or replies in a comment thread you're part of."
         >
           <PlaceholderSwitch label="Mentions and replies" />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Comments on your artifacts"
           why={NOT_BUILT}
           description="Get an email when someone comments on an artifact you own, even when you're not mentioned."
         >
           <PlaceholderSwitch label="Comments on your artifacts" />
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Artifacts shared with you"
           why={NOT_BUILT}
           description="Get an email when someone shares an artifact with you."
         >
           <PlaceholderSwitch label="Artifacts shared with you" />
-        </Row>
+        </SettingRow>
       </Group>
     </div>
   )

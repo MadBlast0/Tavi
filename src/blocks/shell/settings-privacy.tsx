@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/button"
+import { SettingRow } from "@/components/setting-row"
 import {
   dataLocation,
   exportConversations,
@@ -30,36 +31,6 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
       <h3 className="pb-1 text-sm font-semibold text-pretty">{title}</h3>
       {children}
     </section>
-  )
-}
-
-/**
- * One setting: a name, what it is for, and the control that changes it.
- *
- * The control sits at the far end rather than under the name because these are
- * read as a table, not as prose.
- */
-function Row({
-  label,
-  description,
-  children,
-}: {
-  label: string
-  description?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-start justify-between gap-6 border-b py-4 last:border-b-0">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{label}</div>
-        {description ? (
-          <p className="mt-0.5 text-sm text-muted-foreground text-pretty">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      <div className="shrink-0 pt-0.5">{children}</div>
-    </div>
   )
 }
 
@@ -229,7 +200,7 @@ export function PrivacySettings() {
   return (
     <div className="flex flex-col gap-8">
       <Group title="On this machine">
-        <Row
+        <SettingRow
           label="Where your conversations are"
           description={
             where
@@ -242,18 +213,18 @@ export function PrivacySettings() {
               {where}
             </span>
           ) : null}
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="What leaves this machine"
           description="The message you send, the files you attach and the files you mention are sent to the provider you have chosen a model from. Nothing else is."
         >
           <ShieldCheckIcon className="size-4 text-muted-foreground" />
-        </Row>
+        </SettingRow>
       </Group>
 
       <Group title="Your conversations">
-        <Row
+        <SettingRow
           label="Export"
           description="Write every chat and every session to a file you can read and keep."
         >
@@ -266,9 +237,9 @@ export function PrivacySettings() {
             <DownloadIcon className="size-4" />
             Export
           </Button>
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Import"
           description="Add the conversations from a file made by Export. The ones already here are left alone."
         >
@@ -281,37 +252,37 @@ export function PrivacySettings() {
             <UploadIcon className="size-4" />
             Import
           </Button>
-        </Row>
+        </SettingRow>
       </Group>
 
       <Group title="What to remove">
-        <Row
+        <SettingRow
           label="Delete every chat"
           description="Remove every chat from this machine, and leave the code sessions alone."
         >
           {confirm("chats", "Delete chats")}
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Delete every code session"
           description="Remove every code session from this machine, and leave the chats alone."
         >
           {confirm("sessions", "Delete sessions")}
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Forget every folder"
           description="Give up Tavi's access to every folder you granted it. The folders stay where they are; you would have to grant access again."
         >
           {confirm("folders", "Forget folders", <FolderXIcon className="size-4" />)}
-        </Row>
+        </SettingRow>
 
-        <Row
+        <SettingRow
           label="Delete everything"
           description="Remove every chat, every code session and every folder grant from this machine. The folders themselves are not touched. There is no copy afterwards unless you have exported one."
         >
           {confirm("everything", "Delete everything")}
-        </Row>
+        </SettingRow>
       </Group>
 
       {removing ? (

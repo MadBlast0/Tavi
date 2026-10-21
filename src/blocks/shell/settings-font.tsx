@@ -182,8 +182,12 @@ export function FontPicker({ className }: { className?: string }) {
   return (
     /* The width goes on a wrapper: the combobox root takes no className of its
        own, and it is the field inside it that needs to be a predictable width
-       so the row's control does not stretch the way a flex child would. */
-    <div className={cn("w-64", className)}>
+       so the row's control does not stretch the way a flex child would.
+
+       `max-w-full` so the field can be narrower than it would rather be: the
+       pane it sits in can be narrow, and a control that keeps its own width
+       whatever the pane is pushes the pane sideways rather than fitting it. */
+    <div className={cn("w-64 max-w-full", className)}>
       <Combobox
         items={options}
         /* A single choice, so the value is the family itself rather than a

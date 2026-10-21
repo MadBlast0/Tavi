@@ -81,6 +81,24 @@ import { cn } from "@/lib/utils"
 const CARD = "h-[80dvh] max-w-[78vw]!"
 
 /**
+ * The narrowest the card can be and still have a column beside the pane.
+ *
+ * The wide shape divides the card: a column of navigation, and the pane. The
+ * three widths that have to fit are the column (224px), the pane's own
+ * padding (80px, which keeps the content clear of the frame and of the close
+ * button), and enough of a pane to hold a setting's name and its control
+ * (296px). A card narrower than that cannot be divided: the pane is left with
+ * a sliver, and a name in a sliver breaks one letter per line.
+ *
+ * So the card is **tall** below this width, whatever its proportions. A card
+ * that is wider than it is tall is not the same as a card that is wide enough
+ * for two columns, and the smallest window the app can be dragged to is the
+ * one that proves it: at 600px wide the card is 468px, which is wider than it
+ * is tall and far too narrow for a column beside it.
+ */
+const WIDE_FLOOR = 600
+
+/**
  * The card's position, overriding the vendored sheet's own.
  *
  * Below `sm` the sheet places itself with `inset-inline: 0` and a negative
@@ -467,10 +485,10 @@ function TabStrip({
  * looking at settings over your work, not somewhere else.
  *
  * Two shapes, chosen by the card's own proportions and not the window's. Wide —
- * at least as wide as it is tall — the nav is a column beside the pane. Tall,
- * the nav becomes a strip of tabs in a header above it. The same sections, the
- * same selection, the same search; only where they sit changes, so nothing is
- * reachable in one shape and not the other.
+ * at least as wide as it is tall, and wide enough to divide — the nav is a
+ * column beside the pane. Tall, the nav becomes a strip of tabs in a header
+ * above it. The same sections, the same selection, the same search; only where
+ * they sit changes, so nothing is reachable in one shape and not the other.
  *
  * Shape rather than width, because width cannot answer the question being
  * asked. A card 500px wide and 900px tall has room to put a column beside the
@@ -481,6 +499,10 @@ function TabStrip({
  * with it — a window narrowed from the side keeps its height, so a card that
  * was comfortably wide becomes tall without ever passing through the width at
  * which a width-based rule would have switched it over.
+ *
+ * But proportions are not the whole of it, because a card can be too narrow to
+ * divide however it is shaped. The wide shape has a floor — see `WIDE_FLOOR` —
+ * and below it the card is tall even though it is wider than it is tall.
  *
  * The measurement is the card's own, not the window's. The card is capped well
  * inside the window on all sides, so the two are different boxes with different
@@ -522,7 +544,7 @@ export function SettingsDialog({
      node it renders, so a ref on it never arrives. A plain `div` around it
      takes one normally, and it is sized the way the card is — the card is its
      only child and fills it — so it measures the same box. */
-  const [measureShape, shape] = useBoxShape()
+  const [measureShape, shape] = useBoxShape({ minWide: WIDE_FLOOR })
   const tall = shape === "tall"
 
   /* Reopening always starts at the top of the list with the box empty. There is
