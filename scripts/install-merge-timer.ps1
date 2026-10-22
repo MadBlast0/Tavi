@@ -83,9 +83,12 @@ if (-not $Session) {
 $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Script`" -Push"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments -WorkingDirectory $Worktree
 
-# Every thirty minutes, starting now.
+# Every thirty minutes, starting now, and going on for ten years. The
+# repetition is given a duration rather than left open, so there is no
+# question of when it stops.
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Minutes $Minutes)
+  -RepetitionInterval (New-TimeSpan -Minutes $Minutes) `
+  -RepetitionDuration (New-TimeSpan -Days 3650)
 
 # One run at a time, and do not stack up runs that fell behind.
 $settings = New-ScheduledTaskSettingsSet `
