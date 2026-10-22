@@ -75,8 +75,8 @@ export type Palette = {
  *
  * The swatch is a strip, and a strip shows the colours that tell one palette
  * from another. It is not the whole token set: a palette has to define every
- * token the base defines — `--panel-border` among them, the faint edge a
- * floating panel carries — and the test fails one that is missing any of
+ * token the base defines — `--menu-surface` among them, the surface a
+ * dropdown is drawn on — and the test fails one that is missing any of
  * them, so a new palette cannot leave one of them behind.
  */
 export const PALETTES: Palette[] = [

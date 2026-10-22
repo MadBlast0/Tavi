@@ -4,7 +4,7 @@ Two kinds of document live here, and they are kept apart on purpose.
 
 | | What it is | Where it lives |
 |---|---|---|
-| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md) and [`storage.md`](storage.md) |
+| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md) and [`tokens.md`](tokens.md) |
 | **The app as it is meant to become** | What is deferred, what was planned, and what has not been built | [`docs/plan/`](plan/) |
 
 A document in `docs/` describes something that is true of the code you can
@@ -20,6 +20,7 @@ app can rely on it, and a reader who finds a plan knows not to.
 |---|---|
 | [`architecture.md`](architecture.md) | How the app is put together: the surfaces, the storage layer, the boundaries that were settled, and the table of gaps that were closed and the two that were found by auditing the work |
 | [`storage.md`](storage.md) | Where every piece of data lives, on each platform, what it is worth, how long it is kept, and what removes it — and the design behind it |
+| [`tokens.md`](tokens.md) | Every colour, size and shape the app is drawn with: the roles, the values in both modes, the rules the themes obey and where they are checked, and how to add a token |
 
 The [README](../README.md) is the front door: what the app is, how to run it,
 and what it does and does not do.

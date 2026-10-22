@@ -29,6 +29,13 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-info: var(--info);
+    --color-info-foreground: var(--info-foreground);
+    --color-diff-added: var(--diff-added);
+    --color-diff-removed: var(--diff-removed);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -85,6 +92,9 @@
    | a divider | `--border` | the line between two things |
    | a menu | `--menu-surface` | the surface a dropdown and its submenus are drawn on |
    | text | `--foreground`, `--muted-foreground` | and the colour it is on |
+   | a state | `--destructive`, `--success`, `--warning`, `--info` | what a thing is: failed, done, needs attention, in progress |
+   | text on a state | `--destructive-foreground` and the rest | the text a solid state is painted with |
+   | a change | `--diff-added`, `--diff-removed` | the two directions of a changed line |
 
    The rules, which `src/lib/theme.test.ts` checks for every theme — the
    light and dark of the default palette, and both of any palette added
@@ -121,6 +131,18 @@
       the app that is a step further from the canvas than the rail is and
       does the same in both modes. It carries no edge of its own: an edge
       around a menu is a hairline, and hairlines are what rule 5 is about.
+   7. **A state is readable, and the text on it is too.** A state colour is
+      used as text — a badge's label, a meter's number — so it has to clear
+      the same contrast the foreground does, on the canvas and on a panel.
+      And the text painted *on* a solid state has to clear it against that
+      state, which is a different question: the state is a surface, and the
+      text on it is chosen against the state rather than the canvas.
+   8. **The two directions of a change are two colours, not one.** A line
+      that was added and a line that was removed are told apart by a marker
+      as well as by a colour, because colour alone is not readable by
+      everyone; the two tokens are what the marker and the line's own tint
+      are painted with, and they are checked against a panel, because a
+      changed line is a line in a panel.
 
    The mechanism is the same in both modes, and that is the point of it. A
    surface is the canvas *tinted toward the foreground*: white in the dark
@@ -159,6 +181,13 @@
     --accent: oklch(0.94 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
+    --warning: oklch(0.53 0.13 70);
+    --warning-foreground: oklch(0.985 0 0);
+    --info: oklch(0.53 0.15 255);
+    --info-foreground: oklch(0.985 0 0);
+    --diff-added: oklch(0.50 0.15 150);
+    --diff-removed: oklch(0.52 0.19 25);
     --success: oklch(0.205 0 0);
     --success-foreground: oklch(0.985 0 0);
     --border: oklch(0.145 0 0 / 0.1);
@@ -197,6 +226,13 @@
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.145 0 0);
+    --warning: oklch(0.73 0.13 70);
+    --warning-foreground: oklch(0.145 0 0);
+    --info: oklch(0.73 0.12 255);
+    --info-foreground: oklch(0.145 0 0);
+    --diff-added: oklch(0.72 0.14 150);
+    --diff-removed: oklch(0.70 0.16 25);
     --success: oklch(0.922 0 0);
     --success-foreground: oklch(0.205 0 0);
     --border: oklch(1 0 0 / 0.1);
