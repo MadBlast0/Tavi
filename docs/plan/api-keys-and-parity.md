@@ -2130,10 +2130,11 @@ by agreeing to.
 
 The provider is chosen in the composer, by a control of its own beside the
 model one, and the model picker waits for it — the models belong to one. The
-control opens a palette with two kinds of provider, an **API provider** and a
-**CLI provider**, and each opens the list of the ones that are set up. A
-thread records the provider it was started with, the way it records the model
-and the effort.
+control opens a dropdown with two kinds of provider, an **API provider** and a
+**CLI provider**, and pointing at either opens **its own dropdown beside it**:
+the API one is a searchable list of the providers the user has a key for, and
+the CLI one is where the CLI providers will be. A thread records the provider
+it was started with, the way it records the model and the effort.
 
 ### G1 — the HTTP contract test
 

@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   ArrowUpIcon,
   CheckIcon,
+  ChevronRightIcon,
   CircleHelpIcon,
   FolderOpenIcon,
   GitBranchIcon,
@@ -719,14 +720,18 @@ function PromptInputEffort(props: EffortProps) {
 /**
  * The provider the request goes to.
  *
- * A button that says which provider is in use, and a palette that chooses
- * one. The palette has two kinds of provider — an **API provider**, which is a
- * key and an address, and a **CLI provider**, which is a program on this
- * machine — and each opens the list of the ones that are set up.
+ * A button that says which provider is in use, and a menu that chooses one.
+ * The menu has two kinds of provider — an **API provider**, which is a key
+ * and an address, and a **CLI provider**, which is a program on this machine
+ * — and each opens a list of its own, beside it.
  *
  * The list of API providers is the providers the user has a key for, because
- * a provider with no key is one the app cannot reach: the picker says what is
+ * a provider with no key is one the app cannot reach: the list says what is
  * missing rather than offering something that will fail.
+ *
+ * The second list is its own dropdown rather than a page of this one, so the
+ * two kinds can be told apart at a glance, and so the list of providers can
+ * be searched without searching the kind.
  */
 function PromptInputProvider({
   provider,
@@ -739,74 +744,54 @@ function PromptInputProvider({
 }) {
   const context = usePromptInput("PromptInputProvider")
   const [open, setOpen] = React.useState(false)
+  /**
+   * Which of the two lists is open beside the menu.
+   *
+   * One at a time, and it follows the pointer: the row under the pointer is
+   * the one whose list opens, which is what a menu of submenus does.
+   */
+  const [level, setLevel] = React.useState<"api" | "cli" | null>(null)
   const current = providerFor(provider)
-  const chosen = current && keys.some((key) => key.provider === provider)
 
   /* The providers the app can reach: the ones the user has a key for. */
   const apiProviders = PROVIDERS.filter((entry) =>
     keys.some((key) => key.provider === entry.id),
   )
 
-  return (
+  const row = (
+    label: string,
+    kind: "api" | "cli",
+    icon: React.ReactNode,
+  ) => (
     <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) refocus(context.textareaRef.current)
-      }}
+      open={level === kind}
+      onOpenChange={(next) => setLevel(next ? kind : null)}
     >
       <PopoverTrigger
         render={
-          <Button
+          <button
             type="button"
-            size="xs"
-            variant="ghost"
-            aria-label={
-              current
-                ? "Provider: " + current.label
-                : "Select a provider"
-            }
-            disabled={context.disabled}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm outline-none select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+            onPointerEnter={() => setLevel(kind)}
           />
         }
       >
-        {current ? (
-          <>
-            <ProviderLogo
-              provider={current.id}
-              providerLabel={current.label}
-              className="size-4"
-            />
-            <span className="min-w-0 truncate">{current.label}</span>
-          </>
-        ) : (
-          <span className="min-w-0 truncate">Select a provider</span>
-        )}
+        <span className="flex items-center gap-2">
+          {icon}
+          {label}
+        </span>
+        <ChevronRightIcon className="ml-auto size-4 shrink-0 opacity-60" />
       </PopoverTrigger>
       <PopoverContent
-        className="w-64 p-0"
+        side="right"
         align="start"
-        side="top"
+        sideOffset={4}
+        className="w-64 p-0"
       >
-        <Command label="Provider">
-          <CommandInput placeholder="Search providers…" />
-          <CommandList>
-            <CommandGroup>
-              <CommandItem page="api" pageTitle="API provider">
-                <span className="flex items-center gap-2">
-                  <PlugIcon className="size-4 shrink-0" />
-                  API provider
-                </span>
-              </CommandItem>
-              <CommandItem page="cli" pageTitle="CLI provider">
-                <span className="flex items-center gap-2">
-                  <TerminalIcon className="size-4 shrink-0" />
-                  CLI provider
-                </span>
-              </CommandItem>
-            </CommandGroup>
-
-            <CommandPage id="api">
+        {kind === "api" ? (
+          <Command label="API provider">
+            <CommandInput placeholder="Search providers…" />
+            <CommandList>
               <CommandGroup heading="API providers">
                 {apiProviders.map((entry) => (
                   <CommandItem
@@ -833,17 +818,65 @@ function PromptInputProvider({
                   No provider key yet. Add one in Settings.
                 </CommandEmpty>
               ) : null}
-            </CommandPage>
+            </CommandList>
+          </Command>
+        ) : (
+          <div className="text-muted-foreground p-3 text-sm">
+            No CLI provider is set up yet.
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
 
-            <CommandPage id="cli">
-              <CommandGroup heading="CLI providers">
-                <CommandItem disabled>
-                  No CLI provider is set up yet.
-                </CommandItem>
-              </CommandGroup>
-            </CommandPage>
-          </CommandList>
-        </Command>
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          setLevel(null)
+          refocus(context.textareaRef.current)
+        }
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-label={
+              current ? "Provider: " + current.label : "Select a provider"
+            }
+            disabled={context.disabled}
+          />
+        }
+      >
+        {current ? (
+          <>
+            <ProviderLogo
+              provider={current.id}
+              providerLabel={current.label}
+              className="size-4"
+            />
+            <span className="min-w-0 truncate">{current.label}</span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate">Select a provider</span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start" side="top">
+        {row(
+          "API provider",
+          "api",
+          <PlugIcon className="size-4 shrink-0" />,
+        )}
+        {row(
+          "CLI provider",
+          "cli",
+          <TerminalIcon className="size-4 shrink-0" />,
+        )}
       </PopoverContent>
     </Popover>
   )
