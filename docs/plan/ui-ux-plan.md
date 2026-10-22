@@ -25,10 +25,10 @@
 | 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
 | 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
 | 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the six that are new |
-| 2.1 | ⬜ next | The workspace host |
-| 2.2 | ⬜ | The way into the workspace |
-| 2.3 | ⬜ | The empty workspace |
-| 3.1 | ⬜ | The icon-only button |
+| 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the container in the work area, with the surface stepping aside for it |
+| 2.2 | ✅ done | A **Workspace** row in the Code rail, which opens the workspace and closes it again |
+| 2.3 | ✅ done | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
+| 3.1 | ⬜ next | The icon-only button |
 | 3.2 | ⬜ | Menus and tooltips |
 | 3.3 | ⬜ | Popovers and pickers |
 | 3.4 | ⬜ | Dialogs and confirmations |
@@ -761,6 +761,18 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Acceptance criteria:** The report accurately identifies the current stack and relevant files. No files are modified.
 
+**Status: done.**
+
+The map is `docs/architecture.md` for the shape of the app, `docs/layout.md`
+for the height chain, and `docs/components.md` for what is already on disk
+and imported by nothing — which is the most important thing the audit
+found, because the raw material for most of this project is already in the
+repository.
+
+The one thing that was not obvious and had to be checked: **there is one
+primitive family, not two.** The project has Base UI through shadcn's
+`base-nova` style, and no Radix and no Tabler anywhere in it.
+
 ## Task 0.2 — Record the approved visual baseline
 
 **Prompt to the coding AI:**
@@ -963,6 +975,25 @@ No component, no rendering, no docking behaviour and no package.
 
 **Acceptance criteria:** The existing Chat and Code landing screens remain visually approved; the host can be activated in a controlled UI path and fills its container.
 
+**Status: done.**
+
+| | |
+|---|---|
+| The host | `src/blocks/workspace/workspace-host.tsx` — a container in the work area with a slot for the layout to draw in |
+| The check | `src/lib/workspace-host.test.ts` — four rules, each broken on purpose to watch it fail |
+
+Measured in the running app, opening and closing the workspace:
+
+| | the surface | the host |
+|---|---|---|
+| closed | 1168 × 1086, `display: flex` | not in the tree |
+| open | 0 × 0, `display: none` | 1168 × 1086, 28px of top padding for the title bar |
+
+The document does not scroll in either state. The host and the surface are
+siblings in the work area, not one inside the other, because the work area
+is the thing they share and because the composer will one day be a tile in
+the workspace rather than a thing beside it.
+
 ## Task 2.2 — Define the UI transition into Code workspace
 
 **Prompt to the coding AI:**
@@ -971,6 +1002,26 @@ No component, no rendering, no docking behaviour and no package.
 
 **Acceptance criteria:** Users can see the current Code landing state and separately reach the workspace prototype. The transition is reversible and does not reset unrelated state.
 
+**Status: done.**
+
+| | |
+|---|---|
+| The way in | A **Workspace** row in the Code rail, under New. It is the app's own navigation pattern, and it does not touch the landing screen or the sessions list |
+| The way out | The same row, saying "Close workspace" while the workspace is open |
+| The check | `src/lib/workspace-entry.test.ts` — five rules, each broken on purpose to watch it fail |
+
+The row is live among four disabled ones, and that is honest: the others
+say they are not built yet because there is no artifacts store and nothing
+to schedule, and the workspace is real.
+
+**The Chat rail is not touched.** Chat is a conversation and Code is
+working in a repository, and the two sides are deliberately two different
+lists. Measured in the running app, the Chat rail is New, Projects,
+Artifacts, Scheduled, Customize, exactly as it was.
+
+Opening the workspace does not start a conversation, change the side, or
+clear anything. The Code landing screen comes back exactly as it was.
+
 ## Task 2.3 — Add workspace-level empty state
 
 **Prompt to the coding AI:**
@@ -978,6 +1029,23 @@ No component, no rendering, no docking behaviour and no package.
 > Design the empty state shown inside the workspace only when the workspace is explicitly open and contains no pane instances. Use a concise message, a relevant Lucide icon and a Views/Add View action. Keep it consistent with the current dark design and avoid duplicating the original Code landing hero. The empty-state action must open the Views picker. Do not add pane rendering or docking yet.
 
 **Acceptance criteria:** The landing screen remains distinct from an empty workspace; the workspace empty state has a clear next action.
+
+**Status: done.**
+
+| | |
+|---|---|
+| The state | `src/blocks/workspace/workspace-empty.tsx` — the app's own empty component at its small size: the workspace's mark, "Nothing open yet", one line, one action |
+| The action | `src/blocks/workspace/views-picker.tsx` — a popover listing the thirteen kinds of view in the plan's four groups, each with its mark, its name and what it is for |
+| The check | `src/lib/workspace-empty.test.ts` — six rules, each broken on purpose to watch it fail |
+
+The picker reads the list of kinds of view from `src/blocks/workspace/pane-types.ts`
+rather than keeping a copy, so a type added there cannot be missing from
+the picker — and a test says so.
+
+**Nothing can be added yet, and the picker says so.** The panes are later
+work and the layout that would hold them later still, so every entry is
+disabled with the reason on it. That is the app's own idiom: it is what
+the rail does with the destinations that have no screen behind them yet.
 
 # Phase 3 — Build reusable controls and overlay behavior
 
