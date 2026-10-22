@@ -11,6 +11,15 @@ const host = process.env.TAURI_DEV_HOST;
 // one silently broke the proxy.
 const CHAT_SERVER_PORT = Number(process.env.CHAT_SERVER_PORT ?? 8787);
 
+// The web server's own port, for the same reason. Two checkouts of this
+// source on one machine each need their own, and a hardcoded number means the
+// second one cannot start at all — Vite is set to fail rather than to move.
+//
+// The hot-reload socket sits one above it, so the step is a calculation
+// rather than a second constant: a port that moved has to take its socket
+// with it, or the window reloads against somebody else's server.
+const WEB_PORT = Number(process.env.TAVI_WEB_PORT ?? 1420);
+
 // https://vite.dev/config/
 export default defineConfig(() => ({
   // `backendless` is required here: the chat route is a bare Node process and
@@ -30,7 +39,7 @@ export default defineConfig(() => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: WEB_PORT,
     strictPort: true,
     host: host || false,
     proxy: {
@@ -45,7 +54,7 @@ export default defineConfig(() => ({
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: WEB_PORT + 1,
         }
       : undefined,
     watch: {

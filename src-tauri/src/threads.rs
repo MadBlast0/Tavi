@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
+
+use crate::appfile;
 
 const FILE_NAME: &str = "threads.json";
 const BACKUP_NAME: &str = "threads.json.bak";
@@ -96,7 +98,7 @@ pub struct Threads {
 }
 
 fn file_path(app: &AppHandle) -> Option<PathBuf> {
-    Some(app.path().app_data_dir().ok()?.join(FILE_NAME))
+    appfile::data_path(app, FILE_NAME)
 }
 
 /// Read the file, or the backup beside it.
