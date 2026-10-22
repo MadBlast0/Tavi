@@ -2128,6 +2128,14 @@ the key the request goes out with, and the provider the request is sent to. The
 list and the request are about the same provider by construction, rather than
 by agreeing to.
 
+The provider is chosen in the composer, by a control of its own beside the
+model one, and the model picker waits for it — the models belong to one. The
+control opens a dropdown with two kinds of provider, an **API provider** and a
+**CLI provider**, and pointing at either opens **its own dropdown beside it**:
+the API one is a searchable list of the providers the user has a key for, and
+the CLI one is where the CLI providers will be. A thread records the provider
+it was started with, the way it records the model and the effort.
+
 ### G1 — the HTTP contract test
 
 **Shape.** Following `src/lib/commands.test.ts` exactly, because that file
@@ -2848,6 +2856,18 @@ credential it cannot use.
 address: an Azure resource, a Databricks workspace, a model running on this
 machine. The key says which, and the key's address wins over the provider's
 default.
+
+**Switching provider in the middle of a thread is safe, so it is not
+prevented.** The research the work asked for: the conversation is text, so it
+travels; the tools are the same whichever provider answers, because the
+provider packages translate them; the system prompt is written from the
+surface, the mode and the folder, and not from the provider; the reasoning
+level is checked against the new model by the shared rule, which refuses a
+level the new model does not publish; and the model is reconciled when the
+new provider does not offer the old one, the way the app already reconciles a
+model that has left the catalogue. What does change is the quality and the
+cost, mid-thread, and that is the user's call. So the provider is recorded on
+the thread and is not locked.
 
 **The reasoning preference is written in one place and in one language.** The
 provider's own field for a reasoning level is not the same for every provider —

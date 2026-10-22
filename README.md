@@ -165,6 +165,14 @@ Google and Cohere each have a shape of their own.
 | Cohere | Cohere's chat shape |
 | Amazon Bedrock · Google Vertex AI | **not yet** — see Known limitations |
 
+The composer has a **provider** control of its own, beside the model one. The
+model picker waits for it, because the models belong to one; the control opens
+a dropdown with an **API provider** and a **CLI provider**, and pointing at
+either opens **its own dropdown beside it** — the API one is a searchable list
+of the providers you have a key for. A chat or a session records the provider
+it was started with, and it can still be changed — the conversation is text,
+and the effort is checked against the new model.
+
 
 A key is a credential with an identity. It belongs to a provider, it has a name
 the user gave it, and there can be more than one for the same provider — a

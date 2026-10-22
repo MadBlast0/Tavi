@@ -1029,6 +1029,16 @@ async fn catalogue(
         }
     }
 
+    /* The catalogue used to be one file for one provider, and it is one file
+       per provider now. The old one is never read again, so it is taken away
+       rather than left in the app's data folder for ever. It is a cache, and
+       it can be fetched again, so nothing is lost. */
+    if let Some(legacy) = appfile::data_path(app, "catalogue.json") {
+        if legacy != path.unwrap_or_default() {
+            let _ = std::fs::remove_file(legacy);
+        }
+    }
+
     Ok(Catalogue {
         body: fetched,
         fetched_at,

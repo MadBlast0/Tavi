@@ -32,7 +32,7 @@ what removes it.
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
-| The model catalogue | A cache in the app's data directory on the desktop; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
+| The model catalogue | A cache in the app's data directory on the desktop, one file per provider; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
 | The window's size and position | The app's own file, written by Rust | None | Until the app is reinstalled | Overwritten |
 | Cloned repositories | The projects folder, on disk | The user's own code | Until the user deletes them | The user, or the file manager |
 | Attachments and mentions | Inlined into the conversation, and stored with the turn | The user's own words and files | With the thread | Deleting the thread |
@@ -262,6 +262,21 @@ scoped to: the catalogue that is fetched, the list that is shown, the key the
 request goes out with, and the provider the request is sent to all follow it.
 That is what makes the list and the request about the same provider by
 construction, rather than by agreeing to.
+
+**It starts unset, because the user chooses it.** The composer has a provider
+control of its own, beside the model one, and the model picker is not usable
+until a provider is chosen — the models belong to one. The control opens a
+dropdown with two kinds of provider, an **API provider** and a **CLI
+provider**. Pointing at either opens **its own dropdown beside it**: the API
+one is a searchable list of the providers the user has a key for, because a
+provider with no key is one the app cannot reach; the CLI one is where the
+CLI providers will be.
+
+**A thread records the provider it was started with**, the way it records the
+model and the effort. It is a record and not a rule: the conversation is text,
+the tools are the same whichever provider answers, and the effort is checked
+against the new model, so a thread may go on to another provider if the user
+wants it to.
 
 A provider is a **shape** and some **configuration**. Most of the thirty
 providers the app knows about speak the OpenAI chat-completions shape and
