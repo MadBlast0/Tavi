@@ -58,6 +58,78 @@ allowed. Every other warning fails the gate.
 was.** It is not merged "with the problem still in it" and not merged on
 Tuesday.
 
+## The merges that were hard, and what was decided
+
+Two merges were not a matter of running the script. They are here because
+they are the cases the process exists for.
+
+### The provider marks (`UIUX` into `main`)
+
+One branch changed the provider marks to be drawn in the page's own colour,
+so they are imported as `?raw`. Another added a test that walks every import
+in the app and checks that it points at a file that is there.
+
+The two branches merged with **no conflict at all** — they touched different
+lines — and the result failed a test that passed on both of them separately.
+The test did not know about the `?raw` suffix, so it decided thirty-one
+imports pointed at nothing.
+
+**The test was what was wrong, not the mark.** `?raw` says how the file is
+loaded, not which file it is, so the query is dropped before the file is
+looked for. Both sides' work is kept: the mark is still drawn in the
+page's own colour, and the test still says that an import which points at
+nothing fails the build.
+
+### The CLI providers (`CLI` into `main`)
+
+Two files had changed on both sides, in ways that did not overlap and did
+not agree.
+
+`src-tauri/Cargo.toml` had the notification plugin on one side and tokio's
+`time` feature on the other. Neither was a duplicate of the other: the toast
+is the reply that finished while the app was in the background, and
+`tokio::time::sleep` is how the CLI waits between polls of a provider's
+answer. **Both are kept.**
+
+`prompt-block.tsx` had the reasoning check written two ways. One side
+renamed it to `checkReasoning` and had it answer with a verdict; the other
+was still calling the old `serializeReasoning`, which the merged module no
+longer exports. **The newer name is the one that exists now**, so that is
+what is called — and the CLI's own condition is kept with it, that a CLI
+provider is not asked whether it publishes effort levels, because it has its
+own way of being told how hard to think.
+
+### The rule behind both
+
+When two branches disagree, the question is not *which side wins*. It is
+**what each side was trying to do**, and whether the two are the same thing
+written twice.
+
+- The same thing written twice → one of them, and the other is dropped.
+- Two different things → both, and the merge is written so that both work.
+
+A merge that drops a feature is a failure. So is a merge that keeps two
+copies of the same one.
+
+## The report
+
+`./scripts/merge-main.ps1 -Report` says what every branch is holding and
+what is not in `main` yet. It merges nothing and wakes nobody.
+
+```
+CLI                0 commit(s) not in main
+UIUX               0 commit(s) not in main
+master             0 commit(s) not in main
+task/1.3           0 commit(s) not in main
+```
+
+A branch is **safe to delete** when the report says two things: every one of
+its commits is reachable from `main`, and it is holding nothing uncommitted.
+A deleted branch takes its uncommitted work with it, and that work is gone.
+
+**The bot does not delete branches.** It has no business doing that, and the
+report is there so that the decision is made by somebody who can see it.
+
 ## The merge bot
 
 `scripts/merge-main.ps1` is the bot. It runs on a timer, and each run does the
@@ -126,9 +198,12 @@ a terminal or an agent session is open.
 The installer also writes `scripts/.tavi-merge.json`, which says which
 session to wake. It is a local file and it is not committed.
 
-The task is registered with `MultipleInstances: IgnoreNew`, so a run that
-takes longer than thirty minutes does not stack up behind itself, and the bot
-takes a lock file of its own for the same reason.
+The task runs the bot with `-Push`, because a merge that stays on this
+machine is a merge nobody else has. It is registered with
+`MultipleInstances: IgnoreNew`, so a run that takes longer than thirty
+minutes does not stack up behind itself, and the bot takes a lock file of
+its own for the same reason. A lock older than four hours is taken over, so
+a run that died cannot stop every run after it.
 
 ### Running it by hand
 

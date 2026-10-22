@@ -374,16 +374,34 @@ Write-Log "worktree: $Worktree"
 # arrive together, and two merges into the same worktree is a mess neither
 # of them can undo.
 $lockStream = $null
-try {
-  $lockStream = [System.IO.File]::Open(
-    $LockFile,
-    [System.IO.FileMode]::OpenOrCreate,
-    [System.IO.FileAccess]::ReadWrite,
-    [System.IO.FileShare]::None
-  )
-} catch {
-  Write-Log "Another merge is already running. Nothing to do." "WARN"
-  exit 0
+for ($attempt = 1; $attempt -le 2; $attempt++) {
+  try {
+    $lockStream = [System.IO.File]::Open(
+      $LockFile,
+      [System.IO.FileMode]::OpenOrCreate,
+      [System.IO.FileAccess]::ReadWrite,
+      [System.IO.FileShare]::None
+    )
+    break
+  } catch {
+    # A lock left behind by a run that died would stop every run after it.
+    # The task itself is given two hours, so a lock older than that is a
+    # lock nobody is holding.
+    $stale = $false
+    if (Test-Path $LockFile) {
+      $age = (Get-Date) - (Get-Item $LockFile).LastWriteTime
+      if ($age -gt (New-TimeSpan -Hours 4)) {
+        Write-Log "The lock is $(([int]$age.TotalHours)) hour(s) old and nobody is holding it. Taking it over." "WARN"
+        $stale = $true
+      }
+    }
+    if ($stale) {
+      Remove-Item $LockFile -Force -ErrorAction SilentlyContinue
+      continue
+    }
+    Write-Log "Another merge is already running. Nothing to do." "WARN"
+    exit 0
+  }
 }
 
 # The worktree has to be clean, or a merge would land on top of somebody's
