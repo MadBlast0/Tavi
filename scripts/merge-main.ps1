@@ -359,8 +359,24 @@ function Get-Uncommitted {
 }
 
 function Reset-Main {
+  <#
+    Undoes a merge, and nothing else.
+
+    `git reset --hard` would do it, but it would also throw away anything
+    else that was in the worktree — including an edit somebody made while
+    the merge was being proved. So the files the merge touched are put
+    back, and the rest of the worktree is left alone.
+  #>
+  param([string[]]$Touched)
+
   git -C $Worktree merge --abort 2>&1 | Out-Null
-  git -C $Worktree reset --hard $MainBranch 2>&1 | Out-Null
+
+  if ($Touched -and $Touched.Count -gt 0) {
+    $paths = $Touched -join " "
+    git -C $Worktree restore --source=HEAD --staged --worktree -- $paths 2>&1 | Out-Null
+  } else {
+    git -C $Worktree reset --hard $MainBranch 2>&1 | Out-Null
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -532,9 +548,12 @@ foreach ($branch in $Branches) {
   $mergeOut = Join-Path $scratch "merge-$($branch -replace '[^a-zA-Z0-9]', '_').log"
   $code = Invoke-Native -Command "git merge --no-ff --no-commit $branch" -WorkDir $Worktree -OutFile $mergeOut
 
+  # The files the merge touched, so that undoing it undoes only those.
+  $touched = @(git -C $Worktree diff --name-only HEAD)
+
   if ($code -ne 0) {
     $conflicts = @(git -C $Worktree diff --name-only --diff-filter=U)
-    Reset-Main
+    Reset-Main -Touched $touched
     $detail = if ($conflicts.Count) { "conflicts in: $($conflicts -join ', ')" } else { "the merge did not apply" }
     Write-Log "$branch did not merge. $detail" "ERROR"
     $problems += "Branch $branch would not merge into $MainBranch. $detail. The merge output is in $mergeOut."
@@ -549,7 +568,7 @@ foreach ($branch in $Branches) {
     $failed = @($gate.Steps | Where-Object { $_.Code -ne 0 })
     if ($failed.Count -eq 0) { $failed = @($gate.Steps | Select-Object -Last 1) }
     $failed = $failed[-1]
-    Reset-Main
+    Reset-Main -Touched $touched
     Write-Log "$branch merged cleanly but did not pass the gate at '$($failed.Name)'. main was not moved." "ERROR"
     $problems += "Branch $branch merged into $MainBranch without conflicts, but the gate failed at step '$($failed.Name)'. The output is in $($failed.Out). main was left exactly as it was."
     $status += [pscustomobject]@{ Branch = $branch; State = "gate failed"; Detail = "$($failed.Name)" }

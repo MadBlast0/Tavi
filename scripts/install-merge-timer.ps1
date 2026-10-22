@@ -90,12 +90,15 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
   -RepetitionInterval (New-TimeSpan -Minutes $Minutes) `
   -RepetitionDuration (New-TimeSpan -Days 3650)
 
-# One run at a time, and do not stack up runs that fell behind.
+# One run at a time, do not stack up runs that fell behind, and do not put
+# a window on the desktop. The bot is something that runs in the
+# background, not something to be caught in the middle of.
 $settings = New-ScheduledTaskSettingsSet `
   -MultipleInstances IgnoreNew `
   -StartWhenAvailable `
   -DontStopIfGoingOnBatteries `
   -AllowStartIfOnBatteries `
+  -Hidden `
   -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
