@@ -72,11 +72,11 @@ Status blocks says what stands, what was wrong, and what it becomes.
 | 4.2 | ✅ done | The header: icon, title, actions, and the drag region |
 | 4.3 | ✅ done | The overflow menu, and the close, focus, maximize and pop-out controls |
 | 4.4 | ✅ done | The registry of pane types, and the model of an instance |
-| 4.5 | ▶ next | The shared empty, loading, error and unavailable slots |
+| 4.5 | ✅ done | The shared empty, loading, error and unavailable slots |
 
 **Phase 5 — Every pane's content, one pane at a time**
 
-| 5.1 | ⬜ not started | The Chat pane |
+| 5.1 | ▶ next | The Chat pane |
 | 5.2 | ⬜ not started | The Code Session pane |
 | 5.3 | ⬜ not started | The Diff Viewer: the overview and the file list |
 | 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
@@ -1665,6 +1665,19 @@ The layout engine does not know what a pane type is. It asks the registry.
 
 Implement the tasks in order. Do not integrate real services. Each task should make the pane look complete and its local interactions demonstrable.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The slots | `src/blocks/workspace/pane-states.tsx` — empty, loading, error, unavailable and spinner |
+| The check | `src/lib/pane-states.test.ts` — eight rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The primitives already existed — the empty component, the skeleton, the progress indicator, the toast — and the pane needed slots that use them rather than re-inventing them. The slots are `PaneEmpty`, `PaneLoading`, `PaneError`, `PaneUnavailable` and `PaneSpinner`, and each takes its own text, so a pane supplies the words that fit it rather than inheriting a sentence written for a different one. The header stays visible while the content changes state, because the slots are content and not frames — they do not draw a header, so the pane's header is the one that stays.
+
+The empty slot offers at most one action, and the error slot offers a retry only when one can actually be retried. The unavailable slot is drawn as a fact about what the app can do, not as an error, because the two are different things and a person who sees one should not think the other.
 ## Task 5.1 — Chat pane
 
 **Prompt to the coding AI:**
