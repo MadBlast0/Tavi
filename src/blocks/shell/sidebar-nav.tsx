@@ -5,11 +5,13 @@ import {
   CircleSmallIcon,
   ClockIcon,
   FolderIcon,
+  LayoutPanelLeftIcon,
   ListFilterIcon,
   PinIcon,
   PlusIcon,
   ShapesIcon,
   SlidersHorizontalIcon,
+  XIcon,
   ZapIcon,
 } from "lucide-react"
 
@@ -46,6 +48,11 @@ import {
 } from "@/lib/sessions"
 import { formatWhen } from "@/lib/threads"
 import type { Side } from "@/lib/sides"
+import {
+  closeWorkspace,
+  openWorkspace,
+  useWorkspace,
+} from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
 
 /**
@@ -179,6 +186,11 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
   ],
   code: [
     { id: "new", label: "New", icon: PlusIcon },
+    {
+      id: "workspace",
+      label: "Workspace",
+      icon: LayoutPanelLeftIcon,
+    },
     {
       id: "artifacts",
       label: "Artifacts",
@@ -436,6 +448,9 @@ export function SidebarNav() {
   const { variant } = useComposerVariant()
   const bridge = useThreadBridge()
   const newThread = useNewThread()
+  /* Whether the workspace has the work area. The row has to say which it
+     will do, and the only way it can know is by asking. */
+  const { open: workspaceOpen } = useWorkspace()
   /* The two lists, kept apart.
      A chat is not a code session, so the rail is not one list drawn twice: it
      is two lists, and the switch says which of them you are looking at. */
@@ -568,6 +583,23 @@ export function SidebarNav() {
     newThread(variant)
   }
 
+  /**
+   * The workspace, in and out.
+   *
+   * The row says which it will do rather than carrying one label and
+   * changing only a mark: a row that says "Workspace" and closes the
+   * workspace when pressed is a row that lies about what it does, and the
+   * rail is the one place the user is looking when they decide to leave.
+   *
+   * Opening the workspace does not touch the conversation or the composer.
+   * They are still there when the workspace is closed again, exactly as
+   * they were.
+   */
+  function onWorkspace() {
+    if (workspaceOpen) closeWorkspace()
+    else openWorkspace()
+  }
+
   function onOpen(id: string) {
     bridge.functions.current?.open(id)
   }
@@ -587,10 +619,22 @@ export function SidebarNav() {
                 className={ROW}
                 disabled={Boolean(entry.why)}
                 title={entry.why}
-                onClick={entry.id === "new" ? onNew : undefined}
+                onClick={
+                  entry.id === "new"
+                    ? onNew
+                    : entry.id === "workspace"
+                      ? onWorkspace
+                      : undefined
+                }
               >
-                <entry.icon />
-                {entry.label}
+                {entry.id === "workspace" && workspaceOpen ? (
+                  <XIcon />
+                ) : (
+                  <entry.icon />
+                )}
+                {entry.id === "workspace" && workspaceOpen
+                  ? "Close workspace"
+                  : entry.label}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
