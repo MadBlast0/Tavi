@@ -89,7 +89,7 @@ test("the host is a sibling of the surface, and they take turns", () => {
   // surface would make the composer part of the workspace, which it is not
   // yet — it will one day be a tile in it, and that is a different thing.
   assert.ok(
-    surface.includes("<WorkspaceHost />"),
+    surface.includes("<WorkspaceHost>"),
     "the surface should render the host",
   )
   assert.ok(
@@ -97,7 +97,7 @@ test("the host is a sibling of the surface, and they take turns", () => {
     "the surface should step aside while the workspace has the work area",
   )
   assert.ok(
-    surface.indexOf("<WorkspaceHost />") < surface.indexOf("<main"),
+    surface.indexOf("<WorkspaceHost>") < surface.indexOf("<main"),
     "the host should come before the surface, so the surface is the one that gives way",
   )
 })

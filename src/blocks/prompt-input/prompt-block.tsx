@@ -225,6 +225,7 @@ import {
 import { useComposerVariant } from "./composer-variant"
 import { useThreadBridge } from "./thread-bridge"
 import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
+import { WorkspaceEmpty } from "@/blocks/workspace/workspace-empty"
 import { useWorkspace } from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
@@ -2281,7 +2282,9 @@ export function PromptBlock() {
           because the work area is the thing the two of them share, and
           because the composer will one day be a tile in the workspace
           rather than a thing beside it. */}
-      <WorkspaceHost />
+      <WorkspaceHost>
+        <WorkspaceEmpty />
+      </WorkspaceHost>
       <main
         className={cn(
           "flex h-svh flex-col bg-background pt-(--shell-top-bar-h)",
