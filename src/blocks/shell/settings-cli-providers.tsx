@@ -73,6 +73,17 @@ import {
   type CliProviderState,
 } from "@/lib/api"
 import { isDesktopApp } from "@/lib/platform"
+import {
+  CLI_FILTERS,
+  CLI_ORDERS,
+  cliCounts,
+  cliDetail,
+  cliStanding,
+  cliUpdateLabel,
+  cliVisible,
+  type CliFilter,
+  type CliOrder,
+} from "./cli-provider-view"
 import { cn } from "@/lib/utils"
 
 /**
@@ -103,107 +114,6 @@ const PANE_INSET = { "--item-px": "0px" } as React.CSSProperties
 /** What the pane says about the providers, in a browser. */
 export const WEB_NOTE =
   "CLI providers are programs on this computer. Open the desktop app to use them."
-
-/** Which providers are being shown. */
-type Filter =
-  | "all"
-  | "installed"
-  | "missing"
-  | "enabled"
-  | "disabled"
-  | "attention"
-  | "legacy"
-
-/** The order the list is in. */
-type Order = "name" | "installed" | "updates"
-
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "installed", label: "Installed" },
-  { value: "missing", label: "Not installed" },
-  { value: "enabled", label: "Enabled" },
-  { value: "disabled", label: "Disabled" },
-  { value: "attention", label: "Needs attention" },
-  { value: "legacy", label: "Legacy" },
-]
-
-const ORDERS: { value: Order; label: string }[] = [
-  { value: "name", label: "By name" },
-  { value: "installed", label: "Installed first" },
-  { value: "updates", label: "Updates first" },
-]
-
-/**
- * Whether a provider wants the user's attention.
- *
- * A program that is installed and will not say what version it is is a
- * program that may be broken. So is one the app is offering that has since
- * been removed.
- */
-function needsAttention(state: CliProviderState): boolean {
-  if (state.problem) return true
-  if (state.installed && state.versionError) return true
-  if (state.enabled && !state.installed) return true
-  return false
-}
-
-/** Whether a provider matches what the search box was given. */
-function matches(state: CliProviderState, needle: string): boolean {
-  if (!needle) return true
-  const haystack = [
-    state.label,
-    state.id,
-    state.description,
-    state.path ?? "",
-    ...state.modes,
-  ]
-    .join(" ")
-    .toLowerCase()
-  return haystack.includes(needle)
-}
-
-/** The badge that says what state a provider is in. */
-function standingOf(state: CliProviderState): {
-  label: string
-  tone: "default" | "destructive" | "muted"
-} {
-  if (state.problem) {
-    return { label: "Not the right program", tone: "destructive" }
-  }
-  if (!state.installed) {
-    return { label: "Not installed", tone: "muted" }
-  }
-  if (state.versionError) {
-    return { label: "Version unknown", tone: "destructive" }
-  }
-  if (state.version) {
-    return { label: state.version, tone: "default" }
-  }
-  return { label: "Installed", tone: "default" }
-}
-
-/** The line under the name: where it is and what it is. */
-function detail(state: CliProviderState): string {
-  if (state.problem) return state.problem
-  if (!state.installed) return state.description
-  return `${state.description} · ${state.version ?? "installed"}`
-}
-
-/** What the update state is called, in words. */
-function updateLabel(state: CliProviderState): string | null {
-  switch (state.updateState) {
-    case "available":
-      return state.latestVersion
-        ? `Update to ${state.latestVersion} is available`
-        : "An update is available"
-    case "up-to-date":
-      return "Up to date"
-    case "external":
-      return "Updated by whatever installed it"
-    default:
-      return null
-  }
-}
 
 /* -------------------------------------------------------------------------- */
 /* The pane                                                                    */
@@ -254,59 +164,17 @@ export function CliProviderPane({
   onDetails,
 }: CliProviderPaneProps) {
   const [query, setQuery] = React.useState("")
-  const [filter, setFilter] = React.useState<Filter>("all")
-  const [order, setOrder] = React.useState<Order>("name")
+  const [filter, setFilter] = React.useState<CliFilter>("all")
+  const [order, setOrder] = React.useState<CliOrder>("name")
 
-  const needle = query.trim().toLowerCase()
-
-  const shown = React.useMemo(() => {
-    const kept = states.filter((state) => {
-      if (!matches(state, needle)) return false
-      switch (filter) {
-        case "installed":
-          return state.installed
-        case "missing":
-          return !state.installed
-        case "enabled":
-          return state.enabled
-        case "disabled":
-          return !state.enabled
-        case "attention":
-          return needsAttention(state)
-        case "legacy":
-          return state.maintenance === "legacy"
-        default:
-          return true
-      }
-    })
-
-    const sorted = [...kept]
-    sorted.sort((a, b) => {
-      if (order === "installed") {
-        const difference = Number(b.installed) - Number(a.installed)
-        if (difference !== 0) return difference
-      }
-      if (order === "updates") {
-        const difference =
-          Number(b.updateState === "available") -
-          Number(a.updateState === "available")
-        if (difference !== 0) return difference
-      }
-      return a.label.localeCompare(b.label)
-    })
-    return sorted
-  }, [states, needle, filter, order])
+  const shown = React.useMemo(
+    () => cliVisible(states, query, filter, order),
+    [states, query, filter, order],
+  )
 
   /* The counts are of everything, not of what the search left. A number that
      changes as the user types is a number nobody can act on. */
-  const counts = React.useMemo(() => {
-    const installed = states.filter((state) => state.installed).length
-    const enabled = states.filter((state) => state.enabled).length
-    const updates = states.filter((state) => state.updateState === "available")
-      .length
-    const attention = states.filter(needsAttention).length
-    return { known: states.length, installed, enabled, updates, attention }
-  }, [states])
+  const counts = React.useMemo(() => cliCounts(states), [states])
 
   return (
     <div className="flex flex-col gap-6">
@@ -322,7 +190,10 @@ export function CliProviderPane({
               )}
             >
               {label}
-              {loading ? null : (
+              {/* The count is of what this build can see, and a browser
+                  cannot see any of them — so the browser shows no count
+                  rather than a count of nothing. */}
+              {loading || !isDesktopApp() ? null : (
                 <Badge appearance="muted" shape="pill" size="sm">
                   {counts.known}
                 </Badge>
@@ -337,16 +208,18 @@ export function CliProviderPane({
             </InfoHint>
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onRescan}
-            disabled={loading || busy !== null}
-          >
-            <RefreshCwIcon className="size-4" />
-            Look again
-          </Button>
+          {isDesktopApp() ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onRescan}
+              disabled={loading || busy !== null}
+            >
+              <RefreshCwIcon className="size-4" />
+              Look again
+            </Button>
+          ) : null}
         </div>
 
         {!isDesktopApp() ? (
@@ -356,63 +229,77 @@ export function CliProviderPane({
         ) : null}
       </div>
 
-      {/* The search, the filter and the order share a row, because they are
-          three ways of looking at the same list and are used together. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <InputGroup size="sm" className="min-w-48 flex-1">
-          <InputGroupAddon>
-            <PackageIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search CLI providers"
-            placeholder="Search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
+      {/* A browser cannot see this computer's programs, so it is shown
+          nothing at all rather than a list of nothing. A count of zero
+          would be a claim — that there are no CLI providers anywhere — and
+          the app knows of nineteen. */}
+      {!isDesktopApp() ? null : (
+        <>
+          {/* The search, the filter and the order share a row, because they
+              are three ways of looking at the same list and are used
+              together. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <InputGroup size="sm" className="min-w-48 flex-1">
+              <InputGroupAddon>
+                <PackageIcon />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search CLI providers"
+                placeholder="Search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </InputGroup>
 
-        <Select
-          value={filter}
-          onValueChange={(value) => setFilter(value as Filter)}
-        >
-          <SelectTrigger size="sm" aria-label="Filter CLI providers">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTERS.map((entry) => (
-              <SelectItem key={entry.value} value={entry.value}>
-                {entry.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <Select
+              value={filter}
+              onValueChange={(value) => setFilter(value as CliFilter)}
+            >
+              <SelectTrigger size="sm" aria-label="Filter CLI providers">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLI_FILTERS.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Select value={order} onValueChange={(value) => setOrder(value as Order)}>
-          <SelectTrigger size="sm" aria-label="Order CLI providers">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ORDERS.map((entry) => (
-              <SelectItem key={entry.value} value={entry.value}>
-                {entry.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <Select
+              value={order}
+              onValueChange={(value) => setOrder(value as CliOrder)}
+            >
+              <SelectTrigger size="sm" aria-label="Order CLI providers">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLI_ORDERS.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      {/* The counts. They are of everything, so they do not move as the
-          search narrows the list. */}
-      <p className="text-xs text-muted-foreground">
-        {counts.known} known · {counts.installed} installed · {counts.enabled}{" "}
-        enabled
-        {counts.updates > 0 ? ` · ${counts.updates} with an update` : ""}
-        {counts.attention > 0 ? ` · ${counts.attention} need attention` : ""}
-      </p>
+          {/* The counts. They are of everything, so they do not move as the
+              search narrows the list. */}
+          <p className="text-xs text-muted-foreground">
+            {counts.known} known · {counts.installed} installed · {counts.enabled}{" "}
+            enabled
+            {counts.updates > 0 ? ` · ${counts.updates} with an update` : ""}
+            {counts.attention > 0
+              ? ` · ${counts.attention} need attention`
+              : ""}
+          </p>
+        </>
+      )}
 
       {loading ? (
         <CliSkeleton />
-      ) : shown.length === 0 ? (
+      ) : !isDesktopApp() ? null : shown.length === 0 ? (
         <CliEmpty query={query} filter={filter} />
       ) : (
         <ItemGroup variant="default">
@@ -449,8 +336,8 @@ function CliProviderRow({
   onLifecycle: (state: CliProviderState, action: CliLifecycleAction) => void
   onDetails: (state: CliProviderState) => void
 }) {
-  const standing = standingOf(state)
-  const update = updateLabel(state)
+  const standing = cliStanding(state)
+  const update = cliUpdateLabel(state)
 
   /* The one visible action. A tool that is not here yet is installed; one
      that is here and can be updated is updated. A tool the app cannot
@@ -502,7 +389,7 @@ function CliProviderRow({
           ) : null}
         </ItemTitle>
 
-        <ItemDescription>{detail(state)}</ItemDescription>
+        <ItemDescription>{cliDetail(state)}</ItemDescription>
 
         {update ? (
           <p
@@ -621,7 +508,7 @@ function CliSkeleton() {
   )
 }
 
-function CliEmpty({ query, filter }: { query: string; filter: Filter }) {
+function CliEmpty({ query, filter }: { query: string; filter: CliFilter }) {
   const searching = query.trim() !== ""
   return (
     <Empty>
@@ -636,7 +523,7 @@ function CliEmpty({ query, filter }: { query: string; filter: Filter }) {
           {searching
             ? "No CLI provider matches what you typed."
             : filter === "all"
-              ? "Tavi knows of no CLI providers."
+              ? "There are no CLI providers to show."
               : "No CLI provider is in this state."}
         </EmptyDescription>
       </EmptyHeader>
