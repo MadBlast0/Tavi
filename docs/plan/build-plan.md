@@ -294,7 +294,7 @@ feature that is not there.
 |---|---|---|
 | ✅ | **The command palette** — Ctrl/Cmd+K, listing the active side's conversations and the app's commands | 5 | `src/blocks/shell/command-palette.tsx` |
 | ✅ | **Search over conversations** — up to 50 per side | 5 | the palette's own search, over the same fifty |
-| ⬜ | **Archive** — needs a second list and a way back out of it | 5 |
+| ✅ | **Archive** — needs a second list and a way back out of it | 5 | the conversation's own menu, and an **Archived** row in the rail |
 | ✅ | **Restore the last open conversation per side** after a reload | 3 |
 | ⬜ | **Artifacts** — what a conversation produced | — |
 | ⬜ | **Scheduled** — things that run on their own | — |

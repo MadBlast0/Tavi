@@ -14,6 +14,7 @@ import {
   clearChatUnread,
   findChat,
   markChatUnread,
+  setChatArchived,
   toggleMuteChat,
   type StoredChat,
 } from "./chats.ts"
@@ -21,6 +22,7 @@ import {
   clearSessionUnread,
   findSession,
   markSessionUnread,
+  setSessionArchived,
   toggleMuteSession,
   type StoredSession,
 } from "./sessions.ts"
@@ -53,3 +55,14 @@ export const clearConversationUnread = (side: Side, id: string) =>
 /** Turns this conversation's announcements on or off. */
 export const toggleMuteConversation = (side: Side, id: string) =>
   side === "chat" ? toggleMuteChat(id) : toggleMuteSession(id)
+
+/**
+ * Puts this conversation in the archived list, or takes it out again.
+ *
+ * The conversation is still a conversation: it keeps its turns, and it can
+ * be brought back.
+ */
+export const setConversationArchived = (side: Side, id: string, archived: boolean) =>
+  side === "chat"
+    ? setChatArchived(id, archived)
+    : setSessionArchived(id, archived)

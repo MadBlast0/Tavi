@@ -108,6 +108,16 @@ export type ThreadBase = {
    * about it, which is a different thing from not wanting the answer.
    */
   mutedAt?: number
+  /**
+   * When the thread was archived, or absent if it is not.
+   *
+   * An archived thread is out of the rail and in the archived list, and it
+   * is still a conversation: it is still on disk, it still has its turns,
+   * and it can be brought back. Archiving is the reversible option, and the
+   * one the app can offer where there is nowhere to look for something that
+   * was merely forgotten.
+   */
+  archivedAt?: number
 }
 
 /** What a caller writes when saving a thread. */
@@ -158,6 +168,15 @@ export type ThreadStore<E extends object> = {
   clearUnread: (id: string) => Promise<void>
   /** Turns the thread's announcements on or off. */
   toggleMute: (id: string) => Promise<void>
+  /**
+   * Puts the thread in the archived list, or takes it out again.
+   *
+   * It is not a toggle because "archived" is not the same as "not archived"
+   * in every case: a thread that was never archived and a thread that was
+   * unarchived are the same thing, but saying which one is meant is clearer
+   * than making the caller work it out.
+   */
+  setArchived: (id: string, archived: boolean) => Promise<void>
   fork: (id: string) => Promise<(ThreadBase & E) | undefined>
   /**
    * The last write that did not happen, if there was one.
@@ -465,6 +484,33 @@ export const createThreadStore = <E extends object>(options: {
   }
 
   /**
+   * Puts a thread in the archived list, or takes it out again.
+   *
+   * The thread stays a thread: it is still on disk, with its turns, and it
+   * can be brought back. Archiving is about where it is listed, not about
+   * whether it exists.
+   */
+  const setArchived = async (id: string, archived: boolean) => {
+    await ready()
+    let changed = false
+    apply(
+      threads.map((thread) => {
+        if (thread.id !== id) return thread
+        if (archived) {
+          if (thread.archivedAt) return thread
+          changed = true
+          return { ...thread, archivedAt: Date.now() }
+        }
+        if (!thread.archivedAt) return thread
+        changed = true
+        const { archivedAt: _dropped, ...rest } = thread
+        return rest as ThreadBase & E
+      }),
+    )
+    if (changed) await write(threads)
+  }
+
+  /**
    * Turns this thread's announcements on or off.
    *
    * Muting a thread does not stop it running and does not stop its reply
@@ -536,6 +582,7 @@ export const createThreadStore = <E extends object>(options: {
     markUnread,
     clearUnread,
     toggleMute,
+    setArchived,
     fork,
     lastError: () => failure,
     subscribe,
