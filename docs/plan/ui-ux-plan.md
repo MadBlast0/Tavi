@@ -17,17 +17,36 @@
 | Task | | What it produced |
 |---|---|---|
 | 0.1 | ✅ done | The implementation map: the stack, the entry points, the shell, the sidebar, the Chat/Code switch, the composers, the state, the check commands, and the vendored `react-resizable-panels` primitive that is on disk and imported by nothing |
-| 0.2 | ⬜ not done | The visual baseline is not written down yet |
+| 0.2 | ✅ done | [`docs/visual-baseline.md`](../../visual-baseline.md) — the approved shape, as numbers, and the list of nine things that must not change |
 | 0.3 | ✅ done | The shadcn and Lucide audit: the component families that exist, the one primitive family in use, and the icon sizing convention |
-| 0.4 | ⬜ not done | The docking strategy is not decided and written down yet. **Task 6.1 depends on it** |
+| 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — the docking decision: `react-resizable-panels` through the app's own component, with the drag built on top of it |
 | 1.1 | ✅ done | [`docs/tokens.md`](../../tokens.md) — the token map — and seven missing tokens, three of which the code already asked for |
 | 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
-| 1.3 | ⬜ next | The icon conventions |
-| 1.4 | ⬜ | The sizing and the scroll boundaries |
-| 1.5 | ⬜ | The state boundaries |
+| 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
+| 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
+| 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the six that are new |
+| 2.1 | ⬜ next | The workspace host |
+| 2.2 | ⬜ | The way into the workspace |
+| 2.3 | ⬜ | The empty workspace |
+| 3.1 | ⬜ | The icon-only button |
+| 3.2 | ⬜ | Menus and tooltips |
+| 3.3 | ⬜ | Popovers and pickers |
+| 3.4 | ⬜ | Dialogs and confirmations |
+| 3.5 | ⬜ | Status, empty, loading and error |
+| 4.1 | ⬜ | The pane frame |
+| 4.2 | ⬜ | The pane header |
+| 4.3 | ⬜ | The pane's actions |
+| 4.4 | ⬜ | The pane registry |
+| 4.5 | ⬜ | The pane's state slots |
+| 5.1 – 5.15 | ⬜ | The thirteen panes, and the consistency pass |
+| 6.1 – 6.5 | ⬜ | The layout engine, and the first panes in it |
+| 7.1 – 7.11 | ⬜ | The interactions: the Views menu, splitting, resizing, docking, focus, maximise, presets, reset, and the pane menu |
+| 8.1 – 8.5 | ⬜ | States, overlays, keyboard, narrow windows, and the polish pass |
+| 9.1 – 9.2 | ⬜ | The QA pass and the handoff note |
 
 Each task that is done carries a **Status** block with what it produced and
-where it went.
+where it went, and the block is only written after the task's own checks
+have passed. A task marked done is done.
 
 ---
 
@@ -750,6 +769,17 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Acceptance criteria:** The visual contract is recorded in the project notes or task report. No UI is changed.
 
+**Status: done.**
+
+| | |
+|---|---|
+| The contract | [`docs/visual-baseline.md`](../../visual-baseline.md) — the window, the shell, the two different rails, the two states of the work area, the two composers, and the list of nine things that must not change |
+| The check | `src/lib/visual-baseline.test.ts` — eight checks, each broken on purpose to watch it fail |
+| What was found | There is **no** screenshot test in the project, and `docs/plan/api-keys-and-parity.md` records why: a screenshot diff fails on the engine and the display scaling before it fails on the design. So the check is the running app, compared by eye, against numbers that cannot quietly drift |
+
+Nothing was redesigned and no UI was changed. Every number in the document was
+measured in the running app or read out of the source.
+
 ## Task 0.3 — Audit shadcn/ui and Lucide usage
 
 **Prompt to the coding AI:**
@@ -758,6 +788,20 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Acceptance criteria:** No assumed imports; all findings reflect the repository. No files changed.
 
+**Status: done.**
+
+The findings are in the two documents this work produced:
+[`docs/components.md`](../../components.md) for the components, and
+[`docs/icons.md`](../../icons.md) for the icons.
+
+The audit found **one** primitive family in the project — Base UI, through
+shadcn's `base-nova` style — and no Radix and no Tabler. It found that
+`lucide-react` is the only icon pack, that 265 of 266 icon identifiers
+carry the `Icon` suffix, that the app's own code uses **both** names for
+six glyphs, and that three places let an icon be the only message for a
+state. Those are written down rather than changed, because changing an
+icon is a change to every screen at once.
+
 ## Task 0.4 — Choose the docking strategy
 
 **Prompt to the coding AI:**
@@ -765,6 +809,21 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 > Evaluate the existing app stack and determine whether a current layout dependency, an additional docking library, or a small custom nested-split implementation is most appropriate. Compare the actual requirements: up to six simultaneously visible panes, nested horizontal/vertical splits, left/right/top/bottom drag-and-drop docking, resizable dividers, per-pane headers under our control, no hidden tab stack in the initial design, the ability to save/restore layout metadata, theme compatibility and maintainability. Consider libraries that provide a grid without mandatory tabs as well as full IDE docking libraries. Do not install anything or write implementation code. Recommend one approach, name any tradeoffs, and identify the smallest proof-of-fit experiment needed before committing.
 
 **Acceptance criteria:** A clear documented choice and rationale exist before the layout engine is built. No dependency is installed.
+
+**Status: done.**
+
+| | |
+|---|---|
+| The decision | [`docs/plan/docking.md`](docking.md) — the requirements, the three candidates scored against them, the decision, what it does not settle, and the proof of fit |
+| The choice | `react-resizable-panels`, through the app's own `src/components/resizable`, with the drag-and-drop built on top of it |
+| What decided it | One requirement: **drag-to-dock docking**. The library resizes and does not move panes. Everything else it does, and does in the app's own component, with the persistence already wired |
+
+No dependency was installed and no implementation code was written.
+
+The proof of fit, which is Task 6.1: two generic panes, a horizontal split
+containing a vertical one, a draggable divider, and the app's dark theme —
+at the window's 600 × 338 floor, which is the worst case the layout will
+ever be asked for.
 
 **Decision note:** Dockview documents both a full docking component and a Gridview option for resizable panels without tabs. This is one option to evaluate, not a predetermined choice. Use the local stack and exact UX requirements to make the decision.
 
@@ -833,6 +892,22 @@ measured in the browser rather than assumed.
 
 **Acceptance criteria:** The plan for icons is consistent, and the existing shell remains unchanged.
 
+**Status: done.**
+
+| | |
+|---|---|
+| The convention | [`docs/icons.md`](../../icons.md) — one pack, the size scale, the stroke, when an icon is read aloud, and the rule that an icon is never the only message |
+| The map | `src/blocks/workspace/pane-types.ts` — thirteen kinds of view, each with a key, a name, a mark and a line for the Views menu |
+| The check | `src/lib/icons.test.ts` — one pack, named imports, the `Icon` suffix, no deprecated alias in the app's own code, and every mark present in the installed package |
+
+The shell is unchanged. Where the app is not consistent today it is written
+down rather than fixed, because there is no clear reason to change an icon.
+
+The map lives in the workspace's own folder rather than in `src/lib/`,
+because that is where a map of things-with-icons belongs:
+`src/blocks/shell/settings-sections.ts` holds the same shape for the
+settings card, beside the component that shows it.
+
 ## Task 1.4 — Confirm app sizing and scroll boundaries
 
 **Prompt to the coding AI:**
@@ -841,6 +916,20 @@ measured in the browser rather than assumed.
 
 **Acceptance criteria:** The existing landing screens still fit correctly; there is a clear parent container for the future workspace; no unnecessary global scrollbars appear.
 
+**Status: done.**
+
+| | |
+|---|---|
+| The map | [`docs/layout.md`](../../layout.md) — the window's floor, the height chain, what scrolls, and the container a workspace will live in |
+| The check | `src/lib/layout.test.ts` — six checks, each broken on purpose to watch it fail |
+| What was found | A **real defect**, not zero change. The work area took its height from the shell's `min-h-svh`, which is a floor and not a height, so a pane taller than the window made the window taller |
+
+Measured, before and after: a 3000-pixel pane in the work area gave a
+3000-pixel document, and now gives the window's own height with the
+overflow clipped. The landing screens do not move — the rendered pixels at
+1030 × 579 and at the 600 × 338 floor, with the rail open and closed, are
+the same.
+
 ## Task 1.5 — Define UI state boundaries
 
 **Prompt to the coding AI:**
@@ -848,6 +937,21 @@ measured in the browser rather than assumed.
 > Document or implement the minimal frontend state ownership needed for the workspace: app section, active project/session selection, whether the workspace is open, pane instances, active pane, layout geometry, pane-local UI state and overlay state. Keep layout geometry separate from pane content, and keep both separate from future AI/tool execution. Do not implement a backend or the docking behavior in this task.
 
 **Acceptance criteria:** State ownership is clear and does not duplicate the current Chat/Code state unnecessarily.
+
+**Status: done.**
+
+| | |
+|---|---|
+| The map | [`docs/workspace-state.md`](../../workspace-state.md) — all eight, who owns each, where it lives, who changes it, who reads it |
+| The state | `src/lib/workspace-state.ts` — the **six** that are new. The app section and the active thread are not among them |
+| The check | `src/lib/workspace-state.test.ts` — nineteen tests, each broken on purpose to watch it fail |
+
+Nothing was duplicated: the app section belongs to the composer variant
+provider and the active thread to the thread bridge, and the workspace
+holds neither. A pane may name the session it is about, and that is a
+reference rather than an ownership.
+
+No component, no rendering, no docking behaviour and no package.
 
 # Phase 2 — Integrate a workspace host without changing the landing UI
 
