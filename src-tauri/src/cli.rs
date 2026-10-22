@@ -794,6 +794,10 @@ pub struct CliProviderState {
     pub path: Option<String>,
     /// What it said its version was.
     pub version: Option<String>,
+    /// What it said, in its own words.
+    pub version_text: Option<String>,
+    /// Why the program found is not the tool, when it is not.
+    pub problem: Option<String>,
     /// Why the version is not known, when it is not.
     pub version_error: Option<String>,
     /// Who owns the install.
@@ -932,30 +936,63 @@ async fn scan_all(prefs: &CliPrefs) -> Vec<CliProviderState> {
 }
 
 /// Works out the state of one CLI provider.
+///
+/// A program with the right name is not necessarily the right program. VS
+/// Code puts a `copilot` on this machine that is not the GitHub Copilot CLI,
+/// and a program that says so when it is asked its version is not the tool
+/// the app was looking for. So the program has to answer with a version
+/// before it counts as installed.
 fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
     let found = resolve(info, chosen);
-    let (version, version_error) = match &found {
+    let mut problem: Option<String> = None;
+
+    let (installed, path, version, version_text) = match &found {
         Some(path) => {
             let answer = version_of(path);
-            (answer.text, answer.error)
+            match answer.text.as_deref().and_then(version_number) {
+                Some(number) => (true, Some(path.clone()), Some(number), answer.text),
+                None => {
+                    /* The program is there and is not the tool. Saying so is
+                       more use than saying "not installed" and leaving the
+                       person to wonder why.
+                       *
+                       * The reason the version is unknown is said as well.
+                       * A program that could not be started, and a program
+                       * that would not answer in time, are different facts,
+                       * and "it did not say which version it is" is not
+                       * true of either of them. */
+                    let said = answer
+                        .text
+                        .as_deref()
+                        .map(|text| text.trim())
+                        .filter(|text| !text.is_empty())
+                        .or(answer.error.as_deref())
+                        .unwrap_or("it did not say which version it is");
+                    problem = Some(format!(
+                        "A program called {} is on this machine, but it is not the {}. It said: {}",
+                        info.executables[0], info.label, said
+                    ));
+                    (false, None, None, answer.text)
+                }
+            }
         }
-        None => (None, None),
+        None => (false, None, None, None),
     };
 
     let install = info.install;
     let managed = install.is_some();
-    let can_update = managed;
-    let can_uninstall = managed;
 
     CliProviderState {
         id: info.id.to_string(),
         label: info.label.to_string(),
         description: info.description.to_string(),
         docs_url: info.docs_url.to_string(),
-        installed: found.is_some(),
-        path: found.as_ref().map(|path| path.to_string_lossy().to_string()),
+        installed,
+        path: path.map(|path| path.to_string_lossy().to_string()),
         version,
-        version_error,
+        version_text,
+        problem,
+        version_error: None,
         source: found
             .as_ref()
             .map(|path| source_of(path))
@@ -964,9 +1001,9 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
         modes: info.modes.iter().map(|mode| mode_name(mode)).collect(),
         models: info.models,
         maintenance: info.maintenance,
-        can_install: can_update,
-        can_update,
-        can_uninstall,
+        can_install: managed,
+        can_update: managed,
+        can_uninstall: managed,
         auto_update: false,
         auto_update_all: false,
         latest_version: None,
@@ -1654,35 +1691,53 @@ fn build_prompt(request: &crate::provider::ChatRequest) -> String {
     prompt
 }
 
+/// What one line of a program's own output means.
+///
+/// The parsing is kept apart from the sending, so it can be read on its own
+/// — a line of a program's output is worth a test, and a test should not
+/// need a running app to make one.
+#[derive(Clone, Debug, PartialEq)]
+enum ParsedEvent {
+    /// Some text.
+    Text(String),
+    /// A tool the agent used.
+    Tool {
+        name: String,
+        title: String,
+        status: String,
+        input: Option<serde_json::Value>,
+        output: Option<String>,
+    },
+    /// What the turn cost.
+    Usage {
+        model: Option<String>,
+        usage: serde_json::Value,
+    },
+    /// Something went wrong.
+    Failed(String),
+    /// Nothing this app needs to know about.
+    Nothing,
+}
+
 /// Reads one line of a program's own events, and says what it means.
 ///
 /// A line the app does not understand is not an error. A program may add
 /// events, and one the app has not heard of is kept out of the way rather
 /// than ending the run.
-fn read_opencode_event(
-    line: &str,
-    on_event: &Channel<ChatEvent>,
-    model_id: &mut Option<String>,
-    usage: &mut Option<serde_json::Value>,
-) {
+fn parse_opencode_event(line: &str) -> ParsedEvent {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-        return;
+        return ParsedEvent::Nothing;
     };
     let Some(kind) = value.get("type").and_then(|v| v.as_str()) else {
-        return;
+        return ParsedEvent::Nothing;
     };
     let part = value.get("part").unwrap_or(&serde_json::Value::Null);
 
     match kind {
-        "text" => {
-            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                if !text.is_empty() {
-                    let _ = on_event.send(ChatEvent::TextDelta {
-                        delta: text.to_string(),
-                    });
-                }
-            }
-        }
+        "text" => match part.get("text").and_then(|v| v.as_str()) {
+            Some(text) if !text.is_empty() => ParsedEvent::Text(text.to_string()),
+            _ => ParsedEvent::Nothing,
+        },
         "tool_use" => {
             let name = part
                 .get("tool")
@@ -1705,6 +1760,66 @@ fn read_opencode_event(
                 .and_then(|s| s.get("output"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
+            ParsedEvent::Tool {
+                name,
+                title,
+                status,
+                input,
+                output,
+            }
+        }
+        "step_finish" => {
+            let Some(tokens) = part.get("tokens") else {
+                return ParsedEvent::Nothing;
+            };
+            let read = tokens
+                .get("cache")
+                .and_then(|c| c.get("read"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            ParsedEvent::Usage {
+                model: part
+                    .get("modelID")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                usage: serde_json::json!({
+                    "inputTokens": tokens.get("input").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "outputTokens": tokens.get("output").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "reasoningTokens": tokens.get("reasoning").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "cachedInputTokens": read,
+                }),
+            }
+        }
+        "error" => ParsedEvent::Failed(
+            value
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("The program reported an error.")
+                .to_string(),
+        ),
+        _ => ParsedEvent::Nothing,
+    }
+}
+
+/// Sends what a line of a program's events meant.
+fn read_opencode_event(
+    line: &str,
+    on_event: &Channel<ChatEvent>,
+    model_id: &mut Option<String>,
+    usage: &mut Option<serde_json::Value>,
+) {
+    match parse_opencode_event(line) {
+        ParsedEvent::Text(text) => {
+            let _ = on_event.send(ChatEvent::TextDelta { delta: text });
+        }
+        ParsedEvent::Tool {
+            name,
+            title,
+            status,
+            input,
+            output,
+        } => {
             let _ = on_event.send(ChatEvent::Tool {
                 tool: crate::provider::ToolEvent {
                     name,
@@ -1715,34 +1830,16 @@ fn read_opencode_event(
                 },
             });
         }
-        "step_finish" => {
-            if let Some(model) = part.get("modelID").and_then(|v| v.as_str()) {
-                *model_id = Some(model.to_string());
+        ParsedEvent::Usage { model, usage: found } => {
+            if model_id.is_none() {
+                *model_id = model;
             }
-            if let Some(tokens) = part.get("tokens") {
-                let read = tokens
-                    .get("cache")
-                    .and_then(|c| c.get("read"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-                *usage = Some(serde_json::json!({
-                    "inputTokens": tokens.get("input").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "outputTokens": tokens.get("output").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "reasoningTokens": tokens.get("reasoning").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "cachedInputTokens": read,
-                }));
-            }
+            *usage = Some(found);
         }
-        "error" => {
-            let message = value
-                .get("error")
-                .and_then(|e| e.get("message"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("The program reported an error.")
-                .to_string();
+        ParsedEvent::Failed(message) => {
             let _ = on_event.send(ChatEvent::Error { error_text: message });
         }
-        _ => {}
+        ParsedEvent::Nothing => {}
     }
 }
 
@@ -1954,5 +2051,190 @@ mod tests {
     fn the_prefix_marks_a_cli_provider() {
         assert_eq!("cli:opencode".strip_prefix(CLI_PREFIX), Some("opencode"));
         assert_eq!("openrouter".strip_prefix(CLI_PREFIX), None);
+    }
+
+    #[test]
+    fn a_version_is_read_out_of_a_sentence() {
+        assert_eq!(
+            version_number("opencode v2.0.26"),
+            Some("2.0.26".to_string())
+        );
+        assert_eq!(version_number("2.1.308"), Some("2.1.308".to_string()));
+        assert_eq!(version_number("no numbers here"), None);
+    }
+
+    #[test]
+    fn a_newer_version_is_told_from_an_older_one() {
+        assert_eq!(is_newer("2.1.0", "2.0.26"), Some(true));
+        assert_eq!(is_newer("2.0.26", "2.1.0"), Some(false));
+        assert_eq!(is_newer("2.0.26", "2.0.26"), Some(false));
+        assert_eq!(is_newer("2.0", "2.0.0"), Some(false));
+    }
+
+    #[test]
+    fn a_version_that_cannot_be_compared_says_so() {
+        /* A pre-release or a build stamp is not compared at all, because
+           saying "there is an update" when there is not would send the user
+           to install something they already have. */
+        assert_eq!(is_newer("2.0.0-beta.1", "2.0.0"), None);
+        assert_eq!(is_newer("v2.0.0", "2.0.0"), None);
+    }
+
+    #[test]
+    fn a_shim_names_the_program_behind_it() {
+        /* npm puts a `.cmd` beside the program on Windows, and the `.cmd`
+           says which program it stands for. The program is what the app
+           runs, so the name is read out of the shim. */
+        let folder = std::env::temp_dir().join("tavi-shim-test");
+        let _ = std::fs::create_dir_all(&folder);
+        let program = folder.join("thing.exe");
+        std::fs::write(&program, b"not really a program").ok();
+        let shim = folder.join("thing.cmd");
+        std::fs::write(
+            &shim,
+            format!(r#"@ECHO off\r\n"%dp0%\thing.exe"   %*\r\n"#),
+        )
+        .ok();
+
+        let found = real_program(&shim);
+        assert_eq!(found, program);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_program_that_is_not_there_says_so() {
+        let answer = version_of(std::path::Path::new("tavi-no-such-program"));
+        assert!(answer.text.is_none());
+        assert!(answer.error.is_some());
+    }
+
+    /* The shapes below were taken from a real program's own output, so the
+       parsing is checked against what it actually says rather than against
+       what it might say. */
+    #[test]
+    fn a_line_of_text_is_read() {
+        let line = r#"{"type":"text","timestamp":1792660761981,"sessionID":"ses_1","part":{"id":"prt_1","type":"text","text":"ok","time":{"start":1,"end":2}}}"#;
+        assert_eq!(parse_opencode_event(line), ParsedEvent::Text("ok".to_string()));
+    }
+
+    #[test]
+    fn a_tool_is_read() {
+        let line = r#"{"type":"tool_use","sessionID":"ses_1","part":{"type":"tool","id":"call_1","tool":"shell","state":{"status":"completed","input":{"command":"echo hello"},"output":"hello\r\n","title":"shell"}}}"#;
+        match parse_opencode_event(line) {
+            ParsedEvent::Tool {
+                name, status, output, ..
+            } => {
+                assert_eq!(name, "shell");
+                assert_eq!(status, "completed");
+                assert_eq!(output.as_deref(), Some("hello\r\n"));
+            }
+            other => panic!("expected a tool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn what_a_turn_cost_is_read() {
+        let line = r#"{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"input":3559,"output":39,"reasoning":0,"cache":{"read":1408,"write":0}}}}"#;
+        match parse_opencode_event(line) {
+            ParsedEvent::Usage { usage, .. } => {
+                assert_eq!(usage["inputTokens"], 3559);
+                assert_eq!(usage["outputTokens"], 39);
+                assert_eq!(usage["cachedInputTokens"], 1408);
+            }            other => panic!("expected a usage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_failure_is_read() {
+        let line = r#"{"type":"error","sessionID":"ses_1","error":{"type":"provider.internal","message":"Upstream request failed.","status":503}}"#;
+        assert_eq!(
+            parse_opencode_event(line),
+            ParsedEvent::Failed("Upstream request failed.".to_string())
+        );
+    }
+
+    #[test]
+    fn a_line_nobody_understands_is_not_a_failure() {
+        /* A program may add events. One the app has not heard of is kept out
+           of the way rather than ending the run. */
+        assert_eq!(
+            parse_opencode_event(r#"{"type":"something_new","part":{}}"#),
+            ParsedEvent::Nothing
+        );
+        assert_eq!(parse_opencode_event("not json at all"), ParsedEvent::Nothing);
+        assert_eq!(parse_opencode_event(""), ParsedEvent::Nothing);
+    }
+
+    /// Runs a program the way the app does, and says what it said.
+    ///
+    /// Not a test of anything anybody can assert — it needs the program, and
+    /// it needs the program to be signed in — but a way of seeing the whole
+    /// path work: the program is found, the shim is read, the message goes in
+    /// on standard input, and what comes out is read. Run it with
+    /// `cargo test -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "runs a program on this machine"]
+    fn a_program_answers() {
+        let Some(info) = provider_for("opencode") else {
+            println!("opencode is not a provider this app knows about");
+            return;
+        };
+        let Some(path) = resolve(info, None) else {
+            println!("opencode is not on this machine");
+            return;
+        };
+        println!("  found: {}", path.display());
+        let program = real_program(&path);
+        println!("  runs:  {}", program.display());
+
+        let mut child = Command::new(&program)
+            .args(["run", "--format", "json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the program should start");
+
+        {
+            use std::io::Write;
+            let mut input = child.stdin.take().expect("the program should take input");
+            let _ = input.write_all(b"reply with the single word: ok");
+        }
+
+        let output = child.wait_with_output().expect("the program should finish");
+        let mut said = String::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            match parse_opencode_event(line) {
+                ParsedEvent::Text(text) => said.push_str(&text),
+                ParsedEvent::Tool { name, status, .. } => {
+                    println!("  tool:  {name} ({status})")
+                }
+                ParsedEvent::Usage { usage, .. } => println!("  usage: {usage}"),
+                ParsedEvent::Failed(message) => println!("  failed: {message}"),
+                ParsedEvent::Nothing => {}
+            }
+        }
+        println!("  said:  {said}");
+        assert!(!said.is_empty(), "the program should have said something");
+    }
+
+    /// Looks at this machine and says what is on it.
+    ///
+    /// Not a test of anything anybody can assert — the machine is not the
+    /// same everywhere — but a way of seeing what the app would find. Run it
+    /// with `cargo test -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "looks at this machine"]
+    fn what_is_on_this_machine() {
+        let prefs = CliPrefs::default();
+        for state in scan_local(&prefs) {
+            println!(
+                "{:<18} installed={:<5} version={:<12} problem={:?}",
+                state.id,
+                state.installed,
+                state.version.clone().unwrap_or_else(|| "—".to_string()),
+                state.problem
+            );
+        }
     }
 }
