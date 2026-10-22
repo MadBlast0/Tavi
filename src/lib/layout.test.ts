@@ -25,6 +25,7 @@ import { join } from "node:path";
 
 /** Where the files that hold the chain are. */
 const SHELL = join(import.meta.dirname, "..", "blocks", "shell", "shell.tsx");
+const STYLESHEET = join(import.meta.dirname, "..", "index.css");
 const TITLE_BAR = join(import.meta.dirname, "..", "blocks", "shell", "title-bar.tsx");
 const SURFACE = join(
   import.meta.dirname,
@@ -42,6 +43,7 @@ const SCROLLER = join(
 );
 
 const shellSource = readFileSync(SHELL, "utf8");
+const stylesheetSource = readFileSync(STYLESHEET, "utf8");
 const titleBarSource = readFileSync(TITLE_BAR, "utf8");
 const surfaceSource = readFileSync(SURFACE, "utf8");
 const scrollerSource = readFileSync(SCROLLER, "utf8");
@@ -152,13 +154,15 @@ test("the title bar's height is one number", () => {
   // measure against it. Consumers of one number cannot end up a pixel apart.
   //
   // Where it is published is not what the rule is about. It can be a class on
-  // the shell wrapper, or a property set on the root — and the root is the
-  // better place for it, because a menu or a popover is portalled to the end
-  // of the body and cannot see a variable that only the wrapper carries. What
-  // the rule forbids is two numbers, and a number that nothing publishes.
+  // the shell wrapper, a property set on the root, or a rule in the
+  // stylesheet — and the stylesheet is the best place for it, because a menu
+  // or a popover is portalled to the end of the body and cannot see a
+  // variable that only the wrapper carries. What the rule forbids is two
+  // numbers, and a number that nothing publishes.
   const published =
     (shellSource.match(/\[--shell-top-bar-h:/g) ?? []).length +
-    (shellSource.match(/setProperty\(\s*["']--shell-top-bar-h/g) ?? []).length
+    (shellSource.match(/setProperty\(\s*["']--shell-top-bar-h/g) ?? []).length +
+    (stylesheetSource.match(/--shell-top-bar-h\s*:/g) ?? []).length
   assert.equal(
     published,
     1,
