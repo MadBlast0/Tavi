@@ -69,8 +69,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 **Phase 4 — The generic pane framework**
 
 | 4.1 | ✅ done | The frame every pane is drawn in |
-| 4.2 | ▶ next | The header: icon, title, actions, and the drag region |
-| 4.3 | ⬜ not started | The overflow menu, and the close, focus, maximize and pop-out controls |
+| 4.2 | ✅ done | The header: icon, title, actions, and the drag region |
+| 4.3 | ▶ next | The overflow menu, and the close, focus, maximize and pop-out controls |
 | 4.4 | ⬜ not started | The registry of pane types, and the model of an instance |
 | 4.5 | ⬜ not started | The shared empty, loading, error and unavailable slots |
 
@@ -1560,6 +1560,30 @@ draws itself and asks for its content.
 
 **Reference:** The pane header: icon, title, actions, drag region. See §4.3.1
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The header | `src/blocks/workspace/pane.tsx` — the header strip, with the mark, the title, the secondary context and the three controls |
+| The check | `src/lib/pane-header.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The header was already there, written against the
+reference: a strip of a fixed height, the pane's mark and title on the left,
+and the three controls — pop out, the menu's chevron, and close — on the
+right, each an icon-only button carrying its name. The active pane's header
+is lit with a muted background and the active title is the foreground
+colour; the inactive one is transparent with a muted title, which is how a
+person tells which pane has the focus.
+
+What was missing was the **drag handle**. The header's left part — the mark,
+the title and the context — is now a separate element with `data-drag-handle`
+on it, and it is the element Task 7.5 will start a drag from. The buttons
+are in their own element beside it, so a click on a button does not start a
+drag, and a drag does not reach the buttons. The header is a strip and does
+not grow with its content, so narrow panes do not push the layout around.
 ## Task 4.3 — Add pane actions and overflow menu
 
 **Prompt to the coding AI:**

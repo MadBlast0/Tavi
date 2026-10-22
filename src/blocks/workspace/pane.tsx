@@ -95,23 +95,37 @@ export function Pane({
     >
       <div
         data-slot="pane-header"
-        className="flex h-8 shrink-0 items-center gap-2 px-2"
+        className={cn(
+          "flex h-8 shrink-0 items-center gap-2 px-2",
+          active ? "bg-muted/40" : "bg-transparent",
+        )}
       >
-        {Icon ? <Icon className="size-4 shrink-0 text-muted-foreground" /> : null}
-        <span
-          className={cn(
-            "truncate text-sm",
-            active ? "text-foreground" : "text-muted-foreground",
-          )}
+        {/* The drag handle is the header's own left part: the mark and the
+            title. It is a separate element from the buttons, so a click on
+            a button does not start a drag, and a drag does not reach the
+            buttons. Task 7.5 wires the drag itself; this is the handle it
+            will use. */}
+        <div
+          data-slot="pane-drag-handle"
+          data-drag-handle=""
+          className="flex min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing"
         >
-          {title}
-        </span>
-        {context ? (
-          <span className="shrink-0 truncate text-xs text-muted-foreground/70">
-            {context}
+          {Icon ? <Icon className="size-4 shrink-0 text-muted-foreground" /> : null}
+          <span
+            className={cn(
+              "truncate text-sm",
+              active ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {title}
           </span>
-        ) : null}
-        <div className="ms-auto flex shrink-0 items-center gap-0.5">
+          {context ? (
+            <span className="shrink-0 truncate text-xs text-muted-foreground/70">
+              {context}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
           <TooltipIconButton
             tooltip={
               popOutAvailable
