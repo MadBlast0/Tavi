@@ -32,7 +32,7 @@ what removes it.
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
-| The model catalogue | A cache in the app's data directory on the desktop; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
+| The model catalogue | A cache in the app's data directory on the desktop, one file per provider; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
 | The window's size and position | The app's own file, written by Rust | None | Until the app is reinstalled | Overwritten |
 | Cloned repositories | The projects folder, on disk | The user's own code | Until the user deletes them | The user, or the file manager |
 | Attachments and mentions | Inlined into the conversation, and stored with the turn | The user's own words and files | With the thread | Deleting the thread |
