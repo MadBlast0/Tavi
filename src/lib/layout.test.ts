@@ -41,12 +41,20 @@ const SCROLLER = join(
   "message-scroller",
   "message-scroller.tsx",
 );
+const REGION = join(
+  import.meta.dirname,
+  "..",
+  "blocks",
+  "workspace",
+  "workspace-host.tsx",
+);
 
 const shellSource = readFileSync(SHELL, "utf8");
 const stylesheetSource = readFileSync(STYLESHEET, "utf8");
 const titleBarSource = readFileSync(TITLE_BAR, "utf8");
 const surfaceSource = readFileSync(SURFACE, "utf8");
 const scrollerSource = readFileSync(SCROLLER, "utf8");
+const regionSource = readFileSync(REGION, "utf8");
 
 /**
  * The heights that mean "the window".
@@ -122,29 +130,40 @@ test("the work area clips what is inside it", () => {
   );
 });
 
-test("the surface and the work area measure the window the same way", () => {
-  // The surface fills the work area, so the two have to agree on what the
+test("the region and the work area measure the window the same way", () => {
+  // The region fills the work area, so the two have to agree on what the
   // window's height is. If they did not, one of them would be the wrong
   // height by a little, and the gap would show as a strip of the wrong
   // colour along the bottom of the window.
+  //
+  // The region is what carries the height now, rather than the surface
+  // inside it: the region is the area of the window beside the rail, and
+  // the surface is one of the things that can be in it.
   const workArea = classesOf(shellSource, "data-sidebar-open");
-  const surface = classesOf(surfaceSource, "<main");
+  const region = classesOf(regionSource, "data-slot=\"workspace-host\"");
   assert.equal(
-    statedHeight(surface),
+    statedHeight(region),
     statedHeight(workArea),
-    "the surface and the work area should measure the window the same way.",
+    "the region and the work area should measure the window the same way.",
+  );
+  const surface = classesOf(surfaceSource, "<main");
+  assert.ok(
+    surface.includes("flex-1") && surface.includes("min-h-0"),
+    "the surface should fill the region and be allowed to shrink, so that a " +
+      "conversation with long content scrolls rather than pushing the window " +
+      "taller.",
   );
 });
 
-test("the surface starts below the title bar", () => {
+test("the region starts below the title bar", () => {
   // The title bar is drawn over the top of the work area rather than beside
-  // it, so the surface has to start below it. The bar's height is one
-  // number, published by the shell.
-  const surface = classesOf(surfaceSource, "<main");
+  // it, so what is in the region has to start below it. The bar's height is
+  // one number, published by the shell.
+  const region = classesOf(regionSource, "data-slot=\"workspace-host\"");
   assert.ok(
-    surface.includes("pt-(--shell-top-bar-h)"),
-    "the surface should take the title bar's height off the top. The bar is " +
-      "drawn over the work area, so a surface that did not start below it " +
+    region.includes("pt-(--shell-top-bar-h)"),
+    "the region should take the title bar's height off the top. The bar is " +
+      "drawn over the work area, so a region that did not start below it " +
       "would put its first row under the window's controls.",
   );
 });

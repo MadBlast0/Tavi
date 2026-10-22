@@ -50,12 +50,12 @@ Status blocks says what stands, what was wrong, and what it becomes.
 | 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
 | 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
 | 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
-| 1.5 | ▶ next | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the model of the arrangement, the panes and the groups |
+| 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the model of the arrangement, the panes and the groups |
 
 **Phase 2 — The workspace region, and the way into it**
 
-| 2.1 | 🟡 partly | `src/blocks/workspace/workspace-host.tsx` — the region the layout lives in, which shows the landing screen when it is empty and the layout when it is not |
-| 2.2 | 🟡 partly | The way in: a session opens the workspace, and the rail keeps its two lists |
+| 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the region the layout lives in, which shows the landing screen when it is empty and the layout when it is not |
+| 2.2 | ▶ next | The way in: a session opens the workspace, and the rail keeps its two lists |
 | 2.3 | 🟡 partly | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
 
 **Phase 3 — Reusable controls and overlay behaviour**
@@ -1171,76 +1171,82 @@ the same.
 
 **Prompt to the coding AI:**
 
-> Document or implement the minimal frontend state ownership needed for the workspace: app section, active project/session selection, whether the workspace is open, pane instances, active pane, layout geometry, pane-local UI state and overlay state. Keep layout geometry separate from pane content, and keep both separate from future AI/tool execution. Do not implement a backend or the docking behavior in this task.
+> Map the existing state, decide who owns each of the pieces the workspace
+> will need, and write the ownership down. The app section and the active
+> thread belong to the app, not to the workspace. The pane instances, the
+> active pane, the arrangement, the pane-local state and the overlay belong
+> to the workspace. The arrangement is a tree of panes, splits and groups,
+> and it is serializable: a plain object with no functions in it, so it can
+> be written down and read back. Write focused tests for the rules on it.
 
-**Acceptance criteria:** State ownership is clear and does not duplicate the current Chat/Code state unnecessarily.
+**Acceptance criteria:** State ownership is clear and does not duplicate the
+current state; the arrangement's rules are tested; the model survives a
+round trip through JSON.
 
-**Status: partly — the ownership is settled, the model is being redone.**
+**Status: done.**
 
 | | |
 |---|---|
-| What stands | The eight things, and who owns each of them. The separation of the arrangement from the pane contents is right and stays |
-| What is being redone | `src/lib/workspace-state.ts` and [`docs/workspace-state.md`](../../workspace-state.md) — the model itself |
+| The model | `src/lib/workspace-state.ts` — the tree of panes, splits and groups; the rules on it; the operations on it |
+| The map | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight |
+| The check | `src/lib/workspace-state.test.ts` — twenty-two rules, each broken on purpose to watch it fail |
 
-**What was wrong.** The model carries an `open` flag, and the workspace
-has an `open` and a `close`. That was built on the assumption that the
-workspace is a thing you enter — a mode, with a way in and a way out —
-and that assumption is what produced the navigation row in the rail, which
-was the first thing the plan got wrong. §1.8 now says what the workspace
-is: the main content region, always there, showing the landing screen
-when it has nothing in it and the layout when it has something.
+**What changed.** The `open` flag is gone, and with it `openWorkspace()`
+and `closeWorkspace()`. The arrangement has **three** kinds of node now —
+a pane, a split, and a **group** of panes sharing one place — and a group
+of one collapses into the pane it holds, because a tab strip with one tab
+on it is a decoration and not a control. The store grew the one operation
+the engine needs: `dockPane()`, which takes a pane out of where it was
+and puts it against another one, on an edge or into its group. A move
+never adds a pane, so the cap is never in the way of rearranging.
 
-So the flag goes, and with it the mode:
-
-| Was | Is now |
-|---|---|
-| `open: boolean` | Nothing. What the region shows is decided by what is in it |
-| `openWorkspace()` / `closeWorkspace()` | Nothing. A session and a pane are added, and removed |
-| `LayoutNode` of splits and panes | `LayoutNode` of splits, panes **and groups** |
-| The arrangement is a tree of two kinds of node | Three kinds: a pane, a split, and a group of panes sharing one place |
-
-**What is right and stays:** a pane refers to a session and a project by
-**id**, never by a copy; a pane's own state is one bag per instance and
-never one per type; and removing a pane takes away the arrangement, the
-focus and the overlay that referred to it, and **nothing else** — closing a
-window onto a conversation is not closing the conversation.
-
-**What is still to be done:** the corrected model, its rules, and the
-tests that hold them to the plan. The tests that exist today are good
-tests of the wrong shape and are rewritten with it.
-## Task 2.1 — Add a workspace host shell
+**What did not change, and is the point of the whole file.** A pane refers
+to a session and a project by **id**, never by a copy. A pane's own state
+is one bag per instance and never one per type. And removing a pane takes
+away the arrangement, the focus and the overlay that referred to it, and
+**nothing else** — closing a window onto a conversation is not closing the
+conversation.
+## Task 2.1 — Make the workspace the region, not a mode
 
 **Prompt to the coding AI:**
 
-> Add the smallest workspace host component in the correct main-content location. It must fill the available space beside the existing sidebar, inherit the current visual design and expose a content slot for the future layout engine. Keep it hidden/inactive while the app is showing the current landing screen unless the existing user flow opens a working session/workspace. Do not build the pane layout, alter landing-screen content or add backend logic.
+> Make the workspace host the main content region of the work area, and
+> make it permanent. It must fill the available space beside the existing
+> sidebar, inherit the current visual design, and hold whatever the
+> workspace shows. The landing screen becomes a child of the region rather
+> than a sibling that takes turns with it. The region must not have an
+> "open" or a "closed" state, and nothing in the rail may navigate to it.
+> Do not build the pane layout, alter landing-screen content or add
+> backend logic.
 
-**Acceptance criteria:** The existing Chat and Code landing screens remain visually approved; the host can be activated in a controlled UI path and fills its container.
+**Acceptance criteria:** The region is always in the tree and fills the
+work area; the landing screen still fits and still scrolls inside itself;
+the document does not scroll; the rail has no row for the workspace.
 
-**Status: partly — the place is right, the shape is being redone.**
+**Status: done.**
 
 | | |
 |---|---|
-| What stands | The host is in the right place: the main content region, beside the rail, filling what the window has left over |
-| What is being redone | The host's shape. It is currently a sibling that replaces the surface, and it has an `open` flag of its own |
+| The region | `src/blocks/workspace/workspace-host.tsx` — the main content region, always there |
+| The check | `src/lib/workspace-host.test.ts` — four rules, each broken on purpose to watch it fail |
 
-**What was wrong.** The host was built as an alternative to the landing
-surface — one is shown while the other is hidden — because the workspace
-was imagined as a place you go rather than a place that is. That is the
-same wrong idea as the `open` flag in the state, one layer up, and it is
-why there was a rail row at all: a mode needs a way in.
+**What changed.** The host is not a sibling that takes turns with the
+landing surface any more. It is the region, and the landing surface is a
+child of it, because the region is what they share. The host has no flag of
+its own and no "closed" state: what it shows is decided by what is in the
+workspace, and the surface steps aside when the workspace holds a pane.
 
-**What it becomes.** The host is the region, and it is always there. What
-is inside it is decided by what is in the workspace:
+Measured in the running app, with the rail open: the region is 1168 × 1086
+and the surface inside it is 1168 × 1058. The 28 pixels between them are
+the title bar's height. The document does not scroll — the scroll height
+and the window's height are both 1086 — and the landing screen's pixels
+are the same as they were.
 
-| The workspace holds | The region shows |
-|---|---|
-| Nothing | The landing screen, exactly as it is today |
-| A session, or a pane | The layout |
-
-The landing screen stops being a thing the host replaces and becomes a
-thing the region *shows*, and the composer's move into a pane is what
-puts it there. The host keeps its title-bar padding and its fill; it loses
-its flag.
+**The landing screens are untouched.** The greeting, the composer, the
+suggestions and the two sides' own lists are exactly as they were, and
+**the rail has no row in it for the workspace**: it lists New, Projects,
+Artifacts, Scheduled, Customize and Archived, and a session list, exactly
+as it did before this work started.
 ## Task 2.2 — Define the UI transition into Code workspace
 
 **Prompt to the coding AI:**

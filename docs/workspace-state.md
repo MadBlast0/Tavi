@@ -24,7 +24,6 @@ without either of them being renamed.
 |---|---|---|---|---|
 | **The app section** — Chat or Code | `ComposerVariantProvider` | `src/blocks/prompt-input/composer-variant.tsx` | The rail's switch (`ComposerVariantSwitch`), the system tray and the app menu, through `useNewThread` | The prompt block, the rail |
 | **The active project or session** | The thread bridge and the thread stores | `src/blocks/prompt-input/thread-bridge.tsx`, `src/lib/chats.ts`, `src/lib/sessions.ts` | The rail opens a thread; the composer saves it | The prompt block, the rail |
-| **Whether the workspace is open** | The workspace state | `src/lib/workspace-state.ts` | `openWorkspace()` and `closeWorkspace()`; Task 2.2's Code flow opens it | The work area, which shows the workspace or the landing screen |
 | **The pane instances** | The workspace state | `src/lib/workspace-state.ts` — `panes` | `addPane()`, `removePane()`, `setPaneTitle()` | The layout engine, the pane frame, the Views menu |
 | **The active pane** | The workspace state | `src/lib/workspace-state.ts` — `activePaneId` | `setActivePane()`; Task 7.6 focuses a pane | The pane frame, which draws the active styling |
 | **The layout geometry** | The workspace state | `src/lib/workspace-state.ts` — `layout` | `setLayout()`, called by the layout engine | The layout engine; the pane frame, to know where it sits |
@@ -79,19 +78,37 @@ store when it is needed and the folder's name from the grant in
 
 ---
 
-## 2. The six things the workspace does own
+## 2. The five things the workspace does own
 
 `src/lib/workspace-state.ts` holds exactly these, and a test checks that the
 list has not grown.
 
 | Field | What it is |
 |---|---|
-| `open` | Whether the workspace is open |
 | `panes` | The pane instances, in the order they were added |
 | `activePaneId` | The pane that has focus, or null |
-| `layout` | The arrangement, as a tree of splits |
+| `layout` | The arrangement, as a tree of panes, splits and groups |
 | `overlay` | The one overlay that is open, or null |
 | `paneState` | Each pane's own state, keyed by pane id |
+
+**There is no `open` field, and that is the correction.** The first version
+of this state had one, along with `openWorkspace()` and `closeWorkspace()`.
+It was built on the assumption that the workspace is a place you enter — a
+mode, with a way in and a way out — and that assumption is what produced
+the navigation row in the rail, which the plan had twice said not to put
+there.
+
+The workspace is the main content region: the area of the window beside the
+rail, the area the prompt composer sits in. A region is not open or closed.
+What it shows is decided by what is in it:
+
+| The workspace holds | The region shows |
+|---|---|
+| No session and no panes | The landing screen, exactly as it is today |
+| A session, or at least one pane | The layout |
+
+So the state answers the question by holding the answer, rather than by
+holding a flag that says which way to answer it.
 
 The store is an external store with a `subscribe` / `getSnapshot` pair, read
 through `useSyncExternalStore`, and it is the same pattern as
@@ -225,6 +242,21 @@ nothing.
 
 ### The decisions that were not handed down
 
+**The arrangement is a tree of three kinds of node**, and not two. A leaf
+names a pane, a split names an orientation, a ratio and two children, and a
+**group** names a set of panes that share one place and one of which is
+showing. The group is there because tabbed groups are in scope
+(`docs/plan/ui-ux-plan.md` §1.7), and because a group is what a pane
+dropped on the middle of another pane becomes.
+
+A group of one is not a group: it collapses into the pane it holds, because
+a tab strip with one tab on it is a decoration and not a control. The model
+does not keep what the renderer would not draw.
+
+**A group has an id of its own.** `GroupId` is a stable name for a place
+in the layout, so that a tab group can be found in the tree and talked
+about.
+
 **The six-pane cap is enforced here.** The plan puts the cap at "the
 add-operation boundary", and the add operation is the only place a seventh
 pane can be refused before it exists. Enforcing it in the state means the
@@ -242,18 +274,18 @@ the separation it exists for does not change either way.
 **Removing a pane takes it out of the arrangement.** The tree and the list
 of panes have to agree, and a tree that names a pane that is not there is a
 blank space on screen. The store does the one piece of surgery that needs
-doing — the branch collapses into what is left of it — and decides nothing
-else. Where a pane *goes* is the layout engine's business, in Tasks 6 and 7.
+doing — the branch collapses into what is left of it, and a group of one
+becomes a pane — and decides nothing else. Where a pane *goes* is the
+layout engine's business, in Tasks 6 and 7.
 
-**Closing the workspace keeps what is in it.** Closing hides the workspace;
-it does not empty it. A close that also threw the arrangement away would
-lose it every time somebody looked at the landing screen. The same reasoning
-as the composer variant's rule that the app always opens in Chat.
+**Moving a pane does not add one.** A drop takes the pane out of where it
+was and puts it somewhere else, and the cap is on how many panes there are,
+not on where they are. So rearranging the six is always allowed, and the
+seventh is refused at the moment it is asked for.
 
 **Nothing is written to disk yet.** The workspace's state is in memory, and
-it is not restored on the next run — the app opens on the landing screen,
-and a workspace that came back by itself would replace it. Task 7.11 may
-save the arrangement; the *open* flag stays a fact about this run.
+it is not restored on the next run — the app opens on the landing screen.
+Task 7.11 may save the arrangement.
 
 ### What is not here, and where it goes
 
@@ -261,9 +293,9 @@ save the arrangement; the *open* flag stays a fact about this run.
 |---|---|
 | The pane type registry | Task 4.4, in its own module |
 | The pane frame and its header | Tasks 4.1 and 4.2 |
-| The workspace host | Task 2.1 |
-| Opening the workspace from the Code flow | Task 2.2, through `openWorkspace()` |
-| The layout engine and the adapter | Tasks 6.1 to 6.3, through `setLayout()` |
+| The workspace region | Task 2.1 |
+| Opening a session into the layout | Task 2.2, through `addPane()` and `setLayout()` |
+| The layout engine | Tasks 6.1 to 6.6, through `setLayout()` and `dockPane()` |
 | Focusing a pane | Task 7.6, through `setActivePane()` |
 | The Views menu | Task 7.1, through `openOverlay()` |
 | Saving the arrangement | Task 7.11, and only if it is safe to do |
