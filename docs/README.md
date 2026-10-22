@@ -4,7 +4,7 @@ Two kinds of document live here, and they are kept apart on purpose.
 
 | | What it is | Where it lives |
 |---|---|---|
-| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md) and [`components.md`](components.md) |
+| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md) and [`icons.md`](icons.md) |
 | **The app as it is meant to become** | What is deferred, what was planned, and what has not been built | [`docs/plan/`](plan/) |
 
 A document in `docs/` describes something that is true of the code you can
@@ -22,6 +22,7 @@ app can rely on it, and a reader who finds a plan knows not to.
 | [`storage.md`](storage.md) | Where every piece of data lives, on each platform, what it is worth, how long it is kept, and what removes it — and the design behind it |
 | [`tokens.md`](tokens.md) | Every colour, size and shape the app is drawn with: the roles, the values in both modes, the rules the themes obey and where they are checked, and how to add a token |
 | [`components.md`](components.md) | Every shared component in the app and which one to use for a given job: the one family they are all built on, the map, the rules, and what changed |
+| [`icons.md`](icons.md) | Every mark the app is drawn with: the one pack, the size scale, the stroke, when an icon is read aloud and when it is not, and the marks the future pane types take |
 
 The [README](../README.md) is the front door: what the app is, how to run it,
 and what it does and does not do.
