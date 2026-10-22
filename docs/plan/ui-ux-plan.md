@@ -763,11 +763,18 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Status: done.**
 
-The map is `docs/architecture.md` for the shape of the app, `docs/layout.md`
-for the height chain, and `docs/components.md` for what is already on disk
-and imported by nothing — which is the most important thing the audit
-found, because the raw material for most of this project is already in the
-repository.
+The audit found the stack, the entry points, the shell, the rail, the two
+sides, the composers, the state, the check commands, and the raw material
+already on disk. Each finding landed in the document that owns it:
+
+| The finding | Where it is |
+|---|---|
+| The shape of the app, the entry points, the two chat paths | [`docs/architecture.md`](../../architecture.md) |
+| The height chain and the scroll boundaries | [`docs/layout.md`](../../layout.md) |
+| Every component, and which one to use for which job | [`docs/components.md`](../../components.md) |
+| The icons, and the pack they come from | [`docs/icons.md`](../../icons.md) |
+| The check commands | [`README.md`](../../README.md) — *Checking* |
+| The vendored `react-resizable-panels` primitive, on disk and imported by nothing | [`docs/components.md`](../../components.md) and [`docs/plan/docking.md`](docking.md) |
 
 The one thing that was not obvious and had to be checked: **there is one
 primitive family, not two.** The project has Base UI through shadcn's

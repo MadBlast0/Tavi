@@ -74,6 +74,25 @@ pnpm tauri dev
 Or double-click `preview.bat`, which does the same thing and stays open on
 failure.
 
+## Checking
+
+```bash
+pnpm typecheck   # tsc --noEmit, over src and server
+pnpm test        # the unit tests
+pnpm build       # tsc, then the production bundle
+```
+
+The Rust side has its own:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+`pnpm typecheck` and `pnpm test` are what CI runs, and both must be clean
+before a commit. They cover `src` and `server`; the tests live beside what
+they test — `src/lib/*.test.ts` for the stores and the rules, and
+`src/blocks/**` for the parts of the interface that have logic in them.
+
 Nothing here needs a `.env.local` — the app starts without one and says so when
 you try to chat. If you would rather keep the key in the environment than in
 the app, copy `.env.example` to `.env.local` and fill it in. A development build
