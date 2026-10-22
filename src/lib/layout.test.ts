@@ -150,11 +150,21 @@ test("the surface starts below the title bar", () => {
 test("the title bar's height is one number", () => {
   // The shell publishes it, and the bar, the rail's header and the surface
   // measure against it. Consumers of one number cannot end up a pixel apart.
-  const wrapper = classesOf(shellSource, "<SidebarProvider");
-  assert.ok(
-    wrapper.some((token) => token.startsWith("[--shell-top-bar-h:")),
-    "the shell should publish the title bar's height, so that the bar, the " +
-      "rail and the surface measure against the same number.",
+  //
+  // Where it is published is not what the rule is about. It can be a class on
+  // the shell wrapper, or a property set on the root — and the root is the
+  // better place for it, because a menu or a popover is portalled to the end
+  // of the body and cannot see a variable that only the wrapper carries. What
+  // the rule forbids is two numbers, and a number that nothing publishes.
+  const published =
+    (shellSource.match(/\[--shell-top-bar-h:/g) ?? []).length +
+    (shellSource.match(/setProperty\(\s*["']--shell-top-bar-h/g) ?? []).length
+  assert.equal(
+    published,
+    1,
+    "the title bar's height should be published once. The bar, the rail's " +
+      "header and the surface all measure against it, and two numbers " +
+      "would let them end up a pixel apart.",
   );
   assert.ok(
     classListHolding(titleBarSource, "h-(--shell-top-bar-h)").includes(
