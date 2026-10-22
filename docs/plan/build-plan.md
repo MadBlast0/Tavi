@@ -111,7 +111,7 @@ showing it.
 | F5 | Move `turns` and `status` out of the composer | `prompt-block.tsx` | the composer reads the store instead of owning it |
 | F6 | Move `abortRef` out | `prompt-block.tsx` | one controller per thread, held by the store |
 | F7 | Stop aborting when the view changes | `prompt-block.tsx`, in `loadThread` | the *"one composer, one stream"* rule goes |
-| F8 | Persist the partial while it streams | `prompt-block.tsx` / `src/lib/threads.ts` | so a reply is not lost if the app is closed mid-stream |
+| F8 | Persist the partial while it streams | `prompt-block.tsx` / `src/lib/threads.ts` | ✅ **done** — the journal, written by `src/lib/partials.ts`, so a reply is not lost if the app is closed mid-stream |
 | F9 | Per-thread error and compaction | `prompt-block.tsx` | `saveError` and `compacting` are single-valued today |
 | F10 | The rail's badge reads per-thread status | `sidebar-nav.tsx` | replaces the single `bridge.runningId` |
 | F11 | A draft belongs to a thread | `prompt-block.tsx` | today a draft belongs to a side |
@@ -129,7 +129,7 @@ Almost none, and that is the useful finding.
 | B3 | The abort signal reaches Rust | `src/lib/desktop.ts` | ✅ already works — a `requestId` per call, and `cancel_chat` names it |
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
-| B6 | Write the partial to disk during a stream | `src-tauri/src/threads.rs` | ⬜ **new** — so a crash mid-stream does not lose the answer. Designed in full in [`in-flight-answers.md`](in-flight-answers.md) |
+| B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. Designed and built in [`in-flight-answers.md`](in-flight-answers.md) |
 | B7 | The notification plugin | `src-tauri/Cargo.toml` | ⬜ **new** — there is no notification plugin at all |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
@@ -137,11 +137,20 @@ was already built for this and has simply never been asked to do it.
 
 ### Done when
 
-- A reply keeps streaming after you switch to another thread or another side.
-- Two threads can stream at the same time.
-- Stopping one thread leaves the others running.
-- The rail shows which thread is running, per thread.
-- Closing the app mid-stream keeps the partial text.
+- ✅ **Closing the app mid-stream keeps the partial text.** *B6 — done.* The
+  answer is written to a journal as it arrives, and a cut-off answer is put
+  back into its conversation on the next launch, marked as one that did not
+  finish, and the model is told so on the next turn.
+- ⬜ A reply keeps streaming after you switch to another thread or another side.
+- ⬜ Two threads can stream at the same time.
+- ⬜ Stopping one thread leaves the others running.
+- ⬜ The rail shows which thread is running, per thread.
+
+**What is left of Layer 2 is the runtime itself** — the thirteen front-end
+tasks above, `F1` to `F13`. The journal was written by the composer, because
+that is what holds the stream today; when the runtime arrives it becomes the
+writer and the composer becomes a reader, which is a change of one call site
+and nothing else.
 
 ---
 
