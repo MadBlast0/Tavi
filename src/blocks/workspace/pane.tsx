@@ -43,8 +43,11 @@ import type { DockEdge, PaneInstance } from "@/lib/workspace-state"
  * carries a tooltip and an accessible name.
  */
 export function Pane({
+  id,
+  type,
   title,
   icon: Icon,
+  context,
   active,
   children,
   className,
@@ -54,10 +57,16 @@ export function Pane({
   onPopOut,
   popOutAvailable,
 }: {
+  /** The pane's unique instance id. */
+  id?: string
+  /** The pane's type key, for the registry. */
+  type?: string
   /** The pane's title: its own, or the type's default. */
   title: string
   /** The mark that names the pane. */
   icon: React.ComponentType<{ className?: string }>
+  /** Optional secondary context, such as a filename, session or project. */
+  context?: string
   /** Whether this is the pane that has focus. */
   active?: boolean
   /** What the pane shows. */
@@ -97,6 +106,11 @@ export function Pane({
         >
           {title}
         </span>
+        {context ? (
+          <span className="shrink-0 truncate text-xs text-muted-foreground/70">
+            {context}
+          </span>
+        ) : null}
         <div className="ms-auto flex shrink-0 items-center gap-0.5">
           <TooltipIconButton
             tooltip={
