@@ -816,6 +816,11 @@ pub struct CliProviderState {
     pub auto_update: bool,
     /// Whether any provider may update itself without being asked.
     pub auto_update_all: bool,
+    /// The newest version the registry knows about.
+    pub latest_version: Option<String>,
+    /// Whether there is an update waiting: `unknown`, `up-to-date`,
+    /// `available` or `external`.
+    pub update_state: String,
     /// A path the user has pointed at, when they have.
     pub chosen_path: Option<String>,
     /// When the app last looked.
@@ -835,7 +840,7 @@ fn mode_name(mode: &CliMode) -> &'static str {
 /// The providers are looked at a few at a time. Each one that is installed
 /// is asked for its version, and a program that hangs must not hold up the
 /// rest of them.
-fn scan_all(prefs: &CliPrefs) -> Vec<CliProviderState> {
+fn scan_local(prefs: &CliPrefs) -> Vec<CliProviderState> {
     let mut states: Vec<CliProviderState> = Vec::with_capacity(CLI_PROVIDERS.len());
 
     for chunk in CLI_PROVIDERS.chunks(DETECT_CONCURRENCY) {
@@ -863,6 +868,64 @@ fn scan_all(prefs: &CliPrefs) -> Vec<CliProviderState> {
         state.auto_update = prefs.auto_update.get(&state.id).copied().unwrap_or(false);
         state.auto_update_all = prefs.auto_update_all;
         state.last_scan = prefs.last_scan;
+    }
+
+    states
+}
+
+/// Works out the state of every CLI provider, and asks the registries whether
+/// anything is out of date.
+///
+/// The registry is only asked about a provider that is installed, and only
+/// about the ones a registry owns: a tool that updates itself has no
+/// registry to ask, and saying "up to date" about it would be a guess.
+async fn scan_all(prefs: &CliPrefs) -> Vec<CliProviderState> {
+    let prefs_for_scan = prefs.clone();
+    let mut states = tauri::async_runtime::spawn_blocking(move || scan_local(&prefs_for_scan))
+        .await
+        .unwrap_or_default();
+
+    let lookups: Vec<(usize, CliInstall)> = states
+        .iter()
+        .enumerate()
+        .filter(|(_, state)| state.installed && state.can_update)
+        .filter_map(|(index, state)| {
+            provider_for(&state.id)
+                .and_then(|info| info.install)
+                .map(|install| (index, install))
+        })
+        .collect();
+
+    if lookups.is_empty() {
+        return states;
+    }
+
+    let answers = futures_util::future::join_all(
+        lookups
+            .iter()
+            .map(|(_, install)| registry_latest(install)),
+    )
+    .await;
+
+    for ((index, _), latest) in lookups.iter().zip(answers) {
+        let state = &mut states[*index];
+        state.latest_version = latest.clone();
+        state.update_state = match (latest.as_deref(), state.version.as_deref()) {
+            (Some(latest), Some(installed)) => {
+                let here = version_number(installed);
+                let there = version_number(latest);
+                match (here, there) {
+                    (Some(here), Some(there)) => match is_newer(&there, &here) {
+                        Some(true) => "available".to_string(),
+                        Some(false) => "up-to-date".to_string(),
+                        None => "unknown".to_string(),
+                    },
+                    _ => "unknown".to_string(),
+                }
+            }
+            (Some(_), None) => "available".to_string(),
+            (None, _) => "unknown".to_string(),
+        };
     }
 
     states
@@ -906,6 +969,8 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
         can_uninstall,
         auto_update: false,
         auto_update_all: false,
+        latest_version: None,
+        update_state: "unknown".to_string(),
         chosen_path: chosen.map(str::to_string),
         last_scan: None,
     }
@@ -991,9 +1056,7 @@ async fn scan_and_store(app: &AppHandle, registry: &Arc<CliRegistry>) -> Vec<Cli
     updated.last_scan = Some(now());
     let _ = updated.write(app);
 
-    let states = tauri::async_runtime::spawn_blocking(move || scan_all(&prefs))
-        .await
-        .unwrap_or_default();
+    let states = scan_all(&prefs).await;
     registry.store(states.clone());
 
     if let Ok(mut scanning) = registry.scanning.lock() {
@@ -1161,15 +1224,19 @@ pub async fn run_cli_lifecycle(
     /* The registry is put in an `Arc` so the background work can refresh it
        when it is over, without the caller's borrow travelling with it. */
     let registry = registry.inner().clone();
-    let app_for_scan = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let outcome = run_lifecycle(&program, &args, &cancelled, &event, &label);
-        registry.store(scan_all(&CliPrefs::read(&app_for_scan)));
         outcome
     })
     .await
     .map_err(|e| format!("The operation did not finish: {e}"))??;
+
+    /* The state is worked out again, so the row that was just installed or
+       removed shows what is now true rather than what was true a moment
+       ago. */
+    let states = scan_all(&CliPrefs::read(&app)).await;
+    registry.store(states);
 
     Ok(())
 }
@@ -1526,21 +1593,17 @@ pub async fn run_cli_chat(
         }
         Some(status) => {
             let _ = on_event.send(ChatEvent::Error {
-                error: crate::provider::EventError {
-                    message: format!(
-                        "{} stopped with code {}.",
-                        info.label,
-                        status.code().unwrap_or(-1)
-                    ),
-                },
+                error_text: format!(
+                    "{} stopped with code {}.",
+                    info.label,
+                    status.code().unwrap_or(-1)
+                ),
             });
             Ok(())
         }
         None => {
             let _ = on_event.send(ChatEvent::Error {
-                error: crate::provider::EventError {
-                    message: "The run could not be waited for.".to_string(),
-                },
+                error_text: "The run could not be waited for.".to_string(),
             });
             Ok(())
         }
@@ -1677,12 +1740,102 @@ fn read_opencode_event(
                 .and_then(|v| v.as_str())
                 .unwrap_or("The program reported an error.")
                 .to_string();
-            let _ = on_event.send(ChatEvent::Error {
-                error: crate::provider::EventError { message },
-            });
+            let _ = on_event.send(ChatEvent::Error { error_text: message });
         }
         _ => {}
     }
+}
+
+/// The newest version of a package, if the registry will say.
+///
+/// A tool installed by a package manager has a registry that knows what the
+/// newest version is, and that is the only honest way to say whether an
+/// update is waiting. A tool that updates itself has no such answer without
+/// running it, so it is reported as unknown rather than guessed at.
+async fn registry_latest(install: &CliInstall) -> Option<String> {
+    let (url, field) = match install {
+        CliInstall::Npm { package } => (
+            format!("https://registry.npmjs.org/{package}/latest"),
+            "version",
+        ),
+        CliInstall::Pip { package } => {
+            (format!("https://pypi.org/pypi/{package}/json"), "info")
+        }
+        CliInstall::Builtin { .. } => return None,
+    };
+
+    let response = reqwest::get(&url).await.ok()?;
+    let body: serde_json::Value = response.json().await.ok()?;
+
+    if field == "version" {
+        body.get("version")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    } else {
+        body.get("info")
+            .and_then(|info| info.get("version"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    }
+}
+
+/// Whether one version is newer than another.
+///
+/// Only versions made of numbers and dots are compared. A version with
+/// anything else in it — a build stamp, a pre-release tag — is not compared
+/// at all, because saying "there is an update" when there is not would send
+/// the user to install something they already have.
+fn is_newer(latest: &str, installed: &str) -> Option<bool> {
+    let parse = |value: &str| -> Option<Vec<u64>> {
+        let mut parts = Vec::new();
+        for part in value.split('.') {
+            if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            parts.push(part.parse().ok()?);
+        }
+        Some(parts)
+    };
+
+    let latest = parse(latest.trim())?;
+    let installed = parse(installed.trim())?;
+
+    let width = latest.len().max(installed.len());
+    for index in 0..width {
+        let a = latest.get(index).copied().unwrap_or(0);
+        let b = installed.get(index).copied().unwrap_or(0);
+        if a != b {
+            return Some(a > b);
+        }
+    }
+    Some(false)
+}
+
+/// The version a program said, without the words around it.
+///
+/// A program answers with a sentence as often as with a number, so the
+/// number is looked for inside it.
+fn version_number(text: &str) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(|c: char| c.is_ascii_digit()) {
+        let after = &rest[start..];
+        let end = after
+            .find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(after.len());
+        let token = &after[..end];
+        if !token.is_empty() && token != "." {
+            parts.push(token);
+        }
+        rest = &after[end..];
+        if parts.len() >= 4 {
+            break;
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join("."))
 }
 
 /// The time now, in seconds since the epoch.

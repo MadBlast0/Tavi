@@ -62,12 +62,14 @@ import {
   cancelClone,
   cloneRepository,
   fetchModels,
+  listCliModels,
   listProjects,
   listProviderKeys,
   streamChat,
   type ChatRequest,
   type ProviderKey,
 } from "@/lib/api"
+import { cliIdOf, isCliProviderId } from "@/lib/cli-providers"
 import { SETTINGS_CLOSED } from "@/lib/open-settings"
 import {
   MODES as MODE_DEFINITIONS,
@@ -907,6 +909,13 @@ export function PromptBlock() {
   /** The agent mode. Code only — a chat has no repository to be careful in. */
   const [mode, setMode] = React.useState(() => readPref(PREF.mode) ?? "edit")
   const [realModels, setRealModels] = React.useState<PromptModel[]>([])
+
+  /* The models a CLI provider publishes.
+   *
+   * `null` means "not a CLI provider, or not read yet". An empty list means
+   * the CLI has no list of its own, and the app shows no model picker for it
+   * rather than an empty one. */
+  const [cliModels, setCliModels] = React.useState<PromptModel[] | null>(null)
   /** Every model's display name, including ones outside the free pool. */
   const [realNames, setRealNames] = React.useState<Record<string, string>>({})
   const [realSpecs, setRealSpecs] = React.useState<
@@ -1162,14 +1171,22 @@ export function PromptBlock() {
   /* The selected model is added to the visible list when it is not already there.
      A saved preference may name a paid model while the picker lists only the free
      pool; without this the trigger fell back to the first free entry and showed
-     one model's name while another model's reasoning controls were in effect. */
+     one model's name while another model's reasoning controls were in effect.
+
+     A CLI provider brings its own list. A CLI that publishes models is asked
+     for them and shows them; a CLI that chooses its own model is asked for
+     nothing and shows no picker at all, because a picker with nothing in it
+     is a claim that there is a choice. */
   const modelOptions = React.useMemo(() => {
-    if (!model) return realModels;
-    if (realModels.some((entry) => entry.value === model)) return realModels;
-    const label = realNames[model];
-    if (!label) return realModels;
-    return [...realModels, { value: model, label }]
-  }, [realModels, realNames, model])
+    const list = isCliProviderId(provider) ? (cliModels ?? []) : realModels
+    if (!model) return list
+    if (list.some((entry) => entry.value === model)) return list
+    const label = isCliProviderId(provider)
+      ? model
+      : realNames[model]
+    if (!label) return list
+    return [...list, { value: model, label }]
+  }, [realModels, realNames, model, cliModels, provider])
   const lastUser = turns.findLast((turn) => turn.role === "user")
 
   /* The effort levels offered are exactly the ones this model's capability profile
@@ -1391,6 +1408,33 @@ export function PromptBlock() {
     }
   }, [keys, provider])
 
+  /* The models of a CLI provider.
+   *
+   * A CLI is not a model, and most of them do not publish a list: they
+   * choose their own. One that does is asked for the list, and the list is
+   * what the picker shows. One that does not is asked for nothing, and the
+   * picker is not shown at all. */
+  React.useEffect(() => {
+    if (!isCliProviderId(provider)) {
+      setCliModels(null)
+      return
+    }
+    let current = true
+    void listCliModels(cliIdOf(provider))
+      .then((models) => {
+        if (!current) return
+        setCliModels(models.map((id) => ({ value: id, label: id })))
+      })
+      .catch(() => {
+        /* A CLI that will not say what models it has has no list to show.
+           The app shows no picker rather than an empty one. */
+        if (current) setCliModels([])
+      })
+    return () => {
+      current = false
+    }
+  }, [provider])
+
   /**
    * The side you are on always has a model.
    *
@@ -1601,9 +1645,12 @@ export function PromptBlock() {
        *
        * A level the model does not publish is refused, and the refusal says
        * why. It is the shared rule, so the desktop app and the website's
-       * server answer the same question the same way. */
+       * server answer the same question the same way.
+       *
+       * A CLI provider has none of this. It has its own way of being told
+       * how hard to think, and the app does not second-guess it. */
       const reasoning =
-        effort && model
+        effort && model && !isCliProviderId(provider)
           ? serializeReasoning(provider, realCapabilities[model] ?? unknownFor(model), {
               effort: { mode: "explicit", value: effort },
               thinkingMode: { mode: "provider_default" },
@@ -1628,7 +1675,13 @@ export function PromptBlock() {
              that what a chat is told is a rule the client cannot ignore. */
           variant: write.side,
           ...(write.side === "code"
-            ? { mode: write.mode, folder: write.folderName }
+            ? {
+                mode: write.mode,
+                folder: write.folderName,
+                /* The id as well as the name: a CLI provider is started in
+                   the folder, and two folders can have the same name. */
+                folderId: write.folderId,
+              }
             : {}),
           config: {
             ...(model ? { modelName: model } : {}),
@@ -2023,19 +2076,25 @@ export function PromptBlock() {
         onProviderChange={setProvider}
         keys={keys ?? []}
       />
-      <PromptInputModel
-        models={modelOptions}
-        model={model}
-        onModelChange={setModel}
-        provider={provider}
-        levels={efforts}
-        effort={effort}
-        onEffortChange={setEffort}
-        recommended="medium"
-        noKey={keys !== null && !hasKey(keys, provider)}
-        error={modelsError}
-        catalogue={catalogueFreshness}
-      />
+      {/* A CLI that chooses its own model has no model picker: an empty
+          picker is a claim that there is a choice, and there is not one. */}
+      {isCliProviderId(provider) && (cliModels ?? []).length === 0 ? null : (
+        <PromptInputModel
+          models={modelOptions}
+          model={model}
+          onModelChange={setModel}
+          provider={provider}
+          levels={isCliProviderId(provider) ? [] : efforts}
+          effort={effort}
+          onEffortChange={setEffort}
+          recommended="medium"
+          noKey={
+            !isCliProviderId(provider) && keys !== null && !hasKey(keys, provider)
+          }
+          error={modelsError}
+          catalogue={catalogueFreshness}
+        />
+      )}
     </>
   )
 

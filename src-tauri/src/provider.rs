@@ -825,8 +825,18 @@ pub enum ChatEvent {
         #[serde(rename = "messageMetadata")]
         message_metadata: EventMetadata,
     },
+    /// Something went wrong.
+    ///
+    /// The field is named `errorText` because that is what the other side of
+    /// this seam already reads, and what the website's server sends. The
+    /// two shapes were different, and the composer looked for the one the
+    /// server used — so a failure on the desktop said "The stream reported an
+    /// error" instead of what had actually gone wrong.
     #[serde(rename = "error")]
-    Error { error: EventError },
+    Error {
+        #[serde(rename = "errorText")]
+        error_text: String,
+    },
     /// A tool the agent used.
     ///
     /// Only a CLI provider sends these. An API provider has no tools of its
@@ -859,11 +869,6 @@ pub struct EventMetadata {
     pub model_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Value>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct EventError {
-    pub message: String,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1730,7 +1735,7 @@ where
                 }
                 StreamAction::Failed(message) => {
                     on_event(ChatEvent::Error {
-                        error: EventError { message },
+                        error_text: message,
                     });
                     return Ok(());
                 }

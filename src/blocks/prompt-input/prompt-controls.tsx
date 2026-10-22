@@ -55,6 +55,13 @@ import {
   CommandPage,
 } from "@/components/command/command"
 import { PROVIDERS, providerFor } from "@/lib/providers"
+import {
+  cliProviderId,
+  isCliProviderId,
+  providerChoice,
+  type CliProviderState,
+} from "@/lib/cli-providers"
+import { listCliProviders } from "@/lib/api"
 import type { ProviderKey } from "@/lib/secret"
 
 import {
@@ -751,7 +758,37 @@ function PromptInputProvider({
    * the one whose list opens, which is what a menu of submenus does.
    */
   const [level, setLevel] = React.useState<"api" | "cli" | null>(null)
-  const current = providerFor(provider)
+
+  /* The CLI providers on this machine.
+   *
+   * They are read here rather than passed down, because the only thing that
+   * needs them is this menu, and the list changes when a program is
+   * installed — which the settings pane knows about and this does not. */
+  const [cliProviders, setCliProviders] = React.useState<CliProviderState[]>([])
+  React.useEffect(() => {
+    let alive = true
+    void listCliProviders()
+      .then((states) => {
+        if (alive) setCliProviders(states)
+      })
+      .catch(() => {
+        /* A browser has no CLI providers, and a machine whose list could not
+           be read offers none rather than offering a broken one. */
+        if (alive) setCliProviders([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /* The ones the app can reach: installed, and turned on. A program that is
+     not here cannot answer, and one the user has turned off is not to be
+     offered. */
+  const offeredCli = cliProviders.filter(
+    (entry) => entry.installed && entry.enabled,
+  )
+
+  const current = providerChoice(provider, cliProviders)
 
   /* The providers the app can reach: the ones the user has a key for. */
   const apiProviders = PROVIDERS.filter((entry) =>
@@ -821,9 +858,37 @@ function PromptInputProvider({
             </CommandList>
           </Command>
         ) : (
-          <div className="text-muted-foreground p-3 text-sm">
-            No CLI provider is set up yet.
-          </div>
+          <Command label="CLI provider">
+            <CommandInput placeholder="Search programs…" />
+            <CommandList>
+              <CommandGroup heading="CLI providers">
+                {offeredCli.map((entry) => (
+                  <CommandItem
+                    key={entry.id}
+                    value={entry.id + " " + entry.label}
+                    onSelect={() => {
+                      onProviderChange(cliProviderId(entry.id))
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <ProviderLogo
+                        provider={entry.id}
+                        providerLabel={entry.label}
+                        className="size-4"
+                      />
+                      {entry.label}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              {offeredCli.length === 0 ? (
+                <CommandEmpty>
+                  No CLI provider is installed. Add one in Settings.
+                </CommandEmpty>
+              ) : null}
+            </CommandList>
+          </Command>
         )}
       </PopoverContent>
     </Popover>
