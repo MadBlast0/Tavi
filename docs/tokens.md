@@ -238,21 +238,35 @@ which is the smallest comfortable target for a finger.
 
 ### Icons
 
-**An icon with no size of its own is 16px.** Thirty-eight places say it, in
+**An icon with no size of its own is 16px.** Forty-nine places say it, in
 one form:
 
 ```
 [&_svg:not([class*='size-'])]:size-4
 ```
 
-So an icon inside a button, a menu item or a row is 16px without anyone
-saying so, and a component that wants a different size says so explicitly.
-The app uses `size-3` (12px) and `size-3.5` (14px) for the small marks
-beside a caption, `size-4` (16px) for everything in a control, `size-7`
-(28px) for the composer's own controls, and larger only where an icon *is*
-the picture.
+Thirty-two of those forty-nine are the `size-4` form above; the rest are the
+same guard at another size. So an icon inside a button, a menu item or a row
+is 16px without anyone saying so, and a component that wants a different
+size says so explicitly. The app uses `size-3` (12px) and `size-3.5` (14px)
+for the small marks beside a caption, `size-4` (16px) for everything in a
+control, and larger only where an icon *is* the picture.
 
-The stroke is Lucide's own and is never mixed with a filled glyph.
+A second form exists and is a different thing: `[&_svg]:size-*`, without
+the guard, in twelve places. It overrides whatever the icon said about its
+own size rather than filling in a missing one.
+
+`size-7` (28px) in the codebase is a **control** — a button 28 pixels
+across — and not an icon size. There is no 28px icon in the app; the icon
+inside such a button is `size-4`.
+
+The stroke is Lucide's own. It is never mixed with a filled glyph, with one
+exception: a **filled** mark means *this is the state in force* — the
+dictation button's stop square, the sort mark in the rail. An ordinary
+action icon is never filled.
+
+`docs/icons.md` has the rest: the pack, the size scale in full, and the
+rules for when an icon is read aloud.
 
 ### The rail
 
