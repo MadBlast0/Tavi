@@ -951,6 +951,8 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Acceptance criteria:** The report accurately identifies the current stack and relevant files. No files are modified.
 
+**Reference:** Claude Code Desktop — the reference app: https://code.claude.com/docs/en/desktop
+
 **Status: done.**
 
 The audit found the stack, the entry points, the shell, the rail, the two
@@ -977,6 +979,8 @@ primitive family, not two.** The project has Base UI through shadcn's
 > Using the existing Chat and Code screens and the supplied screenshots as the visual reference, document the current shell layout, sidebar differences, top-level navigation, prompt composers, spacing/color/typography conventions and the current transition between landing and working states. Do not redesign or change anything. Identify any existing screenshot/visual-test workflow; do not add a new test dependency. Report which screen elements must not change in later tasks.
 
 **Acceptance criteria:** The visual contract is recorded in the project notes or task report. No UI is changed.
+
+**Reference:** The approved visual baseline: the Chat and Code landing screens, the dark theme, the rail, the composers. See docs/visual-baseline.md
 
 **Status: done.**
 
@@ -1008,6 +1012,8 @@ that size — the rail opened as a sheet, Code selected, Workspace pressed:
 
 **Acceptance criteria:** No assumed imports; all findings reflect the repository. No files changed.
 
+**Reference:** shadcn/ui: https://ui.shadcn.com/docs ; Lucide: https://lucide.dev/guide/react
+
 **Status: done.**
 
 The findings are in the two documents this work produced:
@@ -1029,6 +1035,8 @@ icon is a change to every screen at once.
 > Evaluate the existing app stack and determine whether a current layout dependency, an additional docking library, or a small custom nested-split implementation is most appropriate. Compare the actual requirements: up to six simultaneously visible panes, nested horizontal/vertical splits, left/right/top/bottom drag-and-drop docking, resizable dividers, per-pane headers under our control, no hidden tab stack in the initial design, the ability to save/restore layout metadata, theme compatibility and maintainability. Consider libraries that provide a grid without mandatory tabs as well as full IDE docking libraries. Do not install anything or write implementation code. Recommend one approach, name any tradeoffs, and identify the smallest proof-of-fit experiment needed before committing.
 
 **Acceptance criteria:** A clear documented choice and rationale exist before the layout engine is built. No dependency is installed.
+
+**Reference:** The docking decision: docs/plan/docking.md — the engine is the app's own code. Claude Code Desktop's pane layout: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
 **Status: done.**
 
@@ -1074,6 +1082,8 @@ at the app, not by a document.
 
 **Acceptance criteria:** Tokens remain centralized and the existing UI looks materially unchanged.
 
+**Reference:** The app's own tokens, in both modes. See docs/tokens.md
+
 **Status: done.**
 
 | | |
@@ -1102,6 +1112,8 @@ separator is `--border`.
 
 **Acceptance criteria:** No duplicate design system; no imports refer to nonexistent files; no unrelated changes.
 
+**Reference:** The app's own components, on one family. See docs/components.md
+
 **Status: done.**
 
 | | |
@@ -1129,6 +1141,8 @@ measured in the browser rather than assumed.
 
 **Acceptance criteria:** The plan for icons is consistent, and the existing shell remains unchanged.
 
+**Reference:** Lucide icons and the marks the pane types take. See docs/icons.md
+
 **Status: done.**
 
 | | |
@@ -1152,6 +1166,8 @@ settings card, beside the component that shows it.
 > Inspect the app's current window/container sizing and scroll behavior. Identify the main content container that can host a workspace beside the sidebar and define which elements should remain fixed versus scroll. Make only the minimum structural correction necessary to support a full-height workspace without adding page-level scrolling. Do not build split panes yet.
 
 **Acceptance criteria:** The existing landing screens still fit correctly; there is a clear parent container for the future workspace; no unnecessary global scrollbars appear.
+
+**Reference:** The window's floor, the height chain, what scrolls. See docs/layout.md
 
 **Status: done.**
 
@@ -1180,6 +1196,8 @@ the same.
 > be written down and read back. Write focused tests for the rules on it.
 
 **Acceptance criteria:** State ownership is clear and does not duplicate the
+
+**Reference:** Who owns each piece of the workspace's state. See docs/workspace-state.md
 current state; the arrangement's rules are tested; the model survives a
 round trip through JSON.
 
@@ -1220,6 +1238,8 @@ conversation.
 > backend logic.
 
 **Acceptance criteria:** The region is always in the tree and fills the
+
+**Reference:** The workspace is the main content region, always there. See §1.8
 work area; the landing screen still fits and still scrolls inside itself;
 the document does not scroll; the rail has no row for the workspace.
 
@@ -1254,6 +1274,8 @@ as it did before this work started.
 > Wire the new workspace host into the existing Code UI flow with the smallest coherent frontend state transition. Keep the current Code landing composer and sessions list intact. Provide a clear path for opening the workspace, using the existing flow if one exists or a new explicit UI-only action if not. Use sample session context where necessary. Do not send prompts to an AI or connect project folders to real disk operations.
 
 **Acceptance criteria:** Users can see the current Code landing state and separately reach the workspace prototype. The transition is reversible and does not reset unrelated state.
+
+**Reference:** The way in is a session. Claude Code Desktop: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 
 **Status: partly — the way in was wrong, and the way in is being redone.**
 
@@ -1297,6 +1319,8 @@ row, and the session is the way in.
 
 **Acceptance criteria:** The landing screen remains distinct from an empty workspace; the workspace empty state has a clear next action.
 
+**Reference:** The empty state, and the Views picker. Claude Code Desktop's empty workspace: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 **Status: partly — the state and the picker are right, the picker cannot choose yet.**
 
 | | |
@@ -1332,6 +1356,8 @@ when the workspace is open and holds nothing. That is settled in Task 2.1.
 > Audit and reuse the existing icon-only button pattern, or implement a minimal reusable wrapper if necessary. Ensure consistent hit area, hover/pressed/disabled/focus-visible states, accessible label, Lucide icon alignment and optional tooltip support. Keep the current app's compact styling. Do not replace existing buttons globally.
 
 **Acceptance criteria:** New icon controls can use one consistent pattern; keyboard users can identify and focus them.
+
+**Reference:** The app's icon-only button. See docs/icons.md §7
 
 
 
@@ -1371,6 +1397,8 @@ defaults the tooltip to the bottom.
 
 **Acceptance criteria:** The workspace can use standard menus without inconsistent behavior or invented component APIs.
 
+**Reference:** The app's menu, tooltip and context-menu primitives. See docs/components.md §2
+
 
 
 **Status: done.**
@@ -1401,6 +1429,8 @@ followed.
 
 **Acceptance criteria:** The primitives are ready for reuse and follow the local shadcn implementation.
 
+**Reference:** The app's popover, select and command primitives. See docs/components.md §2
+
 
 
 **Status: done.**
@@ -1429,6 +1459,8 @@ Task 7.1.
 
 **Acceptance criteria:** A common dialog convention exists for future rename/reset/unsaved-demo-state interactions.
 
+**Reference:** The app's dialog and alert-dialog primitives. See docs/components.md §2
+
 
 
 **Status: done.**
@@ -1456,6 +1488,8 @@ confirmation is for destructive or disruptive actions and only then.
 > Review existing Badge/status, Empty, Skeleton, Progress and toast components. Reuse them or establish minimal shared variants for status labels, empty-state content, content-shaped loading placeholders, simple progress and short local-action feedback. Keep errors distinct from unavailable integrations. Do not display success for mocked operations that did not actually happen.
 
 **Acceptance criteria:** Future panes have consistent patterns for non-happy-path states without a new design system.
+
+**Reference:** The app's badge, empty, skeleton, progress and toast primitives. See docs/components.md §2
 
 # Phase 4 — Build the generic pane framework
 
@@ -1487,6 +1521,8 @@ carries a label, a symbol or a shape as well as a colour.
 
 **Acceptance criteria:** The Pane can wrap arbitrary content, fits within parent bounds and has consistent header/content geometry.
 
+**Reference:** The pane frame. Claude Code Desktop's panes: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 ## Task 4.2 — Implement the pane header
 
 **Prompt to the coding AI:**
@@ -1494,6 +1530,8 @@ carries a label, a symbol or a shape as well as a colour.
 > Implement the pane header using the shared Pane frame. Include the icon, title, optional context label and compact action area. Provide visible active/inactive/focused styling and a dedicated drag handle/region that does not interfere with clicking header buttons, selecting text or interacting with controls. Do not implement actual drag-and-drop yet.
 
 **Acceptance criteria:** Header elements remain usable at full and narrow pane widths; drag initiation is not triggered by every header click.
+
+**Reference:** The pane header: icon, title, actions, drag region. See §4.3.1
 
 ## Task 4.3 — Add pane actions and overflow menu
 
@@ -1503,6 +1541,8 @@ carries a label, a symbol or a shape as well as a colour.
 
 **Acceptance criteria:** Pane controls look consistent; actions do not overlap the title or accidentally start a drag.
 
+**Reference:** The pane's overflow menu and close/focus/maximise/pop-out. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 ## Task 4.4 — Create the pane registry and instance model
 
 **Prompt to the coding AI:**
@@ -1511,6 +1551,8 @@ carries a label, a symbol or a shape as well as a colour.
 
 **Acceptance criteria:** Duplicate instances get unique IDs; unknown types fail gracefully; adding a pane type does not require rewriting the registry consumer.
 
+**Reference:** The pane registry and instance model. A session is not a pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+
 ## Task 4.5 — Create reusable pane empty/loading/error state slots
 
 **Prompt to the coding AI:**
@@ -1518,6 +1560,8 @@ carries a label, a symbol or a shape as well as a colour.
 > Add shared presentation helpers/slots for empty, loading, error and unavailable content inside a pane. Keep pane headers visible while the content state changes. Use the established shadcn/Lucide patterns, concise text and a single meaningful action at most. Do not force the same copy or icon on every pane; allow each type to supply appropriate text.
 
 **Acceptance criteria:** Every pane can present its own state without duplicating markup or breaking the Pane frame.
+
+**Reference:** The pane's empty/loading/error slots. See §4.5
 
 # Phase 5 — Implement every pane's visual content, one pane at a time
 
@@ -1531,6 +1575,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Composer stays visible; long content scrolls within the message area; states are complete; no backend calls.
 
+**Reference:** The Chat pane. Claude Code Desktop's chat pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 ## Task 5.2 — Code Session pane
 
 **Prompt to the coding AI:**
@@ -1538,6 +1584,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Code Session pane to the specification in Section 5.2. Include project/session context, a sample conversation/activity timeline, mock tool activity rows, a visible sample execution status and a bottom composer. Add empty, working-looking, completed sample, failed/unavailable and long-history states. Every execution state must remain clearly simulated; do not run agents or tools.
 
 **Acceptance criteria:** It feels like a coding session, not a copy of the generic Chat pane; there is no actual execution.
+
+**Reference:** The Code Session pane. Claude Code Desktop's session pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 
 ## Task 5.3 — Diff Viewer: overview and file navigation
 
@@ -1547,6 +1595,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** The file/change overview is readable and scroll-contained; selecting a sample file updates selected state.
 
+**Reference:** The Diff Viewer. Claude Code Desktop's diff view: https://code.claude.com/docs/en/desktop#review-changes-with-diff-view
+
 ## Task 5.4 — Diff Viewer: changed code surface and controls
 
 **Prompt to the coding AI:**
@@ -1554,6 +1604,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Complete the Diff Viewer with sample line-numbered code, added/removed/context lines, unified/split view if practical, previous/next change navigation, and review controls as specified in Section 5.3. Include no-changes, no-selection, added/deleted file, long-diff, loading and unavailable/error states. Review controls may update local sample UI state only. Do not write files or update Git.
 
 **Acceptance criteria:** Code lines remain legible at varied pane sizes; color is not the only cue; controls operate on sample state only.
+
+**Reference:** The Diff Viewer's changed code. Claude Code Desktop: https://code.claude.com/docs/en/desktop#review-changes-with-diff-view
 
 ## Task 5.5 — Browser pane
 
@@ -1563,6 +1615,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Toolbar controls have correct enabled/disabled states; page content never expands the workspace; no network integration.
 
+**Reference:** The Browser pane. Claude Code Desktop's Browser pane: https://code.claude.com/docs/en/desktop#preview-your-app
+
 ## Task 5.6 — Application Preview pane
 
 **Prompt to the coding AI:**
@@ -1570,6 +1624,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the focused Application Preview pane as specified in Section 5.5. Include a compact preview toolbar, a no-app-running state, a clearly sample/demo preview state, loading and failed/unavailable states, and optional locally simulated viewport-size selection if it fits the app. Do not start a server or imply that a real local app is running.
 
 **Acceptance criteria:** The preview surface is contained and visually clear; the default unavailable state cannot be mistaken for a live app.
+
+**Reference:** The Application Preview pane. Claude Code Desktop's preview: https://code.claude.com/docs/en/desktop#preview-your-app
 
 ## Task 5.7 — Terminal pane
 
@@ -1579,6 +1635,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Terminal typography/whitespace are correct; local controls work on displayed sample output only.
 
+**Reference:** The Terminal pane. Claude Code Desktop's terminal: https://code.claude.com/docs/en/desktop#run-commands-in-the-terminal
+
 ## Task 5.8 — File Explorer pane
 
 **Prompt to the coding AI:**
@@ -1586,6 +1644,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the File Explorer pane to the specification in Section 5.7. Include a sample folder/file tree, indentation, expand/collapse controls, selected-file state, optional local search/filter and appropriate context menus. Include empty project, populated tree, no-search-match, long-name and unavailable states. Selecting a sample file may update local selection or open its sample editor view. Do not access or mutate the real filesystem.
 
 **Acceptance criteria:** Tree interactions work locally and remain usable in narrow panes; there are no real file operations.
+
+**Reference:** The File Explorer pane. Claude Code Desktop's files: https://code.claude.com/docs/en/desktop#open-and-edit-files
 
 ## Task 5.9 — File Editor pane
 
@@ -1595,6 +1655,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Code presentation is legible and contained; local dirty state is honest; no disk writes or unnecessary editor packages.
 
+**Reference:** The File Editor pane. Claude Code Desktop's file pane: https://code.claude.com/docs/en/desktop#open-and-edit-files
+
 ## Task 5.10 — Plan pane
 
 **Prompt to the coding AI:**
@@ -1602,6 +1664,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Plan pane to the specification in Section 5.9. Include a sample plan hierarchy, expandable sections, task checkboxes/status badges and a progress summary that accurately reflects the displayed mock items. Include no-plan, populated, long-plan and unavailable states. Interactions may update local demo state only; do not invoke an agent.
 
 **Acceptance criteria:** Plan hierarchy is understandable and state/progress remains internally consistent.
+
+**Reference:** The Plan pane. Claude Code Desktop's plan pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
 ## Task 5.11 — Tasks pane
 
@@ -1611,6 +1675,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Statuses are distinguishable and filter behavior works on sample data.
 
+**Reference:** The Tasks pane. Claude Code Desktop's tasks pane: https://code.claude.com/docs/en/desktop#watch-background-tasks
+
 ## Task 5.12 — Agent Activity pane
 
 **Prompt to the coding AI:**
@@ -1618,6 +1684,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Agent Activity pane to the specification in Section 5.11. Include a sample timeline of events, concise descriptions, icons, timestamps/statuses and optional expandable details. Cover empty, active-looking, completed, failed/needs-attention and long-history states. Keep sample execution obviously simulated; do not start agents or background tasks.
 
 **Acceptance criteria:** Activity is scannable and quiet, and does not appear to report real executions.
+
+**Reference:** The Agent Activity pane. Claude Code Desktop's subagent pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
 ## Task 5.13 — File Preview pane
 
@@ -1627,6 +1695,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Each sample type has an intentional presentation; the pane does not claim to open a real file.
 
+**Reference:** The File Preview pane. Claude Code Desktop's preview: https://code.claude.com/docs/en/desktop#preview-your-app
+
 ## Task 5.14 — Logs pane
 
 **Prompt to the coding AI:**
@@ -1635,6 +1705,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Long messages and large sample lists remain readable; search/filter state behaves correctly on mock data.
 
+**Reference:** The Logs pane. Claude Code Desktop's terminal output: https://code.claude.com/docs/en/desktop#run-commands-in-the-terminal
+
 ## Task 5.15 — Pane consistency review
 
 **Prompt to the coding AI:**
@@ -1642,6 +1714,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Review all implemented pane types against Sections 3–5. Fix only cross-pane inconsistencies: header heights/padding, title truncation, icon alignment, toolbar patterns, content scrolling, empty/loading/error states, menu placement, narrow-pane overflow and focus styling. Do not redesign any pane, add new product features or connect backend services.
 
 **Acceptance criteria:** Pane types feel like one app; existing landing pages remain unchanged; shared styles are reused.
+
+**Reference:** One look across every pane. See §4.3.1
 
 # Phase 6 — Build the docking engine, in the app's own code
 
@@ -1675,6 +1749,8 @@ in the real workspace, and the checks are the app's own.
 > introduce a second design system and do not add a package.
 
 **Acceptance criteria:** A tree of one pane, two side by side, two stacked
+
+**Reference:** The layout model and the renderer. docs/plan/docking.md §5
 and a nested arrangement all draw correctly; the model survives a
 round-trip through JSON; a single-pane tree draws no chrome it does not
 need.
@@ -1695,6 +1771,8 @@ need.
 > inside it. A cancelled drag must leave the ratio exactly as it was.
 
 **Acceptance criteria:** The divider drags, resizes with the keyboard, and
+
+**Reference:** The divider and resizing. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 respects the minimum sizes; nested splits are unaffected by an outer
 resize; a cancelled drag changes nothing.
 
@@ -1716,6 +1794,8 @@ resize; a cancelled drag changes nothing.
 > is committed, so a cancelled drag cannot leave the layout changed.
 
 **Acceptance criteria:** The drag starts only from the header's drag
+
+**Reference:** Dragging a pane, and the drop targets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 region; all five targets show a clear indicator; nothing moves until the
 drop; a cancelled drag leaves the layout byte-for-byte as it was.
 
@@ -1735,6 +1815,8 @@ drop; a cancelled drag leaves the layout byte-for-byte as it was.
 > another pane, and the tab it joins is the one that is showing.
 
 **Acceptance criteria:** Tabs switch, reorder and close; a single-tab
+
+**Reference:** Tab groups. See §1.7
 group draws no strip; a pane dropped on the middle of a pane joins that
 pane's group.
 
@@ -1750,6 +1832,8 @@ pane's group.
 > in this task, and do not change the registry's shape.
 
 **Acceptance criteria:** Every registered pane type draws in the layout;
+
+**Reference:** Drawing the registered panes. See §4.3.1
 two instances of one type keep separate state; the registry is the only
 place that knows what a pane type is.
 
@@ -1768,6 +1852,8 @@ place that knows what a pane type is.
 > there at all.
 
 **Acceptance criteria:** The empty workspace becomes one pane and then
+
+**Reference:** The first pane, and composing several. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 several; the seventh pane is refused with a reason; the pane ids stay
 unique; the landing screen is untouched when there are no panes.
 
@@ -1789,6 +1875,8 @@ unique; the landing screen is untouched when there are no panes.
 > otherwise.
 
 **Acceptance criteria:** Every registered pane type is offered; the
+
+**Reference:** The Views menu. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 keyboard can reach and choose one; the cap is explained; choosing one
 adds that pane.
 
@@ -1807,6 +1895,8 @@ adds that pane.
 > landing screen.
 
 **Acceptance criteria:** Closing a pane from any position leaves a valid
+
+**Reference:** Closing a pane. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 layout; the remaining panes keep their state; no session is closed.
 
 ## Task 7.3 — Splitting a pane on purpose
@@ -1823,6 +1913,8 @@ layout; the remaining panes keep their state; no session is closed.
 > it is not reachable only by dragging.
 
 **Acceptance criteria:** All four directions work; a split made by a menu
+
+**Reference:** Splitting a pane. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 is identical to one made by a drag; a refused split changes nothing.
 
 ## Task 7.4 — Resizing, and the sizes a pane may have
@@ -1840,6 +1932,8 @@ is identical to one made by a drag; a refused split changes nothing.
 > ratio as it was.
 
 **Acceptance criteria:** Resizing works in both directions and from the
+
+**Reference:** Resizing. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 keyboard; the minimum sizes hold at the floor; a cancelled drag changes
 nothing.
 
@@ -1857,6 +1951,8 @@ nothing.
 > when it is left empty.
 
 **Acceptance criteria:** A pane can be dragged to each of the four edges
+
+**Reference:** Drag-and-drop docking. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 and to the middle; the pane keeps its identity and its state; no pane is
 created or destroyed by a move.
 
@@ -1875,6 +1971,8 @@ created or destroyed by a move.
 > the two must not be confused.
 
 **Acceptance criteria:** Exactly one pane is active; the active styling
+
+**Reference:** Focus. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 is subtle and does not fight the dark theme; clicking a header control
 does not move the focus to the pane.
 
@@ -1888,6 +1986,8 @@ does not move the focus to the pane.
 > same panes. Nothing is destroyed and no pane loses its state.
 
 **Acceptance criteria:** Maximize and restore are reversible and lose
+
+**Reference:** Maximize and restore. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 nothing; the panes that were hidden are the ones that come back.
 
 ## Task 7.8 — The layout presets
@@ -1902,6 +2002,8 @@ nothing; the panes that were hidden are the ones that come back.
 > Nothing is silently discarded.
 
 **Acceptance criteria:** Each preset draws what its name says; three
+
+**Reference:** Layout presets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 above and three below draws six panes; no pane is lost by choosing one.
 
 ## Task 7.9 — Resetting, and recovering from a broken layout
@@ -1916,6 +2018,8 @@ above and three below draws six panes; no pane is lost by choosing one.
 > one is replaced rather than half-drawn.
 
 **Acceptance criteria:** Reset produces a valid workspace and says what
+
+**Reference:** Reset and recovery. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 it does; a malformed stored layout falls back safely; no session or
 project record is touched.
 
@@ -1933,6 +2037,8 @@ project record is touched.
 > Right-click is never the only way to reach something.
 
 **Acceptance criteria:** The menus are compact and keyboard reachable;
+
+**Reference:** The pane's own menu. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 they offer only actions that work; every essential action is reachable
 without a right-click.
 
@@ -1952,6 +2058,8 @@ without a right-click.
 > session a pane was about is gone, the pane opens empty and says so.
 
 **Acceptance criteria:** A reload restores the layout that was there; a
+
+**Reference:** Keeping the layout between runs. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 saved layout that is old or malformed falls back safely; the sessions
 themselves are not touched.
 
@@ -1972,6 +2080,8 @@ themselves are not touched.
 > keep their two different lists.
 
 **Acceptance criteria:** Two sessions can be shown at once; their
+
+**Reference:** Two sessions side by side. Claude Code Desktop: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 conversations and their state stay separate; moving or closing a pane does
 not end its session; the rail is still the only navigation.
 
@@ -1996,6 +2106,8 @@ not end its session; the rail is still the only navigation.
 > does. Do not weaken the main window's own close behaviour to get there.
 
 **Acceptance criteria:** A pane opens in its own window with its state
+
+**Reference:** Popping a pane out, and docking it back. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 intact; the session keeps running; the pane docks back into the main
 window and the layout is valid afterwards; closing the window docks the
 pane back rather than losing it.
@@ -2009,6 +2121,8 @@ pane back rather than losing it.
 
 **Acceptance criteria:** Every pane has the states relevant to it; no empty or failure state looks broken or misleading.
 
+**Reference:** Every pane's states. See §3.4 and §4.5
+
 ## Task 8.2 — Overlay and popover audit
 
 **Prompt to the coding AI:**
@@ -2016,6 +2130,8 @@ pane back rather than losing it.
 > Audit all menus, dropdowns, popovers, tooltips, dialogs, confirmations and toasts introduced by the workspace. Verify correct trigger behavior, alignment, dismissal, focus behavior, z-index, viewport collision and scroll-container clipping. Use existing shadcn components; do not replace them with bespoke overlay code. Fix only real interaction defects.
 
 **Acceptance criteria:** Overlays remain visible, dismiss properly and are consistent across the workspace.
+
+**Reference:** Menus, popovers and dialogs. See §3.5
 
 ## Task 8.3 — Keyboard and accessibility pass
 
@@ -2025,6 +2141,8 @@ pane back rather than losing it.
 
 **Acceptance criteria:** Primary interactions can be reached and understood using a keyboard; labels and focus indicators are clear.
 
+**Reference:** Keyboard and accessibility. Claude Code Desktop: https://code.claude.com/docs/en/desktop#keyboard-shortcuts
+
 ## Task 8.4 — Narrow-window and overflow behavior
 
 **Prompt to the coding AI:**
@@ -2033,6 +2151,8 @@ pane back rather than losing it.
 
 **Acceptance criteria:** Small layouts remain usable; long text/paths/code/logs are contained; the app does not develop unnecessary global scrollbars.
 
+**Reference:** The workspace at 600 by 338. See docs/layout.md
+
 ## Task 8.5 — Visual polish pass
 
 **Prompt to the coding AI:**
@@ -2040,6 +2160,8 @@ pane back rather than losing it.
 > Compare the completed app against the approved screenshots and the shared pane specifications. Fix only visual defects and inconsistencies: incorrect spacing, pane header alignment, title truncation, icon sizes/strokes, border contrast, scroll regions, menu padding, state colors, inactive/focused states and alignment with the existing shell. Do not add decorative animation or redesign the approved landing screens.
 
 **Acceptance criteria:** New workspace features match the existing visual system and the Chat/Code landing screens remain approved.
+
+**Reference:** The last look. See docs/visual-baseline.md
 
 # Phase 9 — Final regression QA and handoff
 
@@ -2051,6 +2173,8 @@ pane back rather than losing it.
 
 **Acceptance criteria:** The app builds and the tested UI behaviors work; there are no known major regressions.
 
+**Reference:** The whole thing, exercised. See §7
+
 ## Task 9.2 — Produce the frontend handoff note
 
 **Prompt to the coding AI:**
@@ -2058,6 +2182,8 @@ pane back rather than losing it.
 > Write a concise handoff note documenting the pane registry, shared component conventions, chosen docking library/approach, layout adapter/data model, how pane instance state is separated from geometry, current local/mock interactions, local layout persistence behavior and known limitations. Explicitly list the real backend integrations that remain unimplemented. Do not modify product code in this task.
 
 **Acceptance criteria:** A later implementation phase can add real services without redesigning the visual workspace or replacing the layout engine.
+
+**Reference:** The handoff note. See §7
 
 ---
 
