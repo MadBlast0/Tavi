@@ -22,6 +22,7 @@ app can rely on it, and a reader who finds a plan knows not to.
 | [`storage.md`](storage.md) | Where every piece of data lives, on each platform, what it is worth, how long it is kept, and what removes it — and the design behind it |
 | [`tokens.md`](tokens.md) | Every colour, size and shape the app is drawn with: the roles, the values in both modes, the rules the themes obey and where they are checked, and how to add a token |
 | [`components.md`](components.md) | Every shared component in the app and which one to use for a given job: the one family they are all built on, the map, the rules, and what changed |
+| [`layout.md`](layout.md) | Every element that owns a height or a scrollbar: the window's floor, the height chain, what scrolls and what does not, the container a workspace will live in, and what changed |
 
 The [README](../README.md) is the front door: what the app is, how to run it,
 and what it does and does not do.
