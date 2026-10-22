@@ -24,6 +24,7 @@ app can rely on it, and a reader who finds a plan knows not to.
 |---|---|
 | [`architecture.md`](architecture.md) | How the app is put together: the surfaces, the storage layer, the boundaries that were settled, and the table of gaps that were closed and the two that were found by auditing the work |
 | [`storage.md`](storage.md) | Where every piece of data lives, on each platform, what it is worth, how long it is kept, and what removes it — and the design behind it |
+| [`providers.md`](providers.md) | The other half of the provider story: where they live, what shape they speak, where a reasoning level goes, what the address is, which keys can be checked and how, and why the marks are drawn in the page. The list itself is in `src/lib/providers.ts`; the test that says the desktop app and the website read the same list is `provider-table.test.ts` |
 | [`merging.md`](merging.md) | The two long-lived lines, the gate a merge has to pass before `main` moves, the timer that merges on its own, the report that says what is in `main` and what is not, and the two merges that needed a judgement call |
 | [`tokens.md`](tokens.md) | Every colour, size and shape the app is drawn with: the roles, the values in both modes, the rules the themes obey and where they are checked, and how to add a token |
 | [`components.md`](components.md) | Every shared component in the app and which one to use for a given job: the one family they are all built on, the map, the rules, and what changed |
