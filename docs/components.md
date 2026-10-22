@@ -61,6 +61,9 @@ One row per job. The **canonical** column is the one to use.
 | Job | The component | Notes |
 |---|---|---|
 | A button | `@/components/button` | `variant`: `default`, `outline`, `secondary`, `ghost`, `ghost-destructive`, `destructive`, `link`. `size`: `xs`, `sm`, `default`, `lg`, and the `icon` family |
+| A row of buttons that behave as one | `@/components/button-group` | Joined edges, one focus ring |
+| A button that is on or off | `@/components/toggle` | |
+| A row of toggles, one of which is on | `@/components/toggle-group` | The Chat/Code switch is built on `icon-switch`; this is the plain one |
 | An icon-only button | `@/components/tooltip-icon-button` | The button above plus its tooltip. **Use this, not a bare `Button` with `size="icon"`** — an icon with no label needs one |
 | A tooltip | `@/components/tooltip` | Only inside `TooltipIconButton`, or where a control has a visible label already |
 | An action list | `@/components/dropdown-menu` | The menu under a trigger |
@@ -71,15 +74,22 @@ One row per job. The **canonical** column is the one to use.
 | A searchable list | `@/components/command` | The palette, and the Views picker when it arrives |
 | A picker with a value | `@/components/select` | One of several |
 | A picker with a value, searchable | `@/components/combobox` | |
+| A select built on the platform's own | `@/components/native-select` | Where the native control is the better one |
 | A single choice, visible | `@/components/radio-group` | |
 | One line of text | `@/components/input` | |
+| An input with something beside it | `@/components/input-group` | A button, a count, a clear |
+| A one-time code | `@/components/input-otp` | |
 | Several lines of text | `@/components/textarea` | |
 | A field with a label | `@/components/field` | And `@/components/label` |
+| A form of questions | `@/components/questionnaire` | |
 | Sections | `@/components/tabs` | Only where tabbing is the point |
+| An expandable section | `@/components/accordion` | |
 | An expandable list | `@/components/collapsible` | And `@/components/tree` for a file tree |
+| A path | `@/components/breadcrumb` | |
 | A scrollable region | `@/components/scroll-area` | Or the app's own scroll pattern |
 | A rule between two things | `@/components/separator` | |
 | A status | `@/components/badge` | `secondary`, `destructive`, `outline`, `success`, `info`, `warning` |
+| A person, or an account | `@/components/avatar` | With a badge for their status |
 | Something loading | `@/components/skeleton` | Shaped like what is coming |
 | Something spinning | `@/components/spinner` | |
 | How far along | `@/components/progress` | |
@@ -90,12 +100,21 @@ One row per job. The **canonical** column is the one to use.
 | A card | `@/components/card` | |
 | Nothing here yet | `@/components/empty` | Icon, title, explanation, one action |
 | Something went wrong | `@/components/alert` | `destructive`, `warning`, `info`, `success` |
+| A file attached to a message | `@/components/attachment` | |
+| An image | `@/components/image` | With a zoom and a source |
+| A video, or an audio file | `@/components/media-player` | Or `@/components/video-player` for a video with its own controls |
+| A marked piece of text | `@/components/marker` | |
+| A box that keeps its ratio | `@/components/aspect-ratio` | |
+| A message in a conversation | `@/components/message` | The assistant-ui one |
+| A message bubble | `@/components/bubble` | The assistant-ui one |
+| The notch and the rounded corner | `@/components/safe-area` | |
 | A draggable divider | `@/components/resizable` | The split panels. **Vendored and not yet used** |
 | The left rail | `@/components/sidebar` | The app's own rail |
 | A table | `@/components/table`, `@/components/data-table` | |
 | A chart | `@/components/chart` | |
 | A file, and its icon | `@/components/file` | `getMimeTypeIcon` picks the icon |
 | A calendar | `@/components/calendar` | |
+| A date picker | `@/components/date-picker` | |
 | A slider | `@/components/slider` | |
 | A switch | `@/components/switch` | |
 | A checkbox | `@/components/checkbox` | |
@@ -106,7 +125,6 @@ One row per job. The **canonical** column is the one to use.
 | A menubar | `@/components/menubar` | |
 | A navigation menu | `@/components/navigation-menu` | |
 | A pagination | `@/components/pagination` | |
-| A date picker | `@/components/date-picker` | |
 
 ### The app's own
 
@@ -120,12 +138,17 @@ reaches for when the shadcn set does not have the thing.
 | `@/components/message-scroller` | The scrolling conversation, with its scroll-to-bottom button |
 | `@/components/markdown-text` | The markdown renderer, with the copy button on a code block |
 | `@/components/model-picker` | The model chooser in the composer |
+| `@/components/model-selector` | Another model chooser, with a search — the assistant-ui one, and not reachable |
+| `@/components/collapsible-root` | The app's own collapsible, with a root, a trigger and a content |
 | `@/components/setting-row` | A labelled row in the settings card |
 | `@/components/info-hint` | The small "?" that explains a row |
 | `@/components/icon-switch` | The Chat/Code switch — one control, two states |
+| `@/components/theme-toggle` | The light and dark switch |
+| `@/components/desktop-tool-gate` | Renders a tool's controls only on the desktop |
+| `@/components/reasoning` | A reasoning block that can be opened and closed |
 | `@/components/provider-logo` | A provider's mark |
 | `@/components/spinner`, `@/components/skeleton` | Used by the app as well as the vendored set |
-| `@/components/thread.aui` and `src/assistant.tsx` | The assistant-ui thread surface. **Not reachable from the entry point** — raw material |
+| `@/components/thread.aui`, `src/assistant.tsx`, `@/components/AssistantSurface` | The assistant-ui thread surface. **Not reachable from the entry point** — raw material |
 
 ---
 
