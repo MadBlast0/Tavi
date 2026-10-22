@@ -21,8 +21,8 @@
 | 0.3 | ✅ done | The shadcn and Lucide audit: the component families that exist, the one primitive family in use, and the icon sizing convention |
 | 0.4 | ⬜ not done | The docking strategy is not decided and written down yet. **Task 6.1 depends on it** |
 | 1.1 | ✅ done | [`docs/tokens.md`](../../tokens.md) — the token map — and seven missing tokens, three of which the code already asked for |
-| 1.2 | ⬜ next | The shared-component map |
-| 1.3 | ⬜ | The icon conventions |
+| 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
+| 1.3 | ⬜ next | The icon conventions |
 | 1.4 | ⬜ | The sizing and the scroll boundaries |
 | 1.5 | ⬜ | The state boundaries |
 
@@ -805,6 +805,25 @@ separator is `--border`.
 > Based on the component audit, create a short internal map of which existing shared/shadcn components should be used for common interactions. Where a needed component is absent, implement only the minimum reusable component or wrapper that follows the existing local shadcn conventions. Do not add packages, duplicate existing components or switch the underlying primitive family. Do not build the pane UI yet.
 
 **Acceptance criteria:** No duplicate design system; no imports refer to nonexistent files; no unrelated changes.
+
+**Status: done.**
+
+| | |
+|---|---|
+| The map | [`docs/components.md`](../../components.md) — the one family everything is built on, the map of which component to use for which job, the app's own shared components, and the rules |
+| The duplicate | `src/components/tooltip-icon-button.tsx` was the only place the app's **own** code used the older generation under `src/components/ui/`. It is now on the canonical family, so everything the app runs is on one family |
+| The guard | `src/lib/components.test.ts` — four tests: every import points at a file that is there, the code reachable from the entry point is on one component family, there is one primitive family, and every component folder has a barrel |
+
+Nothing was added, no package was added, and no primitive family was
+touched. The ten components under `src/components/ui/` are still on disk,
+because six vendored files import them and the project keeps those as raw
+material.
+
+The four deltas the move brought — a 10px corner becoming 8px, a 1px
+transparent border that is gone, a press that is now the app's 0.97 rather
+than the wrapper's 0.90, and a tooltip that waits 150ms rather than
+appearing at once — are set out in `docs/components.md` §4. Each was
+measured in the browser rather than assumed.
 
 ## Task 1.3 — Establish Lucide icon conventions
 
