@@ -20,10 +20,10 @@ code, and the code is `lucide-react` plus the classes in `src/`.
 | The name | every identifier ends in `Icon` |
 | The version | 1.59.0 — 1891 icons |
 
-Sixty-six files import icons. Every one of them imports from
-`lucide-react`, every one by name, and every one with the suffix on the
-identifier: `XIcon`, not `X`. Between them they bring in 266 identifiers —
-127 distinct glyphs.
+Sixty-seven files import icons: the app's sixty-six, and the pane map.
+Every one of them imports from `lucide-react`, every one by name, and every
+one with the suffix on the identifier: `XIcon`, not `X`. Between them they
+bring in 279 identifiers — 135 distinct glyphs.
 
 **Why one pack and not two.** The two packs an app is most likely to reach
 for are not interchangeable at the same size. Both stroke at 2px, so the
@@ -302,9 +302,14 @@ The mark is chosen so that it does not already mean something else. Four of
 them are marks the app already uses for the same idea, and that is the
 point: `MessageCircleIcon` is the app's Chat mark and `CodeXmlIcon` its
 Code mark, both from the Chat/Code switch; `TerminalIcon` is the mark the
-composer uses for a remote shell; and `FileTextIcon` is the app's own file
-mark, from the composer's attachment list. A pane that shows the same thing
-should be marked the same way. The rest are marks the app does not use yet.
+composer uses for a remote shell; and `FileTextIcon` is the app's own mark
+for a file. A pane that shows the same thing should be marked the same way.
+The rest are marks the app does not use yet.
+
+One of them is a mark the app already draws for something else:
+`GlobeIcon` is the browser's, and the account menu draws a globe for
+"Language". That is a different idea in a different place, and the two are
+never on screen together.
 
 Two of the obvious ones are not available. `CodeIcon` would have named a
 Code Session, and it is the edit mode — the app's own comment on the mode

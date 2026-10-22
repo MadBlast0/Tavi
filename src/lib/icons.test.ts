@@ -89,10 +89,10 @@ type Import = {
 const importsOf = (path: string): Import[] => {
   const source = codeOf(path)
   const found: Import[] = []
-  /* The clause cannot cross a semicolon, so a match cannot run past the end
-     of the statement it started in. */
+  /* The clause cannot cross a quote or a semicolon, so a match cannot run
+     past the statement it started in and swallow the next one. */
   for (const match of source.matchAll(
-    /import\s+([^;]*?)\s+from\s*["']([^"']+)["']/g,
+    /import\s+([^"';]*?)\s+from\s*["']([^"']+)["']/g,
   )) {
     found.push({
       from: path,
