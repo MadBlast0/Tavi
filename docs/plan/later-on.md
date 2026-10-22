@@ -32,11 +32,14 @@ summary of it.
   the program; a recipe is finished when the program has been run, and the
   other fifteen have not been. Codex's documented interface exists and its
   event shape has not been confirmed, so it has no recipe yet.
-- **A terminal pane.** The mode is in the model: the app knows a tool can
-  want a real terminal, and the catalogue says so. There is no terminal to
-  put it in. A pane needs a terminal emulator on the front end, a real PTY
-  on the back, and a tool that insists on one to try it on — and a tool
-  built without one to test against is an untested claim.
+- **A terminal pane.** The terminal itself **is** built: `src-tauri/src/pty.rs`
+  opens a real pseudo-terminal, runs a program in it, reads what it draws,
+  takes what is typed at it, resizes it, and reports the program's own exit
+  code. What there is not is a **surface** — nothing in the app draws a
+  terminal, because there is no terminal widget in the app to draw one in.
+  A terminal surface needs a terminal emulator on the front end (xterm.js and
+  its fit addon) and a place in the thread for it, and that is a piece of
+  work of its own.
 - **The agent protocol.** OpenCode speaks one, and the mode is declared for
   it, but nothing reads it yet. The structured mode is what the app uses
   today.

@@ -7,6 +7,7 @@ mod keys;
 mod partials;
 mod projects;
 mod provider;
+mod pty;
 mod threads;
 mod tray;
 mod window_state;
@@ -127,6 +128,7 @@ pub fn run() {
         .manage(projects::Clones::default())
         .manage(std::sync::Arc::new(cli::CliRegistry::default()))
         .manage(cli::CliLifecycle::default())
+        .manage(pty::Terminals::default())
         .invoke_handler(tauri::generate_handler![
             keys::list_provider_keys,
             keys::save_provider_key,
@@ -147,6 +149,10 @@ pub fn run() {
             cli::cancel_cli_lifecycle,
             cli::list_cli_models,
             cli::cli_provider_diagnostics,
+            pty::start_cli_terminal,
+            pty::write_cli_terminal,
+            pty::resize_cli_terminal,
+            pty::stop_cli_terminal,
             cli::run_cli_chat,
             projects::list_projects,
             projects::clone_repository,

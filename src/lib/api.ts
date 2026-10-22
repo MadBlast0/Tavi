@@ -428,6 +428,74 @@ export const cliProviderDiagnostics = (id: string): Promise<string> =>
         ),
       )
 
+/* -------------------------------------------------------------------------- */
+/* The terminals                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Starts a program in a real terminal.
+ *
+ * A program that will not do anything without a terminal — one that draws a
+ * full-screen interface, or wants a person to type at it — is run in a real
+ * pseudo-terminal, and what it draws comes back as it draws it.
+ *
+ * There is no screen that shows a terminal yet, so nothing in the app calls
+ * this. The capability is here because the plan asks for it, and a surface
+ * that shows a terminal is a separate piece of work.
+ */
+export const startCliTerminal = (
+  program: string,
+  args: string[],
+  workingDir: string | undefined,
+  onOutput: (event: CliTerminalEvent) => void,
+): Promise<string> =>
+  isDesktopApp()
+    ? desktop.startCliTerminal(program, args, workingDir, onOutput)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Writes to a terminal, as if the person had typed it. */
+export const writeCliTerminal = (id: string, data: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.writeCliTerminal(id, data)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Tells a terminal it is a different size, so the program redraws. */
+export const resizeCliTerminal = (
+  id: string,
+  rows: number,
+  cols: number,
+): Promise<void> =>
+  isDesktopApp()
+    ? desktop.resizeCliTerminal(id, rows, cols)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Stops a terminal and lets go of it. */
+export const stopCliTerminal = (id: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.stopCliTerminal(id)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** What a terminal says. */
+export type CliTerminalEvent =
+  | { type: "output"; data: string }
+  | { type: "exit"; code: number | null }
+
 /**
  * The models a CLI provider publishes.
  *

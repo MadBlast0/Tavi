@@ -56,7 +56,7 @@ import {
   CommandList,
   CommandPage,
 } from "@/components/command/command"
-import { PROVIDERS, providerFor } from "@/lib/providers"
+import { PROVIDERS } from "@/lib/providers"
 import {
   cliProviderId,
   isCliProviderId,
@@ -64,7 +64,7 @@ import {
   providerChoice,
   type CliProviderState,
 } from "@/lib/cli-providers"
-import { listCliProviders, type ToolActivity } from "@/lib/api"
+import { type ToolActivity } from "@/lib/api"
 import { toolDetail, toolFailed, toolLabel } from "./tool-activity"
 import type { ProviderKey } from "@/lib/secret"
 
@@ -749,6 +749,7 @@ function PromptInputProvider({
   onProviderChange,
   keys,
   locked,
+  cliProviders,
 }: {
   provider: string
   onProviderChange: (value: string) => void
@@ -760,6 +761,8 @@ function PromptInputProvider({
    * is disabled and says why. The model is still free.
    */
   locked?: boolean
+  /** The CLI providers on this machine. */
+  cliProviders: CliProviderState[]
 }) {
   const context = usePromptInput("PromptInputProvider")
   const [open, setOpen] = React.useState(false)
@@ -770,28 +773,6 @@ function PromptInputProvider({
    * the one whose list opens, which is what a menu of submenus does.
    */
   const [level, setLevel] = React.useState<"api" | "cli" | null>(null)
-
-  /* The CLI providers on this machine.
-   *
-   * They are read here rather than passed down, because the only thing that
-   * needs them is this menu, and the list changes when a program is
-   * installed — which the settings pane knows about and this does not. */
-  const [cliProviders, setCliProviders] = React.useState<CliProviderState[]>([])
-  React.useEffect(() => {
-    let alive = true
-    void listCliProviders()
-      .then((states) => {
-        if (alive) setCliProviders(states)
-      })
-      .catch(() => {
-        /* A browser has no CLI providers, and a machine whose list could not
-           be read offers none rather than offering a broken one. */
-        if (alive) setCliProviders([])
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
 
   /* The ones the app can reach: installed, and turned on. A program that is
      not here cannot answer, and one the user has turned off is not to be
@@ -1059,6 +1040,14 @@ function PromptInputModel({
    */
   provider: string
   /**
+   * The provider's name, whichever kind it is.
+   *
+   * It is passed rather than looked up, because a CLI provider is not in the
+   * API provider's table, and a picker with no name at the top of it does not
+   * say whose models are being chosen.
+   */
+  providerLabel?: string
+  /**
    * Whether there is no provider key at all.
    *
    * Without one the app cannot reach any model, so the list is not fetched
@@ -1089,7 +1078,6 @@ function PromptInputModel({
   const [query, setQuery] = React.useState("")
   const current = models.find((item) => item.value === model) ?? models[0]
   const { current: level, direction } = useEffortLevel(props.levels, effort)
-  const providerLabel = providerFor(provider)?.label
   const choose = (next: string) => {
     if (next !== model) haptic("tick")
     onModelChange(next)
@@ -1180,14 +1168,14 @@ function PromptInputModel({
         {/* The search field is hidden when there is nothing to search: a search
             box over an empty list is noise, and the list is empty because
             there is no key. */}
-        {providerLabel ? (
+        {props.providerLabel ? (
           <div className="text-muted-foreground flex items-center gap-2 border-b pb-2 text-xs">
             <ProviderLogo
               provider={provider}
-              providerLabel={providerLabel}
+              providerLabel={props.providerLabel}
               className="size-3.5"
             />
-            <span className="truncate">{providerLabel}</span>
+            <span className="truncate">{props.providerLabel}</span>
           </div>
         ) : null}
 
@@ -1259,7 +1247,7 @@ function PromptInputModel({
             })
           ) : noKey ? (
             <NoKeyState
-              providerLabel={providerFor(provider)?.label}
+              providerLabel={props.providerLabel}
               onAddKey={() => {
                 setOpen(false)
                 openSettings("api-keys")

@@ -48,6 +48,7 @@ import type {
   CliProviderChanges,
   CliProviderState,
 } from "./cli-providers.ts"
+import type { CliTerminalEvent } from "./api.ts"
 import type { ProviderKey } from "./secret.ts"
 
 export { isDesktopApp }
@@ -275,6 +276,49 @@ export const runCliLifecycle = async (
 export const cancelCliLifecycle = async (): Promise<void> => {
   requireDesktop()
   await invoke("cancel_cli_lifecycle")
+}
+
+/** Starts a program in a real terminal. */
+export const startCliTerminal = async (
+  program: string,
+  args: string[],
+  workingDir: string | undefined,
+  onEvent: (event: CliTerminalEvent) => void,
+): Promise<string> => {
+  requireDesktop()
+  const channel = new Channel<CliTerminalEvent>()
+  channel.onmessage = onEvent
+  return invoke<string>("start_cli_terminal", {
+    program,
+    args,
+    workingDir: workingDir || null,
+    onEvent: channel,
+  })
+}
+
+/** Writes to a terminal, as if the person had typed it. */
+export const writeCliTerminal = async (
+  id: string,
+  data: string,
+): Promise<void> => {
+  requireDesktop()
+  await invoke("write_cli_terminal", { id, data })
+}
+
+/** Tells a terminal it is a different size, so the program redraws. */
+export const resizeCliTerminal = async (
+  id: string,
+  rows: number,
+  cols: number,
+): Promise<void> => {
+  requireDesktop()
+  await invoke("resize_cli_terminal", { id, rows, cols })
+}
+
+/** Stops a terminal and lets go of it. */
+export const stopCliTerminal = async (id: string): Promise<void> => {
+  requireDesktop()
+  await invoke("stop_cli_terminal", { id })
 }
 
 /** A report about one CLI provider, for a person to paste somewhere. */
