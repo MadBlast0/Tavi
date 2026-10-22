@@ -74,7 +74,6 @@ import {
   type AgentMode,
 } from "@/lib/modes"
 import type { Side } from "@/lib/sides"
-import { DEFAULT_PROVIDER_ID } from "@/lib/providers"
 import { serializeReasoning } from "@/lib/provider-reasoning"
 import { unknownCapabilities } from "@/lib/reasoning"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
@@ -230,6 +229,7 @@ import {
   PromptInputMeta,
   PromptInputMeter,
   PromptInputModel,
+  PromptInputProvider,
   PromptInputSelect,
   PromptInputSuggestions,
   type PromptEffort,
@@ -557,6 +557,8 @@ type WriteState = {
   id: string | null
   model: string
   effort: string
+  /** The provider the request went to. */
+  provider: string
   /** The agent mode. Code only. */
   mode: string
   /** The folder's id and name. Code only. */
@@ -821,11 +823,14 @@ export function PromptBlock() {
    * request goes out with, and the provider the request is sent to. That is
    * what makes the list and the request about the same provider by
    * construction, rather than by agreeing to.
+   *
+   * It starts unset, because the user chooses it: the model picker is not
+   * usable until a provider is chosen, since the models belong to one.
    */
   const [providerBySide, setProviderBySide] = React.useState<Record<Side, string>>(
     () => ({
-      chat: readPref(sidePref(PREF.provider, "chat")) ?? DEFAULT_PROVIDER_ID,
-      code: readPref(sidePref(PREF.provider, "code")) ?? DEFAULT_PROVIDER_ID,
+      chat: readPref(sidePref(PREF.provider, "chat")) ?? "",
+      code: readPref(sidePref(PREF.provider, "code")) ?? "",
     }),
   )
   const model = modelBySide[variant]
@@ -1094,6 +1099,9 @@ export function PromptBlock() {
         )
         if (chat.model) setModelBySide((current) => ({ ...current, [side]: chat.model! }))
         if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
+        /* The provider the thread is about, the same way. */
+        if (chat.provider)
+          setProviderBySide((current) => ({ ...current, [side]: chat.provider! }))
         return
       }
 
@@ -1111,6 +1119,9 @@ export function PromptBlock() {
       )
       if (session.model) setModelBySide((current) => ({ ...current, [side]: session.model! }))
       if (session.effort) setEffortBySide((current) => ({ ...current, [side]: session.effort! }))
+      /* The provider the session is about, the same way. */
+      if (session.provider)
+        setProviderBySide((current) => ({ ...current, [side]: session.provider! }))
       if (session.mode) setMode(session.mode)
       setFolderId(
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
@@ -1742,6 +1753,11 @@ export function PromptBlock() {
       turns: await toStoredTurns(next, projectFiles),
       model: write.model || undefined,
       effort: write.effort || undefined,
+      /* The provider the thread is about. It is recorded, not enforced: the
+         conversation is text and the tools are the same whichever provider
+         answers, so the thread remembers where it began without refusing to
+         go somewhere else. */
+      provider: write.provider || undefined,
       usage: write.usage ?? undefined,
     }
     /* The thread the turn was asked about, before the write. */
@@ -1800,6 +1816,7 @@ export function PromptBlock() {
     id: threadIdFor(variant, activeRef.current),
     model,
     effort,
+    provider,
     mode,
     folderId: folder?.id,
     folderName: folder?.name,
@@ -2000,21 +2017,26 @@ export function PromptBlock() {
    * One definition keeps both homes identical.
    */
   const composerModel = (
-    <PromptInputModel
-      models={modelOptions}
-      model={model}
-      onModelChange={setModel}
-      provider={provider}
-      onProviderChange={setProvider}
-      providerKeys={keys ?? []}
-      levels={efforts}
-      effort={effort}
-      onEffortChange={setEffort}
-      recommended="medium"
-      noKey={keys !== null && !hasKey(keys, provider)}
-      error={modelsError}
-      catalogue={catalogueFreshness}
-    />
+    <>
+      <PromptInputProvider
+        provider={provider}
+        onProviderChange={setProvider}
+        keys={keys ?? []}
+      />
+      <PromptInputModel
+        models={modelOptions}
+        model={model}
+        onModelChange={setModel}
+        provider={provider}
+        levels={efforts}
+        effort={effort}
+        onEffortChange={setEffort}
+        recommended="medium"
+        noKey={keys !== null && !hasKey(keys, provider)}
+        error={modelsError}
+        catalogue={catalogueFreshness}
+      />
+    </>
   )
 
   /**

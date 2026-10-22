@@ -2,7 +2,8 @@
  * The vocabulary both thread stores share.
  *
  * A chat and a code session are the same kind of thing at this level — a
- * conversation, with turns, a model, an effort level and a pin — and they
+ * conversation, with turns, a model, an effort level, a provider and a
+ * pin — and they
  * differ in what else they carry. A chat has no folder and no agent mode; a
  * session has both. Everything common lives here so the two stores cannot
  * drift apart, and the difference stays a difference rather than becoming a
@@ -68,6 +69,18 @@ export type ThreadBase = {
   turns: StoredTurn[]
   model?: string
   effort?: string
+  /**
+   * The provider the thread was started with.
+   *
+   * It is what the models came from, and it is the provider the thread is
+   * about: opening it shows that provider's models, and the picker names it.
+   *
+   * It is a record, not a rule. The provider can still be changed — the
+   * conversation is text, the tools are the same whichever provider answers,
+   * and the effort is checked against the new model — so the thread remembers
+   * where it began without refusing to go somewhere else.
+   */
+  provider?: string
   usage?: StoredUsage
   /**
    * When the thread was pinned, or absent if it is not.
@@ -84,6 +97,7 @@ export type ThreadDraft<E extends object> = {
   turns: StoredTurn[]
   model?: string
   effort?: string
+  provider?: string
   usage?: StoredUsage
 } & E
 

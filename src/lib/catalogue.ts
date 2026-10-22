@@ -371,7 +371,7 @@ const openRouterTarget = (
  *
  * This is what the desktop app does with the catalogue Rust fetches for it.
  */
-export const openRouterCatalogue = (
+const openRouterCatalogue = (
   raw: unknown,
   source: CatalogueSource,
 ): SlimModel[] => {

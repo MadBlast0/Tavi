@@ -46,7 +46,7 @@ import watsonxLogo from "@/assets/providers/watsonx.svg";
 import databricksLogo from "@/assets/providers/databricks.svg";
 
 /** The mark for a provider, by its id. */
-export const PROVIDER_LOGOS: Record<string, string> = {
+const PROVIDER_LOGOS: Record<string, string> = {
   "openai": openaiLogo,
   "anthropic": anthropicLogo,
   "google": googleLogo,
