@@ -4,7 +4,7 @@ Two kinds of document live here, and they are kept apart on purpose.
 
 | | What it is | Where it lives |
 |---|---|---|
-| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md) and [`workspace-state.md`](workspace-state.md) |
+| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md), [`layout.md`](layout.md), [`visual-baseline.md`](visual-baseline.md) and [`workspace-state.md`](workspace-state.md) |
 | **The app as it is meant to become** | What is deferred, what was planned, and what has not been built | [`docs/plan/`](plan/) |
 
 A document in `docs/` describes something that is true of the code you can
@@ -24,6 +24,7 @@ app can rely on it, and a reader who finds a plan knows not to.
 | [`tokens.md`](tokens.md) | Every colour, size and shape the app is drawn with: the roles, the values in both modes, the rules the themes obey and where they are checked, and how to add a token |
 | [`components.md`](components.md) | Every shared component in the app and which one to use for a given job: the one family they are all built on, the map, the rules, and what changed |
 | [`layout.md`](layout.md) | Every element that owns a height or a scrollbar: the window's floor, the height chain, what scrolls and what does not, the container a workspace will live in, and what changed |
+| [`visual-baseline.md`](visual-baseline.md) | What the app looks like today: the window, the shell, the two sides of the rail, the two states of the work area, the composers, and the list of things that must not change |
 | [`workspace-state.md`](workspace-state.md) | Who owns each piece of the workspace's state — the app section, the active session, the open flag, the pane instances, the active pane, the arrangement, the pane-local state and the overlay — where it lives, who changes it, and the two separations that keep the arrangement from becoming a copy of the panes |
 
 The [README](../README.md) is the front door: what the app is, how to run it,
