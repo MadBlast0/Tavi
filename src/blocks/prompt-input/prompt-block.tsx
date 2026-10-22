@@ -74,7 +74,9 @@ import {
   type AgentMode,
 } from "@/lib/modes"
 import type { Side } from "@/lib/sides"
-import { ACTIVE_PROVIDER_ID } from "@/lib/providers"
+import { DEFAULT_PROVIDER_ID } from "@/lib/providers"
+import { serializeReasoning } from "@/lib/provider-reasoning"
+import { unknownCapabilities } from "@/lib/reasoning"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
 
@@ -93,14 +95,29 @@ const MORPH = {
 } as const
 
 /**
+ * The capabilities of a model the catalogue did not describe.
+ *
+ * Absent is not "supports nothing". It is "not looked up", and it keeps the
+ * interface on the provider default rather than offering a control that would
+ * fail.
+ */
+const unknownFor = (model: string) =>
+  unknownCapabilities({
+    connectionId: "",
+    providerId: "",
+    apiProtocol: "openai-chat-completions",
+    modelId: model,
+  })
+
+/**
  * Whether there is a key the app can reach a model with.
  *
- * The provider the app talks to is the one that matters. A key for another
- * provider is stored and can be checked, but nothing in the app speaks to
- * those providers yet, so it cannot be what a request goes out with.
+ * The provider in use is the one that matters. A key for another provider is
+ * stored and can be checked, but the request goes out with this one's key, so
+ * only this one's key can be what a request goes out with.
  */
-const hasKey = (keys: ProviderKey[]): boolean =>
-  keys.some((key) => key.active && key.provider === ACTIVE_PROVIDER_ID)
+const hasKey = (keys: ProviderKey[], provider: string): boolean =>
+  keys.some((key) => key.active && key.provider === provider)
 
 /** Collapse/expand of a region that only exists in one variant. */
 const variantRegion = {
@@ -796,8 +813,24 @@ export function PromptBlock() {
     chat: readPref(sidePref(PREF.effort, "chat")) ?? "",
     code: readPref(sidePref(PREF.effort, "code")) ?? "",
   }))
+  /**
+   * The provider in use, per side.
+   *
+   * It is a preference like the model and the effort, and everything follows
+   * it: the catalogue that is fetched, the list that is shown, the key the
+   * request goes out with, and the provider the request is sent to. That is
+   * what makes the list and the request about the same provider by
+   * construction, rather than by agreeing to.
+   */
+  const [providerBySide, setProviderBySide] = React.useState<Record<Side, string>>(
+    () => ({
+      chat: readPref(sidePref(PREF.provider, "chat")) ?? DEFAULT_PROVIDER_ID,
+      code: readPref(sidePref(PREF.provider, "code")) ?? DEFAULT_PROVIDER_ID,
+    }),
+  )
   const model = modelBySide[variant]
   const effort = effortBySide[variant]
+  const provider = providerBySide[variant]
 
   /**
    * What the user has typed, attached, mentioned or queued — per side.
@@ -844,6 +877,16 @@ export function PromptBlock() {
     },
     [variant],
   )
+  const setProvider = React.useCallback(
+    (next: string | ((current: string) => string)) => {
+      setProviderBySide((current) => {
+        const resolved =
+          typeof next === "function" ? next(current[variant]) : next
+        return { ...current, [variant]: resolved }
+      })
+    },
+    [variant],
+  )
 
   /** A change to the composer content, which belongs to the side. */
   const onContentChange = React.useCallback(
@@ -862,7 +905,7 @@ export function PromptBlock() {
   /** Every model's display name, including ones outside the free pool. */
   const [realNames, setRealNames] = React.useState<Record<string, string>>({})
   const [realSpecs, setRealSpecs] = React.useState<
-    Record<string, { limit: number | null; pricing: PromptTokenPricing }>
+    Record<string, { limit: number | null; pricing?: PromptTokenPricing }>
   >({})
   /** Per-model reasoning capabilities, exactly as the adapter normalised them. */
   const [realCapabilities, setRealCapabilities] = React.useState<
@@ -1252,9 +1295,9 @@ export function PromptBlock() {
   React.useEffect(() => {
     /* No key, no models. Nothing is fetched from a provider the app cannot
        reach, and the picker says what is missing. */
-    if (!keys || !hasKey(keys)) return
+    if (!keys || !hasKey(keys, provider)) return
     let current = true
-    fetchModels()
+    fetchModels(provider)
       .then((data) => {
         if (!current) return
         setModelsError(null)
@@ -1267,8 +1310,8 @@ export function PromptBlock() {
           name: string
           free: boolean
           contextLength: number | null
-          promptPrice: number
-          completionPrice: number
+          promptPrice: number | null
+          completionPrice: number | null
           cachedInputPrice: number | null
           capabilities?: ModelReasoningCapabilities
         }> = data.models ?? []
@@ -1303,13 +1346,19 @@ export function PromptBlock() {
                 // Left null when the provider does not publish a window, rather
                 // than inventing one — the dial hides instead of lying.
                 limit: m.contextLength ?? null,
-                pricing: {
-                  input: m.promptPrice ?? 0,
-                  /* Cached input is billed at its own rate, and pricing it at
-                     the full input rate over-reports what a request costs. */
-                  cachedInput: m.cachedInputPrice ?? 0,
-                  output: m.completionPrice ?? 0,
-                },
+                /* A provider that publishes no price gets no figure: a
+                   number nobody published is not a number. */
+                pricing:
+                  m.promptPrice === null
+                    ? undefined
+                    : {
+                        input: m.promptPrice,
+                        /* Cached input is billed at its own rate, and pricing
+                           it at the full input rate over-reports what a
+                           request costs. */
+                        cachedInput: m.cachedInputPrice ?? m.promptPrice,
+                        output: m.completionPrice ?? m.promptPrice,
+                      },
               },
             ])
           )
@@ -1329,7 +1378,7 @@ export function PromptBlock() {
     return () => {
       current = false
     }
-  }, [keys])
+  }, [keys, provider])
 
   /**
    * The side you are on always has a model.
@@ -1363,6 +1412,9 @@ export function PromptBlock() {
   React.useEffect(() => {
     writePref(sidePref(PREF.effort, variant), effort || undefined)
   }, [effort, variant])
+  React.useEffect(() => {
+    writePref(sidePref(PREF.provider, variant), provider || undefined)
+  }, [provider, variant])
 
   /**
    * The agent mode is remembered per project.
@@ -1534,6 +1586,30 @@ export function PromptBlock() {
       setStatus("streaming")
       setTurns((list) => [...list, { id, role: "assistant", text: "", streaming: true }])
 
+      /* The reasoning preference, written the provider's way.
+       *
+       * A level the model does not publish is refused, and the refusal says
+       * why. It is the shared rule, so the desktop app and the website's
+       * server answer the same question the same way. */
+      const reasoning =
+        effort && model
+          ? serializeReasoning(provider, realCapabilities[model] ?? unknownFor(model), {
+              effort: { mode: "explicit", value: effort },
+              thinkingMode: { mode: "provider_default" },
+            })
+          : null;
+      if (reasoning && reasoning.kind === "reject") {
+        setStatus("error")
+        setTurns((list) =>
+          list.map((turn) =>
+            turn.id === id
+              ? { ...turn, text: reasoning.message, streaming: false }
+              : turn,
+          ),
+        )
+        return
+      }
+
       await streamChat(
         {
           messages: outbound,
@@ -1545,10 +1621,18 @@ export function PromptBlock() {
             : {}),
           config: {
             ...(model ? { modelName: model } : {}),
+            /* The provider the model list was fetched for. The request and
+               the list are about the same provider by construction. */
+            ...(provider ? { providerId: provider } : {}),
             /* One dial: `none` is the "do not reason" position on it, not a
-               separate switch. The server validates the level against the
-               model's capability and refuses rather than downgrading. */
+               separate switch. The level is validated against the model's
+               capability and refused rather than downgraded — and the
+               provider's own fields travel with the request, because the
+               desktop app makes the provider request itself. */
             ...(effort ? { reasoningEffort: effort } : {}),
+            ...(reasoning && reasoning.kind === "payload"
+              ? { reasoning: reasoning.fields }
+              : {}),
           },
         },
         (event) => {
@@ -1920,11 +2004,14 @@ export function PromptBlock() {
       models={modelOptions}
       model={model}
       onModelChange={setModel}
+      provider={provider}
+      onProviderChange={setProvider}
+      providerKeys={keys ?? []}
       levels={efforts}
       effort={effort}
       onEffortChange={setEffort}
       recommended="medium"
-      noKey={keys !== null && !hasKey(keys)}
+      noKey={keys !== null && !hasKey(keys, provider)}
       error={modelsError}
       catalogue={catalogueFreshness}
     />

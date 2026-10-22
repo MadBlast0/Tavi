@@ -112,6 +112,16 @@ change it are reachable by any page the user visits.
 Measured against the running app, not inferred. "Browser" means the web
 target at `http://localhost:1420`; "app" means the Tauri desktop app.
 
+**A note on the paths.** This section, and the research in §3, were taken
+against the code as it stood when the audit was made, and they name the files
+that were there then. One of those files has since gone: `src/lib/transport.ts`
+— the one file that chose between the two servers — was split into three.
+`src/lib/api.ts` is the facade that picks, `src/lib/desktop.ts` is the Tauri
+adapter, and `src/lib/web.ts` is the HTTP adapter. A reference to
+`transport.ts` below is a reference to the code the audit found; that code now
+lives in those three files. The tables in §4, which say what the work touched,
+name the files as they are now.
+
 ### 1.1 Defects
 
 | # | Where | App | Browser | Note |
@@ -206,10 +216,10 @@ settings to add one"* — against the code. None of it exists today.
 
 | # | Gap | Evidence |
 |---|---|---|
-| **G-A** | **The model picker has no "no key" state.** With no key it says *"No models match “”."* — D7 | `prompt-controls.tsx:871-873`; `prompt-block.tsx:1164-1222` |
-| **G-B** | **Nothing can send the user to a specific settings section.** The settings dialog always opens on **General**; there is no deep link. The only routes to it are the `mod+,` hotkey and the account menu's "Settings" row | `settings-dialog.tsx:504` (`useState(DEFAULT_SETTINGS_SECTION)`), `:521` (reset on close); `shell.tsx:270`, `:324` |
-| **G-C** | **The model list is not scoped to the key's provider.** It is the whole catalogue from the server, filtered to the free pool when there is one — and the server's catalogue is one provider's | `prompt-block.tsx:1166-1182`; `server/main.ts:322`; `ACTIVE_PROVIDER_ID` in `src/lib/providers.ts` |
-| **G-D** | **The app's requests always go to one provider**, whatever keys exist. A second provider's key can be stored and checked, but nothing uses it | `src-tauri/src/keys.rs` `ACTIVE_PROVIDER`; `server/key-store.ts` `serverCredential` |
+| **G-A** | **The model picker has no "no key" state.** With no key it says *"No models match “”."* — D7 | **closed** — the picker says which provider has no key, and offers the way to put it right |
+| **G-B** | **Nothing can send the user to a specific settings section.** The settings dialog always opens on **General**; there is no deep link. The only routes to it are the `mod+,` hotkey and the account menu's "Settings" row | **closed** — the dialog opens on a section, and the picker's "no key" state opens it on **API keys** |
+| **G-C** | **The model list is not scoped to the key's provider.** It is the whole catalogue from the server, filtered to the free pool when there is one — and the server's catalogue is one provider's | **closed** — the list is the provider in use's own catalogue |
+| **G-D** | **The app's requests always go to one provider**, whatever keys exist. A second provider's key can be stored and checked, but nothing uses it | **closed** — the request names the provider, and it is sent there |
 
 **Why these matter together.** G-A is the symptom a user meets; G-B is why
 it cannot be fixed by a message alone; and C and D are why the model list
@@ -233,7 +243,9 @@ depends on:
    can talk to more than one provider (G-D), or the list would be scoped to
    a provider the request does not use.
 
-**Decision:** Do the three steps in the order given: let the settings dialog open on a section, give the model picker a “no key” state with a button that opens it on **API keys**, and scope the list to the key’s provider only once the app can talk to more than one provider — which it still cannot, so the third is deferred.
+**Decision:** Do the three steps in the order given: let the settings dialog open on a section, give the model picker a “no key” state with a button that opens it on **API keys**, and scope the list to the key’s provider only once the app can talk to more than one provider.
+
+**All three are done.** The app talks to thirty providers across four request shapes, and the provider in use is a per-side preference that the catalogue, the list, the key and the request all follow.
 
 ---
 
@@ -1165,6 +1177,13 @@ A one-time migration is not sync. The app importing the browser's
 conversations on first run (`src/lib/thread-repository.ts`) is a migration
 with a defined end point, and should stay labelled as one.
 
+**Where the rule is written down.** It is in `docs/storage.md`, in the
+preferences section, and in the comment at the head of `src/lib/prefs.ts`,
+which now says the two are two profiles rather than one area that behaves the
+same in both. The first of the two consequences above is in the same place:
+it is the reason a test that needs a clean `localStorage` cannot be trusted in
+development.
+
 #### 3.6.2 The industry rule for cross-device preferences
 
 Sync happens through an account, or not at all.
@@ -1870,8 +1889,8 @@ button that opens the settings on **API keys**.
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P7** ✅ | One `ProviderKey` shape with `providerLabel` / `name` / `account` — no `label` | `src/lib/secret.ts`, `src/lib/transport.ts`, `server/key-status.ts`, `keys.rs`, `provider.rs` | a shape test across all four |
-| **P8** ✅ | The account badge and the pane read the same shape; `KeyStatus` and `fetchKeyStatus` go | `sidebar-account.tsx`, `transport.ts` | the account badge and the pane agree about the same key |
+| **P7** ✅ | One `ProviderKey` shape with `providerLabel` / `name` / `account` — no `label` | `src/lib/secret.ts`, `src/lib/api.ts`, `server/key-status.ts`, `keys.rs`, `provider.rs` | a shape test across all four |
+| **P8** ✅ | The account badge and the pane read the same shape; `KeyStatus` and `fetchKeyStatus` go | `sidebar-account.tsx`, `src/lib/api.ts` | the account badge and the pane agree about the same key |
 | **P9** ✅ | "Ask a provider about a key" exists **once** in Rust and **once** in the server, each covering all four providers | `keys.rs`, `provider.rs`, `server/key-status.ts` | the old `key_status` command and `fetchKeyStatus` are gone |
 | **P10** ✅ | The provider table exists once, and a test asserts the Rust table and the TypeScript table agree | `src/lib/providers.ts`, `keys.rs` | a test, in the style of `commands.test.ts` |
 | **P11** ✅ | **The metadata sidecar.** The secret in the credential store, the metadata in `provider-keys.json` beside the app's other data — because the OS store cannot be enumerated and cannot hold portable metadata (§3.3.2) | `keys.rs`, `server/key-store.ts` | two keys for one provider are both listed, and both are found |
@@ -1912,7 +1931,7 @@ key never becomes the one in use.
 
 | Item | Change | Files | Verified by |
 |---|---|---|---|
-| **P15** ✅ | The Rust `model_catalogue` command returns the catalogue **and** when it was fetched; the TypeScript derives `stale` from the same TTL the server uses | `provider.rs`, `transport.ts` | the app says "cached catalog" when its list is old, as the website does |
+| **P15** ✅ | The Rust `model_catalogue` command returns the catalogue **and** when it was fetched; the TypeScript derives `stale` from the same TTL the server uses | `provider.rs`, `src/lib/api.ts` | the app says "cached catalog" when its list is old, as the website does |
 
 
 **What was done.** **P15** ✅: the Rust `model_catalogue` command answers with
@@ -1941,8 +1960,8 @@ element, which is a value the stylesheet cannot win against.
 | **P18** ✅ | An HTTP contract test: every `/api/…` the frontend fetches is one the server serves, with the method it uses | new `src/lib/api-contract.test.ts` | the test fails when a route is renamed |
 | **P19** ✅ | A build-difference registry: every file that branches on the build, with its reason; a test fails when a file branches and is not on the list | new `src/lib/build-differences.ts` + test | the test fails on a new `isDesktopApp()` in a render path |
 | **P20** ✅ | A shape test: the Rust command, the server route and the TypeScript type answer the same keys | new test | the test fails when a field is added to one side only |
-| **P21** ✅ | **One detector.** `src/lib/secret.ts` re-implements the runtime check instead of importing it; there is one marker, in one file | `src/lib/desktop.ts`, `src/lib/secret.ts` | the marker string appears once in `src/` |
-| **P22** ✅ | **One adapter per boundary**: only the Tauri adapter imports `@tauri-apps/*`, only the web adapter calls `fetch("/api/…")` | new `src/lib/web.ts`, `src/lib/api.ts` | a grep for `@tauri-apps/` finds one file |
+| **P21** ✅ | **One detector.** `src/lib/secret.ts` re-implements the runtime check instead of importing it; there is one marker, in one file | `src/lib/platform.ts`, `src/lib/secret.ts`, `src/lib/desktop.ts` | the marker string appears once in `src/` |
+| **P22** ✅ | **One adapter per boundary**: only the Tauri adapter imports `@tauri-apps/*`, only the web adapter calls `fetch("/api/…")` | `src/lib/desktop.ts`, new `src/lib/web.ts`, new `src/lib/api.ts` | a grep for `@tauri-apps/` finds one file |
 | **P23** ✅ | An **ARIA-snapshot parity test** — the same screen, compared by accessible tree rather than by pixels (§3.8) | new, needs a DOM runner | the same spec passes against both builds; sequenced last, because it needs a runner the repo does not have |
 
 
@@ -2004,7 +2023,7 @@ formatted throughout the turn rather than jumping into shape at the end.
 |---|---|---|---|
 | **P27** ✅ | **Read `limit_remaining` and `limit_reset`**, not `remaining`; the numerator becomes the usage **in the cap's window**; the line names the window, shows the remainder, names the overage, and says "No spending limit" when there is no limit (§3.10.1) | `server/key-status.ts`, `keys.rs`, `settings-keys.tsx` | a key with a monthly limit reads "$4.20 of $10.00 used this month" and "$5.80 left" |
 | **P28** ✅ | The unit is a field, not an assumption: `limitCurrency` | the same three files | a limit without a currency is rendered with the provider's own unit |
-| **P29** ✅ | **Replace `stale: boolean` with `{ fetchedAt, degraded }`**, and report it from the desktop too — Rust already serves a stale copy silently (§3.10.2) | `server/models.ts`, `provider.rs`, `src/lib/transport.ts` | the app shows "Catalog updated 4 minutes ago", and says so when the catalogue is degraded |
+| **P29** ✅ | **Replace `stale: boolean` with `{ fetchedAt, degraded }`**, and report it from the desktop too — Rust already serves a stale copy silently (§3.10.2) | `server/models.ts`, `provider.rs`, `src/lib/api.ts` | the app shows "Catalog updated 4 minutes ago", and says so when the catalogue is degraded |
 | **P30** ✅ | **Stale-while-revalidate** in the server, so the picker is not blocked on the upstream fetch | `server/models.ts` | the picker opens on the cached copy immediately |
 
 
@@ -2092,7 +2111,7 @@ the group is a `list` and the rows are `listitem`s inside it.
 |---|---|---|---|
 | **P48** ✅ | **The settings dialog can open on a section.** One optional parameter, and every "go and add a key" affordance becomes possible | `settings-dialog.tsx`, `shell.tsx` | the dialog opens on API keys when asked to |
 | **P49** ✅ | **The model picker's "no key" state** with a button that opens the settings on API keys (G-A) | `prompt-controls.tsx` | with no key, the picker says why and offers the way out |
-| **P50** ✅ | The list is scoped to the key's provider — **only once the app can talk to more than one provider** (G-C, G-D) | `prompt-block.tsx` | deferred; see §1.8 |
+| **P50** ✅ | The list is scoped to the key's provider — **only once the app can talk to more than one provider** (G-C, G-D) | `prompt-block.tsx` | the list, the key and the request are about the same provider |
 
 ---
 
@@ -2101,9 +2120,13 @@ the group is a `list` and the rows are `listitem`s inside it.
 
 **What was done.** **P48** ✅: the settings dialog opens on a section, and
 the model picker's button opens it on **API keys**. **P49** ✅: the picker says
-why there is no model and offers the way out. **P50** ⏸️: deferred, exactly as
-§1.8 says — the app still talks to one provider, so scoping the list to a
-key's provider would scope it to a provider the request does not use.
+why there is no model and offers the way out. **P50** ✅: the app talks to more than one provider now — thirty of them,
+across four request shapes — and the model list is scoped to the provider in
+use. The provider is a per-side preference, like the model and the effort, and
+everything follows it: the catalogue that is fetched, the list that is shown,
+the key the request goes out with, and the provider the request is sent to. The
+list and the request are about the same provider by construction, rather than
+by agreeing to.
 
 ### G1 — the HTTP contract test
 
@@ -2225,6 +2248,15 @@ src/lib/web.ts               (new)  — the HTTP adapter (the only file calling 
 src/lib/api.ts               (new)  — the facade: one function per operation, picks the adapter
 src/lib/parity.test.ts       (new)  — the guardrail, in the style of commands.test.ts
 ```
+
+**What was built, against that proposal.** Five of the seven are there:
+`platform.ts`, `build-differences.ts`, `desktop.ts`, `web.ts` and `api.ts`. Two
+were not, and neither was needed as written. `abilities.ts` was not a separate
+file: the registry of what this build can do and why is the same list as the
+registry of the render sites allowed to consult it, so one file —
+`build-differences.ts` — holds both, and the test checks it. And the parity
+test is `src/lib/key-parity.test.ts` rather than `parity.test.ts`, because it
+compares one screen and not the app as a whole.
 
 > **A naming trap worth avoiding.** Tauri already uses the word
 > *capabilities* for something else entirely — `src-tauri/capabilities/*.json`
@@ -2560,9 +2592,9 @@ visits replace the server's key.
   components, not dead code. Do not mount it either — §6.2 lists the six things
   that break.
 - **Do not rename or move files** unless a task requires it. The paths in this
-  document have already drifted once (`server/chat.ts` → `server/main.ts`,
-  `src/lib/chat.ts` → `src/lib/transport.ts`); grep for symbols, not line
-  numbers.
+  document have drifted twice (`server/chat.ts` → `server/main.ts`,
+  `src/lib/chat.ts` → `src/lib/transport.ts` → `src/lib/api.ts`); grep for
+  symbols, not line numbers.
 - **Do not change which provider the app talks to.** OpenRouter today. Preparing
   the others is the point; switching the app over is not this work.
 - **One shape for a key, one implementation per language.** That is what D3 and
@@ -2594,8 +2626,8 @@ say so**.
 
 ```
 pnpm typecheck                 # clean
-pnpm test                      # 110 tests, plus yours
-cd src-tauri && cargo test     # 79 tests, plus yours
+pnpm test                      # 134 tests, plus yours
+cd src-tauri && cargo test     # 98 tests, plus yours
 cd src-tauri && cargo check    # clean
 pnpm build                     # succeeds
 ```
@@ -2786,6 +2818,52 @@ looked for the rows' buttons in the rendered markup and found nothing, because
 base-ui mounts a menu's content only while it is open. The rule it now
 checks is the one that can be checked in markup: the control that opens the
 menu says which key it acts on.
+
+**The document drifted under itself.** The work that made the guardrails real
+split `src/lib/transport.ts` into `src/lib/api.ts`, `src/lib/desktop.ts` and
+`src/lib/web.ts`, so the file this document names in eight places in §1–§3 and
+§6 has since gone. The audit's findings are left as they were found — they are
+evidence, and rewriting them would be rewriting the audit — and §1 now says
+where that code lives now. §4's tables, which say what the work touched, name
+the files as they are.
+
+**The app talks to more than one provider now.** The last item, **P50**, was
+deferred on G-D: the app could only talk to one provider, so scoping the model
+list to a key's provider would have scoped it to a provider the request did not
+use. The app now talks to **thirty** providers across **four** request shapes,
+and the provider in use is a per-side preference that the catalogue, the list,
+the key and the request all follow — so the list and the request are about the
+same provider by construction rather than by agreeing to.
+
+**A provider is a shape and some configuration.** Most of the thirty speak the
+OpenAI chat-completions shape and differ only in the address they live at and
+how the key is sent, and those are fields rather than code. Anthropic's
+Messages, Google's generate-content and Cohere's chat are three more shapes,
+and there are three clients. Two of the thirty — **Amazon Bedrock** and
+**Google Vertex AI** — are signed with AWS credentials and with Google's own
+rather than with a key, and the app says so plainly rather than taking a
+credential it cannot use.
+
+**A key may carry the address it belongs to.** Some providers do not live at one
+address: an Azure resource, a Databricks workspace, a model running on this
+machine. The key says which, and the key's address wins over the provider's
+default.
+
+**The reasoning preference is written in one place and in one language.** The
+provider's own field for a reasoning level is not the same for every provider —
+`reasoning: { effort }` for OpenRouter, `reasoning_effort` for OpenAI, and
+`output_config: { effort }` for Anthropic — and the app used to check the
+level against the catalogue in Rust, in one provider's shape. The rule that
+turns a preference into a provider's own field now lives in
+`src/lib/provider-reasoning.ts`, and both the website's server and the desktop
+app use it, so they refuse the same things for the same model. The desktop
+app sends the fields it has already checked, because it has no server to check
+them against.
+
+**The capability reading moved to the webview too.** It is in
+`src/lib/provider-capabilities.ts`, beside the rule that uses it, and the
+website's server and the desktop app read the same description of the same
+model.
 
 ### 8.6 Reporting back
 

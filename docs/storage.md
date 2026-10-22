@@ -26,18 +26,19 @@ what removes it.
 |---|---|---|---|---|
 | Chats and code sessions | The app's own file on the desktop; `localStorage` on the web | The user's own conversations. Never sent anywhere but the provider they chose | Until the user deletes it. The newest 50 of each kind are kept | Deleting a thread, or **Settings ? Privacy ? Delete everything** |
 | The provider key | The OS credential store on the desktop; the server's own file on the website | A credential. Never logged, never sent back to a browser | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
+| The provider a request goes to | A per-side preference, in the browser's storage | Low. A choice about where a request goes | Until the user clears site data | Clearing site data |
 | The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
 | Preferences: model, effort, agent mode, the rail's open state | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
-| The model catalogue | A cache in the app's data directory, and OpenRouter's public API | None. A list of models | 15 minutes, then fetched again | Overwritten |
+| The model catalogue | A cache in the app's data directory on the desktop; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
 | The window's size and position | The app's own file, written by Rust | None | Until the app is reinstalled | Overwritten |
 | Cloned repositories | The projects folder, on disk | The user's own code | Until the user deletes them | The user, or the file manager |
 | Attachments and mentions | Inlined into the conversation, and stored with the turn | The user's own words and files | With the thread | Deleting the thread |
 
 **What leaves the machine.** The message that was sent, the attachments that
-came with it, and the files that were mentioned by name � and nothing else.
+came with it, and the files that were mentioned by name — and nothing else.
 They go to the provider the user chose a model from. A chat is never given a
 folder, and a request that tried to carry one is refused.
 
@@ -102,6 +103,26 @@ already open keeps the mode it was run with.
 Why `localStorage` and not IndexedDB: the composer needs the model during its
 first render, before any effect can await. IndexedDB would mean a blank or
 wrong model on every cold start.
+
+#### Two profiles, one code path
+
+**The app and the website are two profiles, with two preference sets, that
+share one code path.** The API is the same in both — that is what lets one
+implementation serve both — but the *area* is not: `localStorage` is
+partitioned by origin, and in production the app and the website are different
+origins. A preference set in one is not read by the other, and nothing crosses
+between them except a one-time migration.
+
+That migration has a defined end point and is not a sync: the app bringing the
+website's conversations across on first run is a migration, and it should stay
+labelled as one. There is no account, so there is nothing to sync against.
+
+**In development the two share one area.** `pnpm tauri dev` runs the webview
+and a browser tab on the same origin, `http://localhost:1420`, so a preference
+set in one is visible in the other — and **a bug that depends on a fresh
+`localStorage` will not reproduce in development.** In production the app is
+`tauri://localhost` (macOS and Linux) or `http://tauri.localhost` (Windows),
+and the website is its own origin, so they are separate.
 
 #### The namespace, and the move out of the old one
 
@@ -230,6 +251,32 @@ A revoked or missing grant resolves to `null`, which clears the file list rather
 than leaving stale paths on screen.
 
 ---
+
+### The provider in use
+
+`tavi.provider.chat` and `tavi.provider.code` — a preference, per side, like
+the model and the effort.
+
+It is the provider the request goes to, and it is what the model list is
+scoped to: the catalogue that is fetched, the list that is shown, the key the
+request goes out with, and the provider the request is sent to all follow it.
+That is what makes the list and the request about the same provider by
+construction, rather than by agreeing to.
+
+A provider is a **shape** and some **configuration**. Most of the thirty
+providers the app knows about speak the OpenAI chat-completions shape and
+differ only in the address they live at and how the key is sent. Anthropic's
+Messages, Google's generate-content and Cohere's chat are three more shapes.
+Two of them — Amazon Bedrock and Google Vertex AI — are signed with AWS
+credentials and with Google's own rather than with a key, and the app says so
+plainly.
+
+**A key may carry the address it belongs to.** Some providers do not live at
+one address: an Azure resource, a Databricks workspace, a model running on
+this machine. The key says which, and the key's address wins over the
+provider's default. The address is part of the key's metadata, and it is
+written next to the key rather than beside it — the address is not a secret,
+but it is not the provider's either.
 
 ### Secrets - OS credential store
 
@@ -425,15 +472,18 @@ directly — treat them as implementation detail. The practical consequences:
 
 ### What to change for a shipping desktop app
 
-1. ~~**Move threads and preferences to an app-data file**, written from Rust, so
+1. ~~**Move threads to an app-data file**, written from Rust, so
    uninstall/reinstall is a deliberate choice rather than a side effect and
    "clear browser data" cannot silently wipe a user's work. One file with two
    collections, rather than two files, so the app-data directory does not
    become a place where half the state is and half is not.~~
    **Done.** The conversations are in `threads.json` in the app-data directory,
-   written by Rust, with the previous file kept beside it. The preferences are
-   still in `localStorage` — they are small, and the composer needs the model
-   during its first render, where a promise is useless.
+   written by Rust, with the previous file kept beside it.
+   **The preferences were not part of this and have not moved:** they are still
+   in `localStorage`. That is a decision rather than an oversight — they are
+   small, and the composer needs the model during its first render, where a
+   promise is useless. The cost is that they live in the webview's profile,
+   which "clear site data" can take like anything else the profile holds.
 2. ~~**Add an export/import** for threads. Until the desktop app owns its
    storage, a user has no way to back up or move their conversations. It has to
    cover both stores, or the export is only half of somebody's work.~~
@@ -443,13 +493,25 @@ directly — treat them as implementation detail. The practical consequences:
    file needs an explicit size policy instead of relying on a browser quota.~~
    **Done.** The cap is 50 each, on both targets, and the list is newest first
    so the conversation in use is never the one the cap drops.
-4. **Decide the upgrade story** for a schema change to the stored shape. The
-   keys are versioned (`tavi.chats.v1`, `tavi.code-sessions.v1`), and the
-   one-time changes that have already happened — the retired thread store, the
-   model and the effort splitting per side — live in `src/lib/migrations.ts`.
-   There is no general migration path yet, and the app-data file has a version
-   of its own: a file this build does not understand is refused rather than
-   replaced, which is safe but not a migration.
+4. **Decide the upgrade story** for a schema change to the stored shape. **Not
+   done.** The browser's keys are versioned (`tavi.chats.v1`,
+   `tavi.code-sessions.v1`), and the one-time changes that have already
+   happened — the retired thread store, the model and the effort splitting per
+   side — live in `src/lib/migrations.ts`.
+
+   There is no general migration path, and there are now **three** versioned
+   files, each of which refuses a version it does not understand rather than
+   moving it:
+
+   | File | Where | Version |
+   |---|---|---|
+   | `threads.json` | the app's data directory | `FILE_VERSION` in `src-tauri/src/threads.rs` |
+   | `provider-keys.json` | beside it | `INDEX_VERSION` in `src-tauri/src/keys.rs` |
+   | the server's key file | the server's own folder | `STORE_VERSION` in `server/key-store.ts` |
+
+   A refusal is safe and it is not a migration: the data is still there, and
+   the app cannot read it. Moving it needs a migration per file, and the
+   decision about what a version 2 looks like has not been taken.
 
 None of this is needed for the web target, and none of it should block it.
 

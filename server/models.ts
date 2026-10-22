@@ -9,11 +9,18 @@
 
 import {
   adapterFor,
-  openRouterAdapter,
   type ProviderConnection,
   type ProviderModel,
 } from "./providers.ts";
-import { projectModel, type SlimModel } from "../src/lib/catalogue.ts";
+import {
+  projectModel,
+  projectPlainModel,
+  type SlimModel,
+} from "../src/lib/catalogue.ts";
+import {
+  DEFAULT_PROVIDER_ID,
+  providerFor,
+} from "../src/lib/providers.ts";
 import type { ModelReasoningCapabilities } from "../src/lib/reasoning.ts";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -54,13 +61,22 @@ const deriveProvider = (name: string, id: string) => {
 };
 
 const project = (
+  providerId: string,
   provider: ProviderModel,
   capabilities: ModelReasoningCapabilities,
-): SlimModel =>
-  projectModel(
-    { id: provider.id, displayName: provider.displayName, raw: provider.raw },
-    capabilities,
-  );
+): SlimModel => {
+  const model = {
+    id: provider.id,
+    displayName: provider.displayName,
+    raw: provider.raw,
+  };
+  /* OpenRouter publishes prices, a context window and the modalities; the
+     other providers publish a list and little else, and the projection says
+     so rather than filling the gaps in. */
+  return providerId === "openrouter"
+    ? projectModel(model, capabilities)
+    : projectPlainModel(model, capabilities, providerId);
+};
 
 const fetchFor = async (connection: ProviderConnection): Promise<SlimModel[]> => {
   const adapter = adapterFor(connection.providerId);
@@ -70,7 +86,11 @@ const fetchFor = async (connection: ProviderConnection): Promise<SlimModel[]> =>
   const listed = await adapter.listModels(connection);
   return Promise.all(
     listed.map(async (model) =>
-      project(model, await adapter.getModelCapabilities(connection, model)),
+      project(
+        connection.providerId,
+        model,
+        await adapter.getModelCapabilities(connection, model),
+      ),
     ),
   );
 };
@@ -143,14 +163,31 @@ export const getCatalog = async (
   };
 };
 
-/** The OpenRouter connection, configured from the environment. */
-export const defaultConnection = (): ProviderConnection => ({
-  id: "openrouter",
-  providerId: openRouterAdapter.id,
-  apiProtocol: "openai-chat-completions",
-  baseUrl: "https://openrouter.ai/api/v1",
-  credentialRef: "OPENROUTER_API_KEY",
-});
+/**
+ * The connection for a provider, configured from the shared table.
+ *
+ * One table, in `src/lib/providers.ts`, says what every provider is: where its
+ * API lives, which shape its requests take, and which environment variable
+ * the server reads its key from. The desktop app reads the same table, so the
+ * two cannot drift about where a provider is.
+ */
+export const connectionFor = (providerId: string): ProviderConnection => {
+  const provider = providerFor(providerId);
+  if (!provider) {
+    throw new Error(`"${providerId}" is not a provider this app knows about.`);
+  }
+  return {
+    id: provider.id,
+    providerId: provider.id,
+    apiProtocol: provider.wire,
+    baseUrl: provider.baseUrl,
+    credentialRef: provider.envVar,
+  };
+};
+
+/** The connection used when the client has not said which provider it means. */
+export const defaultConnection = (): ProviderConnection =>
+  connectionFor(DEFAULT_PROVIDER_ID);
 
 /**
  * Capabilities for one model on one connection.

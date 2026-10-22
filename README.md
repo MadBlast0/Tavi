@@ -94,6 +94,22 @@ nobody else has.
 
 ## Provider keys
 
+Tavi talks to **thirty** providers. The list is in
+[`src/lib/providers.ts`](src/lib/providers.ts), one row each: where the API
+lives, how the key is sent, and the shape of a request. Most of them speak
+the OpenAI chat-completions shape and differ only in their address; Anthropic,
+Google and Cohere each have a shape of their own.
+
+| | Which |
+|---|---|
+| OpenAI · Anthropic · Google Gemini · OpenRouter · DeepSeek · xAI · Mistral · Groq · Together AI · Fireworks AI · Cerebras · NVIDIA NIM | the OpenAI chat-completions shape |
+| Hugging Face · DeepInfra · Azure OpenAI · Moonshot AI (Kimi) · Z.ai (GLM) · Alibaba Model Studio · Perplexity · Replicate · SambaNova · Cloudflare AI Gateway · IBM watsonx · Databricks | the OpenAI chat-completions shape, at an address of their own |
+| Anthropic · MiniMax | Anthropic's Messages shape |
+| Google Gemini | Google's generate-content shape |
+| Cohere | Cohere's chat shape |
+| Amazon Bedrock · Google Vertex AI | **not yet** — see Known limitations |
+
+
 A key is a credential with an identity. It belongs to a provider, it has a name
 the user gave it, and there can be more than one for the same provider — a
 personal key and a work key for OpenRouter, which is the case every provider's
@@ -633,6 +649,16 @@ so tool support is intermittent.
 
 ## Known limitations
 
+- **Two of the thirty providers are not reachable yet.** Amazon Bedrock and
+  Google Vertex AI are signed with AWS credentials and with Google's own rather
+  than with a key, and the app has no client for either. Their keys can be
+  added and the pane says plainly that the app cannot use them yet, rather
+  than taking a credential it has no way to spend.
+- **A provider's own catalogue is the only source of what a model can do.** A
+  provider that publishes no capability metadata — which is most of them —
+  leaves the effort control off for its models, because the app will not
+  offer a setting it cannot verify. The picker's control is the provider
+  default, and that is the honest position.
 - **A key is one of several for its provider.** A key is filed under its own
   id, named by the user, and exactly one of a provider's keys is the one
   requests go out with — an explicit pointer, never an inference from which
@@ -795,9 +821,12 @@ so tool support is intermittent.
   get read access to a real folder, so on other engines the footer says so
   instead of offering a list the app cannot honour. Recents are re-granted via
   IndexedDB; a revoked grant clears the file list rather than leaving stale paths.
-- **Sessions are per-browser `localStorage`.** No account, no sync. Attachment
-  text is captured at send time so a restored thread keeps its context; the
-  original `File` object cannot survive a reload.
+- **Sessions are per-profile, with no account and no sync.** On the website they
+  are in the browser's `localStorage`; on the desktop they are in the app's own
+  file, written by Rust. Either way they belong to one profile: the app and the
+  website are two origins in production, so a conversation set in one is not read
+  by the other. Attachment text is captured at send time so a restored thread
+  keeps its context; the original `File` object cannot survive a reload.
 - **Streaming text is revealed by `requestAnimationFrame`.** In a background tab
   the reveal pauses and catches up when the tab is focused again. The answer is
   rendered as Markdown throughout — including the half-finished sentence — so

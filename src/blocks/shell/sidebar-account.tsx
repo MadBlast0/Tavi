@@ -27,7 +27,7 @@ import {
 import { SidebarFooter } from "@/components/sidebar"
 import { formatHotkey, useIsApple } from "@/lib/hotkey"
 import { listProviderKeys, openExternal, type ProviderKey } from "@/lib/api"
-import { ACTIVE_PROVIDER_ID, providerFor } from "@/lib/providers"
+import { DEFAULT_PROVIDER_ID, providerFor } from "@/lib/providers"
 import { SETTINGS_HOTKEY } from "./settings-dialog"
 
 /**
@@ -133,7 +133,7 @@ export function SidebarAccount({
            settings pane marks "In use". */
         setKey(
           keys.find(
-            (entry) => entry.active && entry.provider === ACTIVE_PROVIDER_ID,
+            (entry) => entry.active && entry.provider === DEFAULT_PROVIDER_ID,
           ) ?? null,
         )
       })
@@ -252,7 +252,7 @@ export function SidebarAccount({
               className={ITEM}
               title="Opens the provider's key page in your browser"
               onClick={() => {
-                const provider = providerFor(ACTIVE_PROVIDER_ID)
+                const provider = providerFor(DEFAULT_PROVIDER_ID)
                 if (provider) {
                   void openExternal(provider.keysUrl)
                 }

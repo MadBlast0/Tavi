@@ -49,7 +49,7 @@ assistant-ui scaffolding next to it — `src/assistant.tsx`,
 posts to the server with `fetch` and reads the reply itself: a stream of
 `data:` lines carrying `text-delta`, `message-metadata`, `finish` and `error`
 events. It does not use the AI SDK's message-stream protocol, and it sends no
-tools. `src/lib/transport.ts` chooses between the two servers — the Node one for the
+tools. `src/lib/api.ts` chooses between the two servers — the Node one for the
 website, the Rust one for the desktop — and the composer does not know which.
 
 **The folder is a grant, and which kind depends on the target.** On the
