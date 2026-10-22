@@ -239,6 +239,7 @@ import {
 
 import { StreamingText } from "./streaming-text"
 import { useComposerVariant } from "./composer-variant"
+import { GitPanel } from "./git-panel"
 import { useThreadBridge } from "./thread-bridge"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
 import {
@@ -2355,6 +2356,10 @@ export function PromptBlock() {
                         Folder access needs a Chromium-based browser
                       </span>
                     )}
+                    {/* The branch is the fourth fact about a conversation
+                        about a repository, and it belongs in this row beside
+                        the folder it is in. */}
+                    <GitPanel id={folder?.id} />
                   </PromptInputFooter>
                 </PromptInputInset>
               </VariantRegion>

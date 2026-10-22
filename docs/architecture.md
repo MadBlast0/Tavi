@@ -305,7 +305,41 @@ announced would be a second place for a conversation to be.
 
 ---
 
-## 9. What is deliberately not being built
+## 9. Git
+
+A repository is a folder the reader has given the app, and git is the thing
+that knows what is in it.
+
+**The app runs git itself**, with an argument array and no shell, so a branch
+name or a commit message reaches git as data and never as a command line. The
+model cannot run git: it cannot choose an argument, and it cannot name a path
+the app has not been given.
+
+**The app never stores credentials.** The prompt is turned off, so git never
+waits for a password on a terminal the app does not have — it fails instead,
+and the failure is reported. A push works with whatever the machine already
+has.
+
+**The app does not write the reader's git configuration.** An identity, if
+there is one, is passed to git with `-c` for that one commit.
+
+**The front end names the grant, not the path.** The grant is the permission
+and the path is what the permission resolves to, and the app's own half has no
+business carrying a path around.
+
+**The status is read from git's machine-readable form**, one call, and the
+lines are read by field count because a path may contain spaces and the
+fields before it never do.
+
+**Git is a desktop thing.** A browser cannot run a program on the machine, so
+every call in the website refuses and says why.
+
+The whole of it, and where it came from, is in
+[`plan/git.md`](plan/git.md).
+
+---
+
+## 10. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.

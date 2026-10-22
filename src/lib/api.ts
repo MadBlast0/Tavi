@@ -400,6 +400,125 @@ export const systemHasFocus = (): Promise<boolean> =>
   isDesktopApp() ? desktop.windowHasFocus() : web.windowHasFocus()
 
 /* -------------------------------------------------------------------------- */
+/* Git                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** One file's state, as git reports it. */
+export type ChangedFile = {
+  /** The path, relative to the repository's root, with forward slashes. */
+  path: string
+  /** What happened to it, in git's own words: `M`, `A`, `D`, `R`, `?`. */
+  status: string
+  /** Whether it is staged, and so would be part of a commit as it stands. */
+  staged: boolean
+}
+
+/** What a repository looks like right now. */
+export type GitStatus = {
+  /** The repository's folder. */
+  path: string
+  /** Whether the folder is a repository at all. */
+  repository: boolean
+  /**
+   * The branch that is checked out, or an empty string when there is none —
+   * which is what a repository with no commits has, and what a detached HEAD
+   * has.
+   */
+  branch: string
+  /** Whether the working tree has nothing changed in it. */
+  clean: boolean
+  /** The files that are changed, staged or not. */
+  changed: ChangedFile[]
+  /** How many commits the branch is ahead of the one it tracks. */
+  ahead: number
+  /** How many commits the branch is behind the one it tracks. */
+  behind: number
+  /** The branch this one tracks, when it tracks one. */
+  upstream?: string
+  /** Whether the repository has a remote to push to. */
+  hasRemote: boolean
+}
+
+/** A branch in the repository. */
+export type GitBranch = {
+  name: string
+  /** Whether it is the one that is checked out. */
+  current: boolean
+  /** Whether it tracks a remote branch. */
+  upstream?: string
+}
+
+/** The branches the repository has. */
+export type GitBranches = {
+  path: string
+  branches: GitBranch[]
+}
+
+/** Who a commit is by, when the reader has said. */
+export type GitIdentity = {
+  name: string
+  email: string
+}
+
+/** What a git call did. */
+export type GitOutcome = {
+  ok: boolean
+  /** What git said, in its own words, when it had something to say. */
+  message?: string
+  /** What went wrong, when it did not work. */
+  error?: string
+}
+
+/**
+ * What a repository looks like right now.
+ *
+ * A folder that is not a repository is not an error: the status says so, and
+ * the caller says it in turn.
+ */
+export const gitStatus = (id: string): Promise<GitStatus> =>
+  isDesktopApp() ? desktop.gitStatus(id) : web.gitStatus(id)
+
+/** The branches the repository has, and which one is checked out. */
+export const gitBranches = (id: string): Promise<GitBranches> =>
+  isDesktopApp() ? desktop.gitBranches(id) : web.gitBranches(id)
+
+/** Commits everything that is changed, staged or not. */
+export const gitCommit = (
+  id: string,
+  message: string,
+  identity?: GitIdentity,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitCommit(id, message, identity)
+    : web.gitCommit(id, message, identity)
+
+/** Fetches from the remote and merges what it fetched. */
+export const gitPull = (id: string): Promise<GitOutcome> =>
+  isDesktopApp() ? desktop.gitPull(id) : web.gitPull(id)
+
+/** Sends the branch to the remote it tracks. */
+export const gitPush = (id: string): Promise<GitOutcome> =>
+  isDesktopApp() ? desktop.gitPush(id) : web.gitPush(id)
+
+/** Checks out a branch that is already there. */
+export const gitSwitchBranch = (
+  id: string,
+  branch: string,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitSwitchBranch(id, branch)
+    : web.gitSwitchBranch(id, branch)
+
+/** Makes a branch and checks it out. */
+export const gitCreateBranch = (
+  id: string,
+  branch: string,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitCreateBranch(id, branch)
+    : web.gitCreateBranch(id, branch)
+
+/* -------------------------------------------------------------------------- */
 /* The projects                                                                */
 /* -------------------------------------------------------------------------- */
 
