@@ -55,12 +55,12 @@ Status blocks says what stands, what was wrong, and what it becomes.
 **Phase 2 — The workspace region, and the way into it**
 
 | 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the region the layout lives in, which shows the landing screen when it is empty and the layout when it is not |
-| 2.2 | ▶ next | The way in: a session opens the workspace, and the rail keeps its two lists |
+| 2.2 | 🟡 partly | The way in: a session opens the workspace, and the rail keeps its two lists |
 | 2.3 | 🟡 partly | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
 
 **Phase 3 — Reusable controls and overlay behaviour**
 
-| 3.1 | ⬜ not started | One icon-button pattern, used by every pane |
+| 3.1 | ▶ next | One icon-button pattern, used by every pane |
 | 3.2 | ⬜ not started | The menu and context-menu conventions |
 | 3.3 | ⬜ not started | The popover, select and command patterns |
 | 3.4 | ⬜ not started | One dialog and confirmation convention |

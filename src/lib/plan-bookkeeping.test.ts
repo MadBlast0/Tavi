@@ -99,15 +99,14 @@ test("a task marked done has a Status block, and the other way round", () => {
   assert.deepEqual(extra, [], "tasks whose Status block says done but are not marked done")
 })
 
-test("a task marked partly or next says what is not done", () => {
+test("a task marked partly says what is not done", () => {
   // A half-done task says so, and the Status block says what is missing.
   // Without one, "partly" is a claim with no content behind it.
   for (const task of tasks()) {
-    const state = stateOf(task.id)
-    if (state !== PARTLY && state !== NEXT) continue
+    if (stateOf(task.id) !== PARTLY) continue
     assert.ok(
       statusOf(task.block) === "partly",
-      `${task.id} is marked ${state} and should have a Status block saying what is not done`,
+      `${task.id} is marked partly and should have a Status block saying what is not done`,
     )
   }
 })

@@ -300,6 +300,24 @@ export type WorkspaceStore = {
    */
   setPaneState: (id: PaneInstanceId, patch: PaneLocalState) => void
   /**
+   * Changes the arrangement.
+   *
+   * The change is given the arrangement and returns the one to put in its
+   * place, so the caller does not have to know how the tree is walked. The
+   * result is validated before it is put in place, and a change that would
+   * break the arrangement is refused.
+   */
+  updateLayout: (
+    change: (layout: LayoutNode | null) => LayoutNode | null,
+  ) => boolean
+  /**
+   * Shows another of a group's tabs.
+   *
+   * The pane must be in a group; a pane on its own has no tabs to choose
+   * between, and a change that asked for one anyway is refused.
+   */
+  setActiveTab: (paneId: PaneInstanceId) => void
+  /**
    * Opens an overlay.
    *
    * There is room for one. Opening one closes whatever was open, which is
@@ -612,6 +630,54 @@ export const showTab = (
   return { ...layout, children: [nextFirst, nextSecond] }
 }
 
+/**
+ * Applies a change to every node of the tree.
+ *
+ * The divider needs to change one split's ratio without touching the
+ * splits nested inside it, and the only way to find that split in a tree
+ * is by its identity — the tree's nodes are plain objects, and the same
+ * object is the same node until something replaces it.
+ *
+ * The change is given every node, and returns the node it wants instead.
+ * A node it does not want changed is returned as it was, so the tree that
+ * comes back is the same tree with one thing different.
+ */
+export const mapLayout = (
+  layout: LayoutNode | null,
+  change: (node: LayoutNode) => LayoutNode,
+): LayoutNode | null => {
+  if (layout === null) return null
+  const changed = change(layout)
+  if (changed.kind !== "split") return changed
+  const [first, second] = changed.children
+  return {
+    ...changed,
+    children: [
+      mapLayout(first, change) ?? first,
+      mapLayout(second, change) ?? second,
+    ],
+  }
+}
+
+/**
+ * The group a pane is in, or null when it is in none.
+ *
+ * A pane on its own is in no group; it is a leaf.
+ */
+export const groupOf = (
+  layout: LayoutNode | null,
+  paneId: PaneInstanceId,
+): Extract<LayoutNode, { kind: "group" }> | null => {
+  if (layout === null) return null
+  if (layout.kind === "group") {
+    return layout.tabs.includes(paneId) ? layout : null
+  }
+  if (layout.kind === "pane") return null
+  return (
+    groupOf(layout.children[0], paneId) ?? groupOf(layout.children[1], paneId)
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* The store                                                            */
 /* ------------------------------------------------------------------ */
@@ -746,6 +812,30 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       publish()
     },
 
+    updateLayout: (change) => {
+      const next = change(layout)
+      if (validateLayout(next, panes.map((pane) => pane.id)).length > 0) {
+        return false
+      }
+      layout = next
+      publish()
+      return true
+    },
+
+    setActiveTab: (paneId) => {
+      if (!has(paneId)) return
+      const group = groupOf(layout, paneId)
+      if (!group) return
+      if (group.activeTabId === paneId) return
+      const next = mapLayout(layout, (node) =>
+        node.kind === "group" && node.groupId === group.groupId
+          ? { ...node, activeTabId: paneId }
+          : node,
+      )
+      layout = next
+      publish()
+    },
+
     openOverlay: (action, paneId) => {
       if (overlay && overlay.action === action && overlay.paneId === paneId) {
         return
@@ -848,6 +938,15 @@ export const dockPane = (
 /** Changes one pane's own state. */
 export const setPaneState = (id: PaneInstanceId, patch: PaneLocalState): void =>
   workspaceStore.setPaneState(id, patch)
+
+/** Changes the arrangement. */
+export const updateLayout = (
+  change: (layout: LayoutNode | null) => LayoutNode | null,
+): boolean => workspaceStore.updateLayout(change)
+
+/** Shows another of a group's tabs. */
+export const setActiveTab = (paneId: PaneInstanceId): void =>
+  workspaceStore.setActiveTab(paneId)
 
 /** Opens an overlay, and closes whatever was open. */
 export const openOverlay = (action: string, paneId?: PaneInstanceId): void =>
