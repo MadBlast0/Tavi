@@ -141,6 +141,7 @@ const ORDERS: { value: Order; label: string }[] = [
  * been removed.
  */
 function needsAttention(state: CliProviderState): boolean {
+  if (state.problem) return true
   if (state.installed && state.versionError) return true
   if (state.enabled && !state.installed) return true
   return false
@@ -166,6 +167,9 @@ function standingOf(state: CliProviderState): {
   label: string
   tone: "default" | "destructive" | "muted"
 } {
+  if (state.problem) {
+    return { label: "Not the right program", tone: "destructive" }
+  }
   if (!state.installed) {
     return { label: "Not installed", tone: "muted" }
   }
@@ -180,11 +184,9 @@ function standingOf(state: CliProviderState): {
 
 /** The line under the name: where it is and what it is. */
 function detail(state: CliProviderState): string {
-  if (!state.installed) {
-    return state.description
-  }
-  const version = state.version ? state.version : "installed"
-  return `${state.description} · ${version}`
+  if (state.problem) return state.problem
+  if (!state.installed) return state.description
+  return `${state.description} · ${state.version ?? "installed"}`
 }
 
 /** What the update state is called, in words. */

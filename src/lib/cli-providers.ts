@@ -46,6 +46,17 @@ export type CliProviderState = {
   path: string | null
   /** What it said its version was. */
   version: string | null
+  /** What it said, in its own words. */
+  versionText: string | null
+  /**
+   * Why the program that was found is not the tool.
+   *
+   * A program with the right name is not always the right program — VS Code
+   * puts a `copilot` on the machine that is not the Copilot CLI — and saying
+   * so is more use than saying "not installed" and leaving the person to
+   * wonder why.
+   */
+  problem: string | null
   /** Why the version is not known, when it is not. */
   versionError: string | null
   /** Who owns the install. */
