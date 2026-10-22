@@ -85,8 +85,13 @@ function Split({
    * the tree is the truth; this is the number being tried out, and it
    * replaces the truth only for as long as the pointer is down.
    */
-  const [dragging, setDragging] = React.useState<number | null>(null)
-  const ratio = dragging ?? node.ratio
+  /* The ratio the split is showing. It starts at the tree's ratio and is
+     updated when a drag ends, so a drag leaves the split where the reader
+     put it rather than snapping back to where it was. */
+  const [ratio, setRatio] = React.useState<number>(node.ratio)
+  React.useEffect(() => {
+    setRatio(node.ratio)
+  }, [node.ratio])
 
   const onRatio = React.useCallback(
     (next: number) => {
@@ -96,13 +101,14 @@ function Split({
       if (size <= 0) return
       const min = Math.min(MIN_PANE_SIZE / size, 0.5)
       const clamped = Math.min(Math.max(next, min), 1 - min)
-      setDragging(clamped)
+      setRatio(clamped)
     },
     [horizontal],
   )
 
   const onDragEnd = React.useCallback(() => {
-    setDragging(null)
+    /* The ratio is already in state from the last onRatio. Nothing to do
+       here but keep it. */
   }, [])
 
   return (
@@ -268,6 +274,13 @@ function TabGroup({
   node: Extract<LayoutNode, { kind: "group" }>
   renderPane: PaneRenderer
 }) {
+  /* The tab that is showing. It starts at the node's active tab and follows
+     the reader's choice from there. */
+  const [active, setActive] = React.useState<PaneInstanceId>(node.activeTabId)
+  React.useEffect(() => {
+    setActive(node.activeTabId)
+  }, [node.activeTabId])
+
   return (
     <div
       data-slot="tab-group"
@@ -279,9 +292,14 @@ function TabGroup({
         className="flex h-8 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-border px-1"
       >
         {node.tabs.map((paneId) => {
-          const active = paneId === node.activeTabId
+          const isActive = paneId === active
           return (
-            <TabButton key={paneId} paneId={paneId} active={active} />
+            <TabButton
+              key={paneId}
+              paneId={paneId}
+              active={isActive}
+              onClick={() => setActive(paneId)}
+            />
           )
         })}
       </div>
@@ -290,7 +308,7 @@ function TabGroup({
         role="tabpanel"
         className="flex min-h-0 flex-1 flex-col"
       >
-        {renderPane(node.activeTabId)}
+        {renderPane(active)}
       </div>
     </div>
   )
@@ -305,11 +323,13 @@ function TabGroup({
 function TabButton({
   paneId,
   active,
+  onClick,
 }: {
   paneId: PaneInstanceId
   active: boolean
+  onClick: () => void
 }) {
-  const { panes, setActiveTab } = React.useContext(WorkspaceLayoutContext)
+  const { panes } = React.useContext(WorkspaceLayoutContext)
   const pane = panes.find((item) => item.id === paneId)
   const title = pane?.title ?? paneId
   return (
@@ -318,7 +338,7 @@ function TabButton({
       role="tab"
       aria-selected={active}
       data-active={active ? "" : undefined}
-      onClick={() => setActiveTab(paneId)}
+      onClick={onClick}
       className={cn(
         "flex shrink-0 items-center gap-1.5 rounded-t-md px-2 text-xs",
         "text-muted-foreground transition-colors",
