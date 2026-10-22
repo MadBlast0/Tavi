@@ -5,6 +5,7 @@ import {
   ArrowUpIcon,
   CheckIcon,
   ChevronRightIcon,
+  CircleCheckIcon,
   CircleHelpIcon,
   FolderOpenIcon,
   GitBranchIcon,
@@ -13,6 +14,7 @@ import {
   PlugIcon,
   SquareIcon,
   TerminalIcon,
+  TriangleAlertIcon,
   PaperclipIcon,
   PlusIcon,
   SearchIcon,
@@ -61,7 +63,8 @@ import {
   providerChoice,
   type CliProviderState,
 } from "@/lib/cli-providers"
-import { listCliProviders } from "@/lib/api"
+import { listCliProviders, type ToolActivity } from "@/lib/api"
+import { toolDetail, toolFailed, toolLabel } from "./tool-activity"
 import type { ProviderKey } from "@/lib/secret"
 
 import {
@@ -744,10 +747,18 @@ function PromptInputProvider({
   provider,
   onProviderChange,
   keys,
+  locked,
 }: {
   provider: string
   onProviderChange: (value: string) => void
   keys: ProviderKey[]
+  /**
+   * Whether the provider is pinned by the thread that is open.
+   *
+   * A thread that has been talked to is about one provider, so the control
+   * is disabled and says why. The model is still free.
+   */
+  locked?: boolean
 }) {
   const context = usePromptInput("PromptInputProvider")
   const [open, setOpen] = React.useState(false)
@@ -896,7 +907,7 @@ function PromptInputProvider({
 
   return (
     <Popover
-      open={open}
+      open={open && !locked}
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) {
@@ -915,6 +926,11 @@ function PromptInputProvider({
               current ? "Provider: " + current.label : "Select a provider"
             }
             disabled={context.disabled}
+            title={
+              locked
+                ? "This conversation is about one provider. Start a new one to use another."
+                : undefined
+            }
           />
         }
       >
@@ -944,6 +960,46 @@ function PromptInputProvider({
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * The tools an agent used.
+ *
+ * A row for each tool, small and quiet: this is activity, and it should not
+ * compete with the prose it sits above. The label is in words rather than the
+ * program's own name — "Running a command" rather than "shell" — because the
+ * name is the tool's, and the row is the person's.
+ *
+ * A tool that failed is marked, because a run that stopped halfway is not
+ * the same as one that finished.
+ */
+export function ToolActivityList({ tools }: { tools: ToolActivity[] }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {tools.map((tool, index) => {
+        const failed = toolFailed(tool)
+        const detail = toolDetail(tool)
+        return (
+          <div
+            key={`${tool.name}-${index}`}
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
+            {failed ? (
+              <TriangleAlertIcon className="size-3.5 shrink-0 text-destructive" />
+            ) : (
+              <CircleCheckIcon className="size-3.5 shrink-0" />
+            )}
+            <span className="shrink-0 text-foreground/80">
+              {toolLabel(tool)}
+            </span>
+            {detail ? (
+              <span className="min-w-0 truncate">{detail}</span>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

@@ -29,9 +29,29 @@ export type StoredMention = {
   path?: string
 }
 
+/**
+ * A tool the agent used.
+ *
+ * Only a CLI provider has tools, so only a CLI provider's turns carry these.
+ * They are kept because what an agent did is part of what it said: the
+ * answer alone does not say which files were read or which commands ran.
+ */
+export type StoredTool = {
+  /** The name the program calls the tool by. */
+  name: string
+  /** What it was doing, in words. */
+  title: string
+  /** How far it got: running, completed or failed. */
+  status: string
+  /** What it was given. */
+  input?: unknown
+  /** What it said. */
+  output?: string
+}
+
 export type StoredTurn =
   | { id: string; role: "user"; text: string; files: StoredFile[]; mentions: StoredMention[] }
-  | { id: string; role: "assistant"; text: string; stopped?: boolean }
+  | { id: string; role: "assistant"; text: string; stopped?: boolean; tools?: StoredTool[] }
   /** Carries the summary it stands for, so it can be sent with later turns. */
   | { id: string; role: "summary"; text: string }
 
@@ -70,15 +90,17 @@ export type ThreadBase = {
   model?: string
   effort?: string
   /**
-   * The provider the thread was started with.
+   * The provider the thread is about.
    *
    * It is what the models came from, and it is the provider the thread is
    * about: opening it shows that provider's models, and the picker names it.
    *
-   * It is a record, not a rule. The provider can still be changed — the
-   * conversation is text, the tools are the same whichever provider answers,
-   * and the effort is checked against the new model — so the thread remembers
-   * where it began without refusing to go somewhere else.
+   * It is a rule as well as a record. A thread that has been talked to is
+   * about one provider — the models in it came from that provider, and the
+   * answer that is still coming is that provider's — so the provider is
+   * pinned once a message has been sent. The model is still free: a thread
+   * may be carried from one model of a provider to another, but not from one
+   * provider to another.
    */
   provider?: string
   usage?: StoredUsage

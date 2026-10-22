@@ -68,6 +68,7 @@ import {
   streamChat,
   type ChatRequest,
   type ProviderKey,
+  type ToolActivity,
 } from "@/lib/api"
 import { cliIdOf, isCliProviderId } from "@/lib/cli-providers"
 import { SETTINGS_CLOSED } from "@/lib/open-settings"
@@ -234,6 +235,7 @@ import {
   PromptInputProvider,
   PromptInputSelect,
   PromptInputSuggestions,
+  ToolActivityList,
   type PromptEffort,
   type PromptModel,
   type PromptOption,
@@ -533,7 +535,21 @@ const starterPool = (
 
 type Turn =
   | { id: string; role: "user"; message: PromptMessage }
-  | { id: string; role: "assistant"; text: string; streaming: boolean; stopped?: boolean }
+  | {
+      id: string
+      role: "assistant"
+      text: string
+      streaming: boolean
+      stopped?: boolean
+      /**
+       * The tools the agent used.
+       *
+       * Only a CLI provider has tools, so only a CLI provider's turns carry
+       * them. What an agent did is part of what it said: the answer alone
+       * does not say which files were read or which commands ran.
+       */
+      tools?: ToolActivity[]
+    }
   /** A model-written summary of everything above it; sent with later requests. */
   | { id: string; role: "summary"; text: string }
 
@@ -667,6 +683,7 @@ const toStoredTurns = async (list: Turn[], known: WorkspaceFile[]): Promise<Stor
           role: "assistant",
           text: turn.text,
           ...(turn.stopped ? { stopped: true } : {}),
+          ...(turn.tools && turn.tools.length > 0 ? { tools: turn.tools } : {}),
         }
       }
       const files = await Promise.all(
@@ -704,6 +721,7 @@ const fromStoredTurns = (list: StoredTurn[]): Turn[] =>
         text: turn.text,
         streaming: false,
         ...(turn.stopped ? { stopped: true } : {}),
+        ...(turn.tools && turn.tools.length > 0 ? { tools: turn.tools } : {}),
       }
     }
     return {
@@ -884,15 +902,35 @@ export function PromptBlock() {
     },
     [variant],
   )
+  /**
+   * Whether the provider is pinned for this side.
+   *
+   * A thread that has been talked to is about one provider: the models in it
+   * came from that provider, and the answer that is still coming is that
+   * provider's. So once a message has been sent, the provider belongs to
+   * the thread and cannot be swapped underneath it.
+   *
+   * The model is still free. A thread may be carried from one model of a
+   * provider to another; it may not be carried from one provider to another.
+   *
+   * A new thread has no turns, so the provider is free again — which is what
+   * makes "New chat" a way out rather than a dead end.
+   */
+  const providerLocked = turns.length > 0
+
   const setProvider = React.useCallback(
     (next: string | ((current: string) => string)) => {
+      /* The thread's provider is not the user's to change once the thread
+         has started. The control is disabled and says so; this is the same
+         rule, so a change that arrives another way is refused as well. */
+      if (providerLocked) return
       setProviderBySide((current) => {
         const resolved =
           typeof next === "function" ? next(current[variant]) : next
         return { ...current, [variant]: resolved }
       })
     },
-    [variant],
+    [variant, providerLocked],
   )
 
   /** A change to the composer content, which belongs to the side. */
@@ -1558,6 +1596,8 @@ export function PromptBlock() {
     abortRef.current = controller
     /* Hoisted so the abort and failure paths can store what actually arrived. */
     let shown = ""
+    /* The tools the agent used, as they arrive. */
+    const used: ToolActivity[] = []
     /* The provider's own accounting for the turn, as it arrives. It is kept
        here as well as in state because the write happens after the stream has
        ended, and by then the render that started it is long gone. */
@@ -1717,6 +1757,21 @@ export function PromptBlock() {
               reported = usage as PromptTokenUsage
               if (stillHere()) setUsage(usage as PromptTokenUsage)
             }
+            return
+          }
+          if (event.type === "tool" && event.tool) {
+            /* What the agent did is part of what it said, so it is shown as
+               it happens and kept with the turn. */
+            used.push(event.tool)
+            const tools = [...used]
+            if (!stillHere()) return
+            setTurns((list) =>
+              list.map((turn) =>
+                turn.id === id && turn.role === "assistant"
+                  ? { ...turn, tools }
+                  : turn,
+              )
+            )
             return
           }
           if (event.type === "text-delta" && event.delta) {
@@ -2075,6 +2130,7 @@ export function PromptBlock() {
         provider={provider}
         onProviderChange={setProvider}
         keys={keys ?? []}
+        locked={providerLocked}
       />
       {/* A CLI that chooses its own model has no model picker: an empty
           picker is a claim that there is a choice, and there is not one. */}
@@ -2258,6 +2314,9 @@ export function PromptBlock() {
                           <UserTurn message={turn.message} />
                         ) : (
                           <div className="flex flex-col gap-2">
+                            {turn.tools && turn.tools.length > 0 ? (
+                              <ToolActivityList tools={turn.tools} />
+                            ) : null}
                             <StreamingText
                               text={turn.text}
                               streaming={turn.streaming}
