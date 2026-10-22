@@ -412,6 +412,19 @@ with a different identifier cannot read them.
 | Cache (regenerable) | `%LOCALAPPDATA%\com.mad.tavi\cache` | `~/Library/Caches/com.mad.tavi` | `$XDG_CACHE_HOME/com.mad.tavi`, else `~/.cache/com.mad.tavi` |
 | Temp (per-run) | `%TEMP%` → `…\AppData\Local\Temp` | `$TMPDIR` → `/var/folders/…` | `$TMPDIR`, else `/tmp` |
 
+**`TAVI_DATA_DIR` overrides the app data directory.** The identifier names it,
+which is right for an installed app — one app, one place — and wrong for two
+checkouts of the same source on one machine, where both would write the same
+conversations file and fight over the same remembered window. Setting it
+points the desktop app's own files somewhere else: the conversations, the
+folder grants, the key index, the catalogue cache and the window state.
+
+The **credential store is not redirected with it.** A key belongs to a user and
+a provider, not to a checkout of the source, so the service name stays the
+same and two copies of the app share one key. The same is true of the
+website's server's own key file (`TAVI_KEYS_DIR`): one key for one user, and
+the app's whole design says a key lives in one place.
+
 #### Window state — app data
 
 `src-tauri/src/window_state.rs` writes `window-state.json` into the app data

@@ -1,18 +1,60 @@
 //! The provider's own files.
 //!
 //! Everything the app owns on disk lives in one directory, resolved from the
-//! app's identifier rather than from a path anybody typed. The files are
-//! written the same way: a temporary file, then a move into place, so a crash
-//! halfway through leaves the last good file rather than half a file.
+//! app's identifier rather than from a path anybody typed — unless
+//! `TAVI_DATA_DIR` names one, which is how two checkouts of this source stand
+//! side by side without writing over each other. The files are written the
+//! same way: a temporary file, then a move into place, so a crash halfway
+//! through leaves the last good file rather than half a file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
+/// Where the app's own files live.
+///
+/// The identifier decides it: one app, one directory, the same on every machine
+/// it is installed on. `TAVI_DATA_DIR` overrides that, for the case where two
+/// copies of the app have to stand side by side — two checkouts of the same
+/// source, say — and each wants its own conversations, its own grants and its
+/// own remembered window, rather than both writing one file.
+///
+/// It is the same shape as `TAVI_PROJECTS_DIR`: an environment variable that
+/// names a directory, read the same way, with the same kind of precedence. An
+/// empty or blank value is ignored, because a variable that is set to nothing
+/// is a variable that is not set.
+///
+/// The credential store is deliberately *not* redirected with it. A key belongs
+/// to a user and to a provider, not to a checkout of the source, so the
+/// service name stays the same and two copies of the app share one key.
+pub fn data_dir(app: &AppHandle) -> Option<PathBuf> {
+    override_dir(std::env::var("TAVI_DATA_DIR").ok())
+        .or_else(|| app.path().app_data_dir().ok())
+}
+
+/// The directory an override names, if it names one.
+///
+/// A blank value names nothing. A variable that is set to nothing is a
+/// variable that is not set, and treating the two differently would mean a
+/// script that clears the variable breaks the app rather than leaving it
+/// where it was.
+///
+/// The value is taken as it is written, apart from the space around it: a
+/// path is a path, and the platform is the one that decides what a path
+/// looks like.
+fn override_dir(raw: Option<String>) -> Option<PathBuf> {
+    let raw = raw?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
+}
+
 /// Where a file of the app's own lives.
 pub fn data_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
-    Some(app.path().app_data_dir().ok()?.join(name))
+    Some(data_dir(app)?.join(name))
 }
 
 /// Reads a file, if it is there.
@@ -77,9 +119,27 @@ pub fn backup_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{backup_path, read_string, write_atomic, write_private};
+    use super::{backup_path, override_dir, read_string, write_atomic, write_private};
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn an_override_names_a_directory() {
+        assert_eq!(
+            override_dir(Some("  /tmp/tavi  ".to_string())),
+            Some(PathBuf::from("/tmp/tavi"))
+        );
+    }
+
+    /// A variable that is set to nothing is a variable that is not set. An
+    /// empty one must leave the app where it was rather than pointing it at
+    /// the current directory.
+    #[test]
+    fn a_blank_override_names_nothing() {
+        assert_eq!(override_dir(None), None);
+        assert_eq!(override_dir(Some(String::new())), None);
+        assert_eq!(override_dir(Some("   ".to_string())), None);
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("tavi-appfile-{name}"));

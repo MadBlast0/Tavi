@@ -42,6 +42,8 @@ use tauri::{
     AppHandle, LogicalSize, Manager, PhysicalSize, Window, WindowEvent,
 };
 
+use crate::appfile;
+
 /// How often a change is written out.
 ///
 /// A drag fires a move or resize event for every pixel, and writing the file
@@ -136,7 +138,7 @@ impl Tracker {
 
 /// The file the state lives in.
 fn state_path(app: &AppHandle) -> Option<PathBuf> {
-    Some(app.path().app_data_dir().ok()?.join(FILE_NAME))
+    appfile::data_path(app, FILE_NAME)
 }
 
 /// Read the remembered state, if there is any.
