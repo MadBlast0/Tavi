@@ -1,5 +1,6 @@
 use tauri::AppHandle;
 
+mod acp;
 mod appfile;
 mod cli;
 mod files;
@@ -129,6 +130,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(cli::CliRegistry::default()))
         .manage(cli::CliLifecycle::default())
         .manage(pty::Terminals::default())
+        .manage(acp::AcpAgents::default())
         .invoke_handler(tauri::generate_handler![
             keys::list_provider_keys,
             keys::save_provider_key,
@@ -149,6 +151,9 @@ pub fn run() {
             cli::cancel_cli_lifecycle,
             cli::list_cli_models,
             cli::cli_provider_diagnostics,
+            acp::acp_list_models,
+            acp::acp_stop_agent,
+            acp::acp_chat,
             pty::start_cli_terminal,
             pty::write_cli_terminal,
             pty::resize_cli_terminal,

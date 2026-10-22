@@ -74,7 +74,7 @@ import {
   cancelClone,
   cloneRepository,
   fetchModels,
-  listCliModels,
+  listAcpModels,
   listCliProviders,
   listProjects,
   listProviderKeys,
@@ -1025,6 +1025,11 @@ export function PromptBlock() {
    * the CLI has no list of its own, and the app shows no model picker for it
    * rather than an empty one. */
   const [cliModels, setCliModels] = React.useState<PromptModel[] | null>(null)
+  /* The effort levels a CLI provider's models accept.
+   *
+   * They are the program's own, so they are shown as the program names them,
+   * and an effort the program does not publish is not offered. */
+  const [cliEfforts, setCliEfforts] = React.useState<PromptEffort[]>([])
   /* Why the list could not be read, when it could not be.
    *
    * A CLI that manages its own model has no list, and the picker is hidden for
@@ -1034,6 +1039,7 @@ export function PromptBlock() {
   /* The lists that have been read, so that switching back to a provider does
    * not ask the program for its models again. */
   const cliModelLists = React.useRef(new Map<string, PromptModel[]>())
+  const cliEffortLists = React.useRef(new Map<string, PromptEffort[]>())
 
   /* The CLI providers on this machine.
    *
@@ -1589,11 +1595,17 @@ export function PromptBlock() {
    * what the picker shows. One that does not is asked for nothing, and the
    * picker is not shown at all.
    *
+   * The list comes from the program's own protocol, so it carries the names
+   * the program gives its models and the effort levels they accept. That is
+   * the point of using the protocol rather than the headless mode: a headless
+   * mode does not publish them.
+   *
    * A list that has been read is kept, so that coming back to a provider
    * does not ask the program for its models again. */
   React.useEffect(() => {
     if (!isCliProviderId(provider)) {
       setCliModels(null)
+      setCliEfforts([])
       setCliModelsError(null)
       return
     }
@@ -1601,16 +1613,32 @@ export function PromptBlock() {
     const known = cliModelLists.current.get(wanted);
     if (known) {
       setCliModels(known)
+      setCliEfforts(cliEffortLists.current.get(wanted) ?? [])
       setCliModelsError(null)
       return
     }
     let current = true
-    void listCliModels(wanted)
-      .then((models) => {
+    void listAcpModels(provider)
+      .then((result) => {
         if (!current) return
-        const list = models.map((id) => ({ value: id, label: id }))
+        const modelOption = result.configOptions.find(
+          (option) => option.id === "model",
+        )
+        const effortOption = result.configOptions.find(
+          (option) => option.id === "effort",
+        )
+        const list = (modelOption?.options ?? []).map((option) => ({
+          value: option.value,
+          label: option.name,
+        }))
+        const efforts = (effortOption?.options ?? []).map((option) => ({
+          value: option.value,
+          label: option.name,
+        }))
         cliModelLists.current.set(wanted, list)
+        cliEffortLists.current.set(wanted, efforts)
         setCliModels(list)
+        setCliEfforts(efforts)
         setCliModelsError(null)
       })
       .catch((problem: unknown) => {
@@ -1619,6 +1647,7 @@ export function PromptBlock() {
            says so rather than leaving the picker to vanish. */
         if (!current) return
         setCliModels([])
+        setCliEfforts([])
         setCliModelsError(
           problem instanceof Error
             ? problem.message
@@ -2388,7 +2417,7 @@ export function PromptBlock() {
           onModelChange={setModel}
           provider={provider}
           providerLabel={providerChoice(provider, cliProviders)?.label}
-          levels={isCliProviderId(provider) ? [] : efforts}
+          levels={isCliProviderId(provider) ? cliEfforts : efforts}
           effort={effort}
           onEffortChange={setEffort}
           recommended="medium"
