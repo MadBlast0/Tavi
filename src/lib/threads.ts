@@ -102,9 +102,10 @@ export type ThreadBase = {
   /**
    * When the thread was muted, or absent if it is not.
    *
-   * A muted thread is never announced. It still runs, and its reply still
-   * lands in it; the reader simply does not want to be interrupted about it,
-   * which is a different thing from not wanting the answer.
+   * A muted thread is never announced, and it is never marked as having
+   * something the reader has not looked at. It still runs, and its reply
+   * still lands in it; the reader simply does not want to be interrupted
+   * about it, which is a different thing from not wanting the answer.
    */
   mutedAt?: number
 }

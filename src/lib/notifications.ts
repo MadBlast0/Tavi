@@ -180,6 +180,11 @@ export const shouldAnnounce = (
  * not visible — an answer the reader watched arrive needs no mark. It is
  * cleared when the conversation is opened, which is what "looking at it"
  * means.
+ *
+ * **A muted conversation is not marked either.** The mark says "New" beside
+ * the conversation's name, and a reader who muted the conversation has said
+ * they do not want to be nudged about it. The reply still lands in it; the
+ * conversation's own timestamp still moves.
  */
 export const shouldMark = (
   preferences: NotificationPreferences,

@@ -221,7 +221,7 @@ with the conversations, and could not be deleted with them.
 | | |
 |---|---|
 | `unreadAt` | When a reply finished in this thread while the reader was elsewhere. The rail's badge says so until the thread is opened. It follows the **Response completions** setting, because a reader who has turned notifications off does not want to be told about a reply in any form. |
-| `mutedAt` | When the thread was muted. A muted thread is never announced. It still runs, and its reply still lands in it. |
+| `mutedAt` | When the thread was muted. A muted thread is never announced, and it is never marked as having something the reader has not looked at. It still runs, and its reply still lands in it. |
 
 Both are timestamps, and both are absent until they apply.
 

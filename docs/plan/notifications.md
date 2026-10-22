@@ -228,6 +228,11 @@ does not want to be interrupted about it, which is a different thing from not
 wanting the answer. The rail shows a crossed-out bell so the state is never
 a surprise.
 
+**A muted conversation is not marked either.** The mark says "New" beside the
+conversation's name, and a reader who muted the conversation has said they do
+not want to be nudged about it. The reply still lands in it, and the
+conversation's own timestamp still moves.
+
 ---
 
 ## 7. The work
