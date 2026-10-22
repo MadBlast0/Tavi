@@ -229,6 +229,10 @@ import {
 } from "./thread-writes"
 import { useComposerVariant } from "./composer-variant"
 import { useThreadBridge } from "./thread-bridge"
+import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
+import { WorkspaceEmpty } from "@/blocks/workspace/workspace-empty"
+import { useWorkspace } from "@/lib/workspace-state"
+import { cn } from "@/lib/utils"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
 import {
   availableEffort,
@@ -840,6 +844,12 @@ export function PromptBlock() {
      It is a *surface* switch: it says which of the two places you are in, and
      each place has its own threads, its own model and its own composer. */
   const { variant, setVariant } = useComposerVariant()
+
+  /* Whether the workspace has the work area instead of this surface.
+     It is read here as well as in the host, because the two of them are
+     alternatives: when the workspace is open the host has the work area
+     and this surface is not on screen. */
+  const { open: workspaceOpen } = useWorkspace()
 
   /**
    * The model and the effort each side remembers.
@@ -2358,7 +2368,26 @@ export function PromptBlock() {
           colour has to be there for the title bar to sit against, and the
           curve where the work area meets the rail is cut out of this
           background. */}
-      <main className="flex h-svh flex-col bg-background pt-(--shell-top-bar-h)">
+      {/* The workspace host, and the surface it replaces.
+          The two are alternatives: while the workspace is open the host has
+          the work area, and the conversation and the composer are not on
+          screen. Closing the workspace puts them back, exactly as they
+          were — the landing screens are not changed by the workspace
+          being there.
+
+          The host is a sibling of the main rather than a child of it,
+          because the work area is the thing the two of them share, and
+          because the composer will one day be a tile in the workspace
+          rather than a thing beside it. */}
+      <WorkspaceHost>
+        <WorkspaceEmpty />
+      </WorkspaceHost>
+      <main
+        className={cn(
+          "flex h-svh flex-col bg-background pt-(--shell-top-bar-h)",
+          workspaceOpen && "hidden",
+        )}
+      >
         {empty ? (
           <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
             <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">

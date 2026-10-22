@@ -94,8 +94,20 @@ type Import = {
   target: Target
 }
 
+/**
+ * A file's text, with its comments taken out.
+ *
+ * A comment that says `import { Button } from "@/components/button"` is not
+ * an import, and reading it as one would put a phantom in the list — and the
+ * list is what the rules below are checked against.
+ */
+const withoutComments = (source: string): string =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|\s)\/\/[^\n]*/g, "$1")
+
 const importsOf = (path: string): Import[] => {
-  const source = readFileSync(join(SRC, path), "utf8")
+  const source = withoutComments(readFileSync(join(SRC, path), "utf8"))
   const found: Import[] = []
   for (const match of source.matchAll(/(?:from\s+|import\s*\()\s*["']([^"']+)["']/g)) {
     found.push({
