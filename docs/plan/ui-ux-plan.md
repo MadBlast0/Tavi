@@ -64,11 +64,11 @@ Status blocks says what stands, what was wrong, and what it becomes.
 | 3.2 | ✅ done | The menu and context-menu conventions |
 | 3.3 | ✅ done | The popover, select and command patterns |
 | 3.4 | ✅ done | One dialog and confirmation convention |
-| 3.5 | ▶ next | The shared patterns for a pane's unhappy states |
+| 3.5 | ✅ done | The shared patterns for a pane's unhappy states |
 
 **Phase 4 — The generic pane framework**
 
-| 4.1 | ⬜ not started | The frame every pane is drawn in |
+| 4.1 | ▶ next | The frame every pane is drawn in |
 | 4.2 | ⬜ not started | The header: icon, title, actions, and the drag region |
 | 4.3 | ⬜ not started | The overflow menu, and the close, focus, maximize and pop-out controls |
 | 4.4 | ⬜ not started | The registry of pane types, and the model of an instance |
@@ -1459,6 +1459,26 @@ confirmation is for destructive or disruptive actions and only then.
 
 # Phase 4 — Build the generic pane framework
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/badge`, `@/components/empty`, `@/components/skeleton`, `@/components/progress`, `@/components/toast` — all on Base UI |
+| The check | `src/lib/status.test.ts` — ten rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** All five primitives are already on the canonical
+family — Base UI — and the workspace empty state is the proof that the
+empty pattern is followed: it uses the shared empty component at its small
+size, with a title, a description and the Views picker as its one action.
+
+Nothing was added. The primitives cover the job, and a pane that needs a
+status, a loading placeholder, an empty state or a toast takes the one that
+is already there. The conventions are written down in
+`docs/components.md` §3: colour alone is never the message, and a status
+carries a label, a symbol or a shape as well as a colour.
 ## Task 4.1 — Create the Pane container
 
 **Prompt to the coding AI:**
