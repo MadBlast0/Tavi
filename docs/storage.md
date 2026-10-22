@@ -266,10 +266,11 @@ construction, rather than by agreeing to.
 **It starts unset, because the user chooses it.** The composer has a provider
 control of its own, beside the model one, and the model picker is not usable
 until a provider is chosen — the models belong to one. The control opens a
-palette with two kinds of provider, an **API provider** and a **CLI
-provider**, and each opens the list of the ones that are set up. The API list
-is the providers the user has a key for, because a provider with no key is one
-the app cannot reach.
+dropdown with two kinds of provider, an **API provider** and a **CLI
+provider**. Pointing at either opens **its own dropdown beside it**: the API
+one is a searchable list of the providers the user has a key for, because a
+provider with no key is one the app cannot reach; the CLI one is where the
+CLI providers will be.
 
 **A thread records the provider it was started with**, the way it records the
 model and the effort. It is a record and not a rule: the conversation is text,

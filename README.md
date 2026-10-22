@@ -167,10 +167,11 @@ Google and Cohere each have a shape of their own.
 
 The composer has a **provider** control of its own, beside the model one. The
 model picker waits for it, because the models belong to one; the control opens
-a palette with an **API provider** and a **CLI provider**, and each opens the
-list of the ones that are set up. A chat or a session records the provider it
-was started with, and it can still be changed — the conversation is text, and
-the effort is checked against the new model.
+a dropdown with an **API provider** and a **CLI provider**, and pointing at
+either opens **its own dropdown beside it** — the API one is a searchable list
+of the providers you have a key for. A chat or a session records the provider
+it was started with, and it can still be changed — the conversation is text,
+and the effort is checked against the new model.
 
 
 A key is a credential with an identity. It belongs to a provider, it has a name
