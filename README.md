@@ -92,6 +92,62 @@ would resolve a different set of versions from the registry and put it in
 `node_modules` without saying so, and the app would start against dependencies
 nobody else has.
 
+### Running two checkouts at once
+
+Two checkouts of this source on one machine cannot share the same ports, or
+they run over each other. Vite is set to fail rather than to move when its
+port is taken, the chat server cannot bind a port that is already bound, and —
+the one that bites quietly — the frontend of one answers with the backend of
+the other, because the proxy target is a port number and not a checkout.
+
+So each checkout takes a port of its own:
+
+| | Web | Chat server |
+|---|---|---|
+| The first | `1420` | `8787` |
+| The second | `1430` | `8790` |
+
+```bash
+TAVI_WEB_PORT=1430 CHAT_SERVER_PORT=8790 pnpm dev
+```
+
+The desktop app needs the same two, because the window loads the frontend from
+a URL in the Tauri config and that URL has to be the web port. The config has
+no way to read an environment variable, so it is given an override file, which
+Tauri merges over the file's own settings:
+
+```json
+// tauri.local.json
+{
+  "build": {
+    "devUrl": "http://localhost:1430",
+    "beforeDevCommand": "pnpm dev"
+  }
+}
+```
+
+```bash
+pnpm tauri dev --config tauri.local.json
+```
+
+It is a **file** rather than a string on the command line because PowerShell
+takes the double quotes out of an argument before a native program sees it, and
+the CLI wants JSON — `pnpm tauri dev --config '{"build":{...}}'` arrives
+without its quotes and is refused as malformed.
+
+And the two need their own folder for the app's files, because the app's data
+directory is named after the app's identifier and that is the same in every
+checkout: without this, both write the same conversations file and fight over
+the same remembered window.
+
+```bash
+TAVI_DATA_DIR=~/.tavi/second TAVI_PROJECTS_DIR=~/.tavi/second-projects pnpm tauri dev --config tauri.local.json
+```
+
+The **credential store is not redirected**, and deliberately so: a key belongs
+to a user and a provider, not to a checkout of the source, so two copies of the
+app share one key.
+
 ## Provider keys
 
 A key is a credential with an identity. It belongs to a provider, it has a name
@@ -185,6 +241,9 @@ has no account system to authenticate with.
 | `TAVI_BIND_HOST` | `127.0.0.1` | Where the website's server listens. |
 | `TAVI_ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` | The names the server answers to. A request addressed to any other name is refused. |
 | `CHAT_SERVER_PORT` | `8787` | Chat server port. Must match the proxy target; both read this variable. |
+| `TAVI_WEB_PORT` | `1420` | The web server's port. The hot-reload socket sits one above it, so the two move together. |
+| `TAVI_DATA_DIR` | the app's own data directory | Where the desktop app keeps its files — the conversations, the folder grants, the window state. See [running two checkouts at once](#running-two-checkouts-at-once). |
+| `TAVI_PROJECTS_DIR` | `<home>/Documents/Tavi/projects` | Where the projects folder is. |
 
 There is no default model. The server streams only the model the client sends,
 and rejects a request that carries none with `400 No model selected`.
