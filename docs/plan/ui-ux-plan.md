@@ -62,8 +62,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 | 3.1 | ✅ done | One icon-button pattern, used by every pane |
 | 3.2 | ✅ done | The menu and context-menu conventions |
-| 3.3 | ▶ next | The popover, select and command patterns |
-| 3.4 | ⬜ not started | One dialog and confirmation convention |
+| 3.3 | ✅ done | The popover, select and command patterns |
+| 3.4 | ▶ next | One dialog and confirmation convention |
 | 3.5 | ⬜ not started | The shared patterns for a pane's unhappy states |
 
 **Phase 4 — The generic pane framework**
@@ -1401,6 +1401,26 @@ followed.
 
 **Acceptance criteria:** The primitives are ready for reuse and follow the local shadcn implementation.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/popover`, `@/components/select`, `@/components/combobox`, `@/components/command` — all on Base UI |
+| The check | `src/lib/popover-picker.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** All four primitives are already on the canonical
+family — Base UI — and the command palette is built on Base UI's dialog
+with cmdk for the search. The Views picker, which is the anchored pane-type
+picker, is a popover: a small anchored panel, the right primitive for a
+compact list. Its entries are disabled with a reason rather than pretending
+they work, and the picker keeps its entries in the plan's four groups.
+
+Nothing was added. The primitives cover the job, and the Views picker is
+the proof that the anchored pattern is followed. The Views menu itself is
+Task 7.1.
 ## Task 3.4 — Standardize dialogs and confirmations
 
 **Prompt to the coding AI:**
