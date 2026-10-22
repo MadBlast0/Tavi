@@ -22,6 +22,7 @@ import {
   type ProviderKey,
 } from "@/lib/api";
 import type { SlimModel } from "@/lib/catalogue";
+import { DEFAULT_PROVIDER_ID } from "@/lib/providers";
 import type { Side } from "@/lib/sides";
 
 import {
@@ -76,12 +77,17 @@ type Hovered = { model: SlimModel; top: number; left: number } | null;
 const modelLabel = (model: SlimModel) =>
   model.name.replace(/\s*\(free\)$/, "");
 
-const priceLabel = (model: SlimModel) =>
-  model.free
-    ? "free"
-    : `$${(model.promptPrice * 1e6).toFixed(2)}/M in · $${(
-        model.completionPrice * 1e6
-      ).toFixed(2)}/M out`;
+const priceLabel = (model: SlimModel) => {
+  if (model.free) return "free";
+  /* A provider that publishes no price gets no figure: a number nobody
+     published is not a number. */
+  if (model.promptPrice === null || model.completionPrice === null) {
+    return "price not published";
+  }
+  return `${(model.promptPrice * 1e6).toFixed(2)}/M in · ${(
+    model.completionPrice * 1e6
+  ).toFixed(2)}/M out`;
+};
 
 const DetailRow = ({
   label,
@@ -205,7 +211,7 @@ export const ComposerModelPicker = ({
   useEffect(() => {
     let cancelled = false;
 
-    fetchModels()
+    fetchModels(DEFAULT_PROVIDER_ID)
       .then((data) => {
         if (cancelled) return;
         if (!data.models) return setError("No catalog");

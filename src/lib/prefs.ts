@@ -1,10 +1,18 @@
 /**
  * Small user preferences that survive a reload.
  *
- * Backed by `localStorage`, which behaves the same in the browser and inside
- * the Tauri webview, so one code path covers the web target and the desktop
- * app. Deliberately not IndexedDB: these are a few hundred bytes and the
- * composer needs them during its first render, where a promise is useless.
+ * Backed by `localStorage`. The API is the same in the browser and inside the
+ * Tauri webview, so one code path covers the web target and the desktop app.
+ * Deliberately not IndexedDB: these are a few hundred bytes and the composer
+ * needs them during its first render, where a promise is useless.
+ *
+ * The API is the same; the *area* is not. `localStorage` is partitioned by
+ * origin, and the app and the website are two origins in production, so they
+ * are two profiles with two preference sets that share one code path. A
+ * preference never crosses between them except as a one-time migration. In
+ * development they share an origin — `pnpm tauri dev` runs both on
+ * `http://localhost:1420` — so a preference set in one is visible in the other,
+ * and a bug that depends on a fresh `localStorage` will not reproduce there.
  *
  * Scope note — this holds *preferences*, not data. Preferences are things the
  * user picked that would be trivial to re-enter (a model, an effort level).
@@ -39,6 +47,7 @@ export const writePref = (name: string, value: string | undefined): void => {
 export const PREF = {
   model: "model",
   effort: "effort",
+  provider: "provider",
   mode: "mode",
   font: "font",
   sidebar: "sidebar",

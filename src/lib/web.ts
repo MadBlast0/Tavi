@@ -75,11 +75,17 @@ export const saveProviderKey = async (
   provider: string,
   key: string,
   name?: string,
+  baseUrl?: string,
 ): Promise<void> => {
   const response = await fetch("/api/keys", {
     method: "POST",
     headers: MUTATING,
-    body: JSON.stringify({ provider, key, name: name ?? null }),
+    body: JSON.stringify({
+      provider,
+      key,
+      name: name ?? null,
+      baseUrl: baseUrl ?? null,
+    }),
   })
   if (!response.ok) {
     throw new Error(
@@ -180,8 +186,16 @@ export const recheckProviderKey = async (id: string): Promise<void> => {
 /* The model catalogue                                                         */
 /* -------------------------------------------------------------------------- */
 
-export const fetchModels = async (): Promise<ModelCatalogue> => {
-  const response = await fetch("/api/models")
+/**
+ * The catalogue for one provider.
+ *
+ * The provider is named, because the app can talk to more than one and the
+ * list has to be the one whose models the request will actually use.
+ */
+export const fetchModels = async (providerId: string): Promise<ModelCatalogue> => {
+  const response = await fetch(
+    `/api/models?provider=${encodeURIComponent(providerId)}`,
+  )
   if (!response.ok) {
     /* The server's own words, not a status code. It knows why it refused —
        most often that there is no provider key — and a number is not a

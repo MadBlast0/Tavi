@@ -95,7 +95,8 @@ import {
   saveProviderKey,
   type ProviderKey,
 } from "@/lib/api"
-import { ACTIVE_PROVIDER_ID, PROVIDERS, providerFor } from "@/lib/providers"
+import { PROVIDERS, providerFor } from "@/lib/providers"
+import { ProviderLogo } from "@/components/provider-logo"
 import { isDesktopApp } from "@/lib/platform"
 import { cn } from "@/lib/utils"
 
@@ -685,7 +686,11 @@ function KeyRow({
   return (
     <Item size="sm" className="border-b last:border-b-0" style={PANE_INSET}>
       <ItemMedia variant="icon">
-        <KeyRoundIcon />
+        <ProviderLogo
+          provider={info.provider}
+          providerLabel={info.providerLabel}
+          className="size-5"
+        />
       </ItemMedia>
 
       <ItemContent>
@@ -693,7 +698,7 @@ function KeyRow({
           {info.name}
           {info.active ? (
             <Badge appearance="muted" shape="pill" size="sm">
-              In use
+              In use for {info.providerLabel}
             </Badge>
           ) : null}
           <Badge
@@ -916,6 +921,14 @@ function KeyDialog({
   const [chosen, setChosen] = React.useState("")
   const [name, setName] = React.useState("")
   const [value, setValue] = React.useState("")
+  /**
+   * The address the key belongs to, when it is not the provider's default.
+   *
+   * Some providers do not live at one address: an Azure resource, a
+   * Databricks workspace, a model running on this machine. The provider's own
+   * default says so, and the field appears when it does.
+   */
+  const [address, setAddress] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [checking, setChecking] = React.useState(false)
@@ -945,6 +958,14 @@ function KeyDialog({
   const provider = providerFor(chosen)
   const editing = false
   const probe = provider?.validation === "inference-probe"
+  /**
+   * Whether this provider needs to be told where it lives.
+   *
+   * A provider whose own address is a placeholder cannot be reached without
+   * one: the placeholder is not an address. The others have one, and the
+   * field would only ever repeat it.
+   */
+  const needsAddress = Boolean(provider?.baseUrl.includes("YOUR-"))
 
   const store = async () => {
     const key = value.trim()
@@ -954,7 +975,12 @@ function KeyDialog({
     setSaving(true)
     setError(null)
     try {
-      await saveProviderKey(provider.id, key, name.trim() || undefined)
+      await saveProviderKey(
+        provider.id,
+        key,
+        name.trim() || undefined,
+        address.trim() || undefined,
+      )
       setValue("")
       onOpenChange(false)
       onSaved()
@@ -1077,7 +1103,14 @@ function KeyDialog({
                   >
                     {PROVIDERS.map((option) => (
                       <SelectItem key={option.id} value={option.id}>
-                        {option.label}
+                        <span className="flex items-center gap-2">
+                          <ProviderLogo
+                            provider={option.id}
+                            providerLabel={option.label}
+                            className="size-4"
+                          />
+                          {option.label}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1095,6 +1128,27 @@ function KeyDialog({
                 ) : null}
               </div>
             </Field>
+
+            {needsAddress ? (
+              <Field>
+                <div className="flex items-center gap-1">
+                  <FieldLabel htmlFor="key-address">Address</FieldLabel>
+                  <InfoHint label="About the address">
+                    Where this provider lives for you. A provider that is
+                    yours alone — a resource, a workspace, a machine — has an
+                    address of its own, and this is the one Tavi will use.
+                  </InfoHint>
+                </div>
+                <Input
+                  id="key-address"
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  placeholder={provider?.baseUrl}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </Field>
+            ) : null}
 
             <Field>
               <div className="flex items-center gap-1">

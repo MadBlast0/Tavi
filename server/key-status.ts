@@ -19,7 +19,12 @@
  * A key is never logged, echoed, or included in an error response.
  */
 
-import { PROVIDERS, type Provider, ACTIVE_PROVIDER_ID } from "../src/lib/providers.ts";
+import {
+  identityUrlFor,
+  inferenceUrlFor,
+  PROVIDERS,
+  type Provider,
+} from "../src/lib/providers.ts";
 import { redact, maskSecret } from "../src/lib/redact.ts";
 import type { KeyStanding, ProviderKey } from "../src/lib/secret.ts";
 import {
@@ -102,7 +107,7 @@ const firstPublishedModel = async (
   provider: Provider,
 ): Promise<string | undefined> => {
   try {
-    const response = await fetch(provider.identityUrl, {
+    const response = await fetch(identityUrlFor(provider), {
       headers: { accept: "application/json" },
     });
     if (!response.ok) return undefined;
@@ -138,7 +143,7 @@ const checkByInference = async (
   }
 
   try {
-    const response = await fetch(provider.inferenceUrl, {
+    const response = await fetch(inferenceUrlFor(provider), {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
@@ -189,7 +194,7 @@ export const fetchProviderStatus = async (
 
   let response: Response;
   try {
-    response = await fetch(provider.identityUrl, { headers });
+    response = await fetch(identityUrlFor(provider), { headers });
   } catch {
     return { ...unknown(), checkReason: "unreachable", checkedAt };
   }
@@ -331,6 +336,7 @@ export const listProviderKeys = async (): Promise<ProviderKeyStatus[]> => {
         updatedAt: key.updatedAt,
         lastUsedAt: key.lastUsedAt,
         maskedValue: key.maskedValue,
+        baseUrl: key.baseUrl ?? null,
         source: "server-file" as const,
         active: active[key.provider] === key.id,
         valid: standing.valid,
@@ -379,8 +385,12 @@ export const listProviderKeys = async (): Promise<ProviderKeyStatus[]> => {
       /* The server holds the key, so it can mask it the same way the desktop
          does — and the two builds show the same key the same way. */
       maskedValue: maskSecret(credential.key),
+      baseUrl: null,
       source: "env",
-      active: provider.id === ACTIVE_PROVIDER_ID,
+      /* An environment key is the one in use for its provider only while no
+         stored key is active for it. Which provider the app is talking to is
+         the client's choice, and it is named in the request. */
+      active: true,
       valid: null,
       checkReason: "not-checked",
       checkedAt: null,

@@ -30,26 +30,584 @@ use crate::appfile;
 /// build, not a runtime condition to be handled.
 const INSTRUCTIONS: &str = include_str!("../../shared/instructions.json");
 
-/// The provider's base address.
+/// How a provider takes a key.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Auth {
+    /// `Authorization: Bearer <key>`.
+    Bearer,
+    /// A header of the provider's own naming, with the key as its value.
+    ///
+    /// Anthropic's is `x-api-key`, Azure's is `api-key`, and Google's is
+    /// `x-goog-api-key`. They are not interchangeable, and the provider's own
+    /// name is the only place that says which is which.
+    Header(&'static str),
+    /// A bearer token AWS issues for Bedrock.
+    AwsBearer,
+    /// Google's own credentials, which the app cannot hold as a key.
+    GoogleOAuth,
+    /// No key at all. A model running on this machine does not need one.
+    None,
+}
+
+/// How a provider's chat request is shaped on the wire.
 ///
-/// It is the gateway's address, and it can be pointed somewhere else with
-/// `OPENROUTER_BASE_URL` — for a gateway of one's own, or for a test that
-/// needs a provider to talk to.
+/// Two shapes are in use. The OpenAI one is spoken by most providers,
+/// including NVIDIA NIM's, which is OpenAI-compatible rather than OpenAI.
+/// Anthropic's is a different request, a different set of headers and a
+/// different stream.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Wire {
+    /// `POST {base}/chat/completions`, with a chat-completions body.
+    OpenAiChatCompletions,
+    /// `POST {base}/messages`, with Anthropic's Messages body.
+    AnthropicMessages,
+    /// `POST {base}/models/{model}:streamGenerateContent`, with Google's body.
+    GoogleGenerativeAi,
+    /// `POST {base}/chat`, with Cohere's body.
+    CohereChat,
+    /// Bedrock's Converse API, which is signed with AWS credentials.
+    AwsBedrock,
+    /// Vertex's generateContent, which is signed with Google's credentials.
+    GoogleVertex,
+}
+
+impl Wire {
+    /// Whether the app has a client for this shape.
+    ///
+    /// Two providers are signed with credentials the app does not hold — AWS's
+    /// and Google's — and the app says so rather than pretending.
+    pub(crate) fn is_supported(self) -> bool {
+        !matches!(self, Wire::AwsBedrock | Wire::GoogleVertex)
+    }
+}
+
+/// How a provider's key can be checked.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Validation {
+    /// A free request that answers "no" for a bad key.
+    IdentityEndpoint,
+    /// No such endpoint. The only way to find out is to make a real
+    /// inference, which costs the user's quota, so it is only ever run when
+    /// the user asks for it.
+    InferenceProbe,
+}
+
+/// A provider the app can hold a key for.
+///
+/// The table is the same one the website's server reads, field for field, and
+/// a test in `src/lib/provider-table.test.ts` says so.
+pub(crate) struct ProviderInfo {
+    pub(crate) id: &'static str,
+    pub(crate) label: &'static str,
+    /// The environment variable this provider's key is named in.
+    pub(crate) env_var: &'static str,
+    /// How the provider takes the key.
+    pub(crate) auth: Auth,
+    /// The address the provider's API lives at.
+    ///
+    /// The version is part of it, because the paths below it are not the same
+    /// for every provider. A key may carry its own address, which wins.
+    pub(crate) base_url: &'static str,
+    /// The shape of a chat request for this provider.
+    pub(crate) wire: Wire,
+    /// A query parameter every request needs.
+    ///
+    /// Azure's OpenAI endpoint takes its API version as one, and has no
+    /// default for it.
+    pub(crate) query: Option<(&'static str, &'static str)>,
+    /// A header every request needs, beside the one the key goes in.
+    pub(crate) extra_headers: Option<(&'static str, &'static str)>,
+    /// Whether the provider's answer carries an account name and a limit.
+    pub(crate) reports_usage: bool,
+    /// How the key can be checked, and what it costs to check it.
+    pub(crate) validation: Validation,
+    /// Whether the identity endpoint says whose key it is.
+    ///
+    /// OpenRouter's key page does; the other providers' model listings do not,
+    /// and a listing is not an account.
+    pub(crate) identity_reports_account: bool,
+    /// Whether the provider needs a key at all.
+    pub(crate) keyless: bool,
+}
+
+/// The providers the app knows about.
+pub(crate) const PROVIDERS: &[ProviderInfo] = &[
+    ProviderInfo {
+        id: "openai",
+        label: "OpenAI",
+        env_var: "OPENAI_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.openai.com/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "anthropic",
+        label: "Anthropic",
+        env_var: "ANTHROPIC_API_KEY",
+        auth: Auth::Header("x-api-key"),
+        base_url: "https://api.anthropic.com/v1",
+        wire: Wire::AnthropicMessages,
+        query: None,
+        extra_headers: Some(("anthropic-version", "2023-06-01")),
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "google",
+        label: "Google Gemini",
+        env_var: "GOOGLE_API_KEY",
+        auth: Auth::Header("x-goog-api-key"),
+        base_url: "https://generativelanguage.googleapis.com/v1beta",
+        wire: Wire::GoogleGenerativeAi,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "openrouter",
+        label: "OpenRouter",
+        env_var: "OPENROUTER_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://openrouter.ai/api/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: true,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: true,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "deepseek",
+        label: "DeepSeek",
+        env_var: "DEEPSEEK_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.deepseek.com",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "xai",
+        label: "xAI (Grok)",
+        env_var: "XAI_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.x.ai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "mistral",
+        label: "Mistral",
+        env_var: "MISTRAL_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.mistral.ai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "groq",
+        label: "Groq",
+        env_var: "GROQ_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.groq.com/openai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "together",
+        label: "Together AI",
+        env_var: "TOGETHER_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.together.xyz/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "fireworks",
+        label: "Fireworks AI",
+        env_var: "FIREWORKS_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.fireworks.ai/inference/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "cerebras",
+        label: "Cerebras",
+        env_var: "CEREBRAS_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.cerebras.ai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "nvidia-nim",
+        label: "NVIDIA NIM",
+        env_var: "NVIDIA_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://integrate.api.nvidia.com/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::InferenceProbe,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "huggingface",
+        label: "Hugging Face",
+        env_var: "HF_TOKEN",
+        auth: Auth::Bearer,
+        base_url: "https://router.huggingface.co/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "deepinfra",
+        label: "DeepInfra",
+        env_var: "DEEPINFRA_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.deepinfra.com/v1/openai",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "amazon-bedrock",
+        label: "Amazon Bedrock",
+        env_var: "AWS_BEARER_TOKEN_BEDROCK",
+        auth: Auth::AwsBearer,
+        base_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        wire: Wire::AwsBedrock,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "google-vertex",
+        label: "Google Vertex AI",
+        env_var: "GOOGLE_APPLICATION_CREDENTIALS",
+        auth: Auth::GoogleOAuth,
+        base_url: "https://us-central1-aiplatform.googleapis.com/v1",
+        wire: Wire::GoogleVertex,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "azure",
+        label: "Azure OpenAI",
+        env_var: "AZURE_API_KEY",
+        auth: Auth::Header("api-key"),
+        base_url: "https://YOUR-RESOURCE.openai.azure.com/openai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: Some(("api-version", "2024-10-21")),
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "moonshot",
+        label: "Moonshot AI (Kimi)",
+        env_var: "MOONSHOT_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.moonshot.ai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "zai",
+        label: "Z.ai (GLM)",
+        env_var: "ZHIPU_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.z.ai/api/paas/v4",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "alibaba",
+        label: "Alibaba Model Studio",
+        env_var: "DASHSCOPE_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "minimax",
+        label: "MiniMax",
+        env_var: "MINIMAX_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.minimax.io/anthropic/v1",
+        wire: Wire::AnthropicMessages,
+        query: None,
+        extra_headers: Some(("anthropic-version", "2023-06-01")),
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "perplexity",
+        label: "Perplexity",
+        env_var: "PERPLEXITY_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.perplexity.ai",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "ollama",
+        label: "Ollama",
+        env_var: "",
+        auth: Auth::None,
+        base_url: "http://localhost:11434/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: true,
+    },
+    ProviderInfo {
+        id: "vllm",
+        label: "vLLM",
+        env_var: "",
+        auth: Auth::None,
+        base_url: "http://localhost:8000/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: true,
+    },
+    ProviderInfo {
+        id: "replicate",
+        label: "Replicate",
+        env_var: "REPLICATE_API_TOKEN",
+        auth: Auth::Bearer,
+        base_url: "https://api.replicate.com/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "sambanova",
+        label: "SambaNova",
+        env_var: "SAMBANOVA_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.sambanova.ai/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "cohere",
+        label: "Cohere",
+        env_var: "COHERE_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "https://api.cohere.com/v2",
+        wire: Wire::CohereChat,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "cloudflare",
+        label: "Cloudflare AI Gateway",
+        env_var: "CLOUDFLARE_API_TOKEN",
+        auth: Auth::Bearer,
+        base_url: "https://gateway.ai.cloudflare.com/v1/YOUR-ACCOUNT/YOUR-GATEWAY",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "watsonx",
+        label: "IBM watsonx",
+        env_var: "WATSONX_AI_APIKEY",
+        auth: Auth::Bearer,
+        base_url: "https://us-south.ml.cloud.ibm.com/ml/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
+        id: "databricks",
+        label: "Databricks",
+        env_var: "DATABRICKS_TOKEN",
+        auth: Auth::Bearer,
+        base_url: "https://YOUR-WORKSPACE.cloud.databricks.com/ai-gateway/mlflow/v1",
+        wire: Wire::OpenAiChatCompletions,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+];
+
+/// The provider with this id, if there is one.
+pub(crate) fn provider_for(id: &str) -> Option<&'static ProviderInfo> {
+    PROVIDERS.iter().find(|provider| provider.id == id)
+}
+
+/// A provider, resolved for one request.
+///
+/// The table holds the providers the app knows about. A request resolves one
+/// of them, so that the address, the header and the request shape all come
+/// from the same row and cannot disagree.
 #[derive(Clone, Debug)]
 pub struct Provider {
+    /// The provider's id.
+    pub id: String,
+    /// The provider's name.
+    pub label: String,
+    /// The address the API lives at, without a trailing slash.
     base: String,
+    /// How the key is sent.
+    auth: Auth,
+    /// The shape of a chat request.
+    wire: Wire,
+    /// A query parameter every request needs.
+    query: Option<(&'static str, &'static str)>,
+    /// A header every request needs, beside the one the key goes in.
+    extra_headers: Option<(&'static str, &'static str)>,
 }
 
 impl Provider {
-    /// The provider the app talks to.
-    pub fn new() -> Self {
-        Provider {
-            base: std::env::var("OPENROUTER_BASE_URL")
-                .ok()
-                .map(|value| value.trim().trim_end_matches('/').to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
+    /// The provider with this id, resolved for a request.
+    pub fn for_provider(id: &str) -> Option<Provider> {
+        provider_for(id).map(|info| Provider {
+            id: info.id.to_string(),
+            label: info.label.to_string(),
+            base: info.base_url.trim_end_matches('/').to_string(),
+            auth: info.auth,
+            wire: info.wire,
+            query: info.query,
+            extra_headers: info.extra_headers,
+        })
+    }
+
+    /// The provider with this id, at an address of its own.
+    ///
+    /// A key may carry the address it belongs to — an Azure resource, a
+    /// self-hosted vLLM, a workspace of your own — and the key's address wins
+    /// over the table's default.
+    pub fn for_provider_at(id: &str, base: &str) -> Option<Provider> {
+        let mut provider = Provider::for_provider(id)?;
+        let base = base.trim().trim_end_matches('/');
+        if !base.is_empty() {
+            provider.base = base.to_string();
         }
+        Some(provider)
     }
 
     /// A provider at an address of its own.
@@ -57,32 +615,119 @@ impl Provider {
     /// For a test that needs a provider to talk to.
     #[cfg(test)]
     pub fn at(base: &str) -> Self {
-        Provider {
-            base: base.trim().trim_end_matches('/').to_string(),
+        Provider::for_provider_at("openrouter", base).expect("OpenRouter is a provider")
+    }
+
+    /// Whether the app has a client for this provider.
+    pub fn is_supported(&self) -> bool {
+        self.wire.is_supported()
+    }
+
+    /// Whether the provider needs a key at all.
+    pub fn is_keyless(&self) -> bool {
+        provider_for(&self.id).map(|info| info.keyless).unwrap_or(false)
+    }
+
+    /// The path of the chat request, under the provider's base address.
+    ///
+    /// Two of the shapes carry the model's own name in the path, and one
+    /// carries a colon before the action.
+    fn chat_path(&self, model: &str) -> String {
+        match self.wire {
+            Wire::OpenAiChatCompletions => "/chat/completions".to_string(),
+            Wire::AnthropicMessages => "/messages".to_string(),
+            Wire::GoogleGenerativeAi => format!("/models/{model}:streamGenerateContent"),
+            Wire::CohereChat => "/chat".to_string(),
+            Wire::AwsBedrock => format!("/model/{model}/converse"),
+            Wire::GoogleVertex => format!("/models/{model}:streamGenerateContent"),
         }
     }
 
+    /// The path of the model listing, under the provider's base address.
+    fn models_path(&self) -> &'static str {
+        "/models"
+    }
+
     fn catalogue_url(&self) -> String {
-        format!("{}/models", self.base)
+        format!("{}{}", self.base, self.models_path())
     }
 
-    fn chat_url(&self) -> String {
-        format!("{}/chat/completions", self.base)
+    /// The address of the chat request, with the query the provider needs.
+    fn chat_url(&self, model: &str) -> String {
+        let mut query: Vec<String> = Vec::new();
+        if let Some((name, value)) = self.query {
+            query.push(format!("{name}={value}"));
+        }
+        /* Google's streaming endpoint speaks SSE only when it is asked to. */
+        if self.wire == Wire::GoogleGenerativeAi {
+            query.push("alt=sse".to_string());
+        }
+        let mut url = format!("{}{}", self.base, self.chat_path(model));
+        if !query.is_empty() {
+            url.push('?');
+            url.push_str(&query.join("&"));
+        }
+        url
     }
 
+    /// The address of the provider's own key page, for the one provider that
+    /// has one.
     pub(crate) fn key_url(&self) -> String {
         format!("{}/key", self.base)
     }
-}
 
-impl Default for Provider {
-    fn default() -> Self {
-        Provider::new()
+    /// The header every request needs, beside the one the key goes in.
+    pub(crate) fn extra_header(&self) -> Option<(&'static str, &'static str)> {
+        self.extra_headers
+    }
+
+    /// The address a check that costs a request goes to.
+    ///
+    /// It is the provider's own inference endpoint, which is the only place a
+    /// request can be made.
+    pub(crate) fn probe_url(&self) -> String {
+        match self.wire {
+            Wire::OpenAiChatCompletions => format!("{}/chat/completions", self.base),
+            Wire::AnthropicMessages => format!("{}/messages", self.base),
+            Wire::GoogleGenerativeAi => {
+                format!("{}/models:streamGenerateContent", self.base)
+            }
+            Wire::CohereChat => format!("{}/chat", self.base),
+            Wire::AwsBedrock | Wire::GoogleVertex => format!("{}/", self.base),
+        }
+    }
+
+    /// Puts the key on a request, the way this provider takes it.
+    ///
+    /// A provider with no key gets a request with no key on it, which is the
+    /// right request: a model on this machine is not behind a login.
+    pub(crate) fn apply_auth(
+        &self,
+        request: reqwest::RequestBuilder,
+        key: Option<&str>,
+    ) -> reqwest::RequestBuilder {
+        let request = match (self.auth, key) {
+            (Auth::None, _) => request,
+            (Auth::GoogleOAuth, _) => request,
+            (Auth::Bearer, Some(key)) => request.bearer_auth(key),
+            (Auth::AwsBearer, Some(key)) => request.bearer_auth(key),
+            (Auth::Header(name), Some(key)) => request.header(name, key),
+            (_, None) => request,
+        };
+        match self.extra_headers {
+            Some((name, value)) => request.header(name, value),
+            None => request,
+        }
     }
 }
 
 /// The file the catalogue is cached in.
-const CATALOGUE_FILE: &str = "catalogue.json";
+///
+/// One per provider, because a catalogue is a list of one provider's models
+/// and another provider's models are not the same list.
+fn catalogue_file(provider_id: &str) -> String {
+    format!("catalogue.{provider_id}.json")
+}
 
 /// How long the catalogue is trusted for.
 const CATALOGUE_TTL_SECS: u64 = 15 * 60;
@@ -122,7 +767,18 @@ pub struct ChatRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ChatConfig {
     pub model_name: Option<String>,
-    pub reasoning_effort: Option<String>,
+    /// Which provider to ask.
+    ///
+    /// The composer sends the provider it showed the model list for, so the
+    /// request and the list are about the same provider by construction.
+    pub provider_id: Option<String>,
+    /// The reasoning preference, already checked and written the provider's
+    /// way.
+    ///
+    /// The desktop app has no server to check it against, so the check happens
+    /// in the webview, against the same shared rule the server uses. The
+    /// fields are the provider's own, and they are sent as they are.
+    pub reasoning: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -326,7 +982,7 @@ async fn catalogue(
     provider: &Provider,
     force: bool,
 ) -> Result<Catalogue, String> {
-    let path = appfile::data_path(app, CATALOGUE_FILE);
+    let path = appfile::data_path(app, &catalogue_file(&provider.id));
 
     if !force {
         if let Some(path) = path.as_ref() {
@@ -373,6 +1029,16 @@ async fn catalogue(
         }
     }
 
+    /* The catalogue used to be one file for one provider, and it is one file
+       per provider now. The old one is never read again, so it is taken away
+       rather than left in the app's data folder for ever. It is a cache, and
+       it can be fetched again, so nothing is lost. */
+    if let Some(legacy) = appfile::data_path(app, "catalogue.json") {
+        if legacy != path.unwrap_or_default() {
+            let _ = std::fs::remove_file(legacy);
+        }
+    }
+
     Ok(Catalogue {
         body: fetched,
         fetched_at,
@@ -413,15 +1079,44 @@ async fn fetch_text(
 /// with prices, and a list that is three weeks old names models that no
 /// longer exist.
 #[tauri::command]
-pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<Value, String> {
+pub async fn model_catalogue(
+    app: AppHandle,
+    provider: String,
+    force: bool,
+) -> Result<Value, String> {
     /* The catalogue comes from the provider, and a provider is only reachable
        with a key. Without one there is nothing to list: the list would be of
        models that cannot be called. The rule is here rather than in the
-       composer because a rule the client can ignore is not a rule. */
-    if crate::keys::get_api_key(&app)?.is_none() {
-        return Err("No provider key is set. Add one in the settings.".to_string());
+       composer because a rule the client can ignore is not a rule.
+
+       The provider is named, because the app can talk to more than one and the
+       list has to be the one whose models a request will use. */
+    let provider = Provider::for_provider(&provider)
+        .ok_or_else(|| format!("\"{provider}\" is not a provider this app knows about."))?;
+
+    /* A provider signed with credentials the app does not hold is refused
+       here, with the reason, rather than at the first request. */
+    if !provider.is_supported() {
+        return Err(format!(
+            "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
+            provider.label
+        ));
     }
-    let catalogue = catalogue(&app, &Provider::new(), force).await?;
+
+    let key = crate::keys::active_key(&app, &provider.id)?;
+    let provider = match key.as_ref().and_then(|key| key.base_url.as_deref()) {
+        Some(base) => Provider::for_provider_at(&provider.id, base)
+            .ok_or_else(|| format!("\"{}\" is not a provider this app knows about.", provider.id))?,
+        None => provider,
+    };
+
+    if key.is_none() && !provider.is_keyless() {
+        return Err(format!(
+            "No {} key is set. Add one in the settings.",
+            provider.label
+        ));
+    }
+    let catalogue = catalogue(&app, &provider, force).await?;
     Ok(json!({
         "body": catalogue.body,
         "fetchedAt": catalogue.fetched_at,
@@ -433,114 +1128,15 @@ pub async fn model_catalogue(app: AppHandle, force: bool) -> Result<Value, Strin
 /* The effort                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/// What a model publishes about the effort it accepts.
-struct EffortSupport {
-    /// The levels it accepts, when they are published.
-    values: Vec<String>,
-    /// Whether the levels are published at all.
-    published: bool,
-    /// Whether the model has a reasoning setting of any kind.
-    supported: bool,
-}
-
-/// What the catalogue says about one model.
-fn effort_support(catalogue: &Value, model: &str) -> EffortSupport {
-    let empty = EffortSupport {
-        values: Vec::new(),
-        published: false,
-        supported: false,
-    };
-
-    let Some(data) = catalogue.get("data").and_then(Value::as_array) else {
-        return empty;
-    };
-    let Some(entry) = data
-        .iter()
-        .find(|entry| entry.get("id").and_then(Value::as_str) == Some(model))
-    else {
-        return empty;
-    };
-
-    let parameters: Vec<&str> = entry
-        .get("supported_parameters")
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    let parameter_accepted = parameters.iter().any(|name| *name == "reasoning_effort");
-
-    let reasoning = entry.get("reasoning");
-    let enumerated = reasoning.and_then(|meta| meta.get("supported_efforts"));
-
-    match enumerated {
-        Some(Value::Array(values)) => {
-            let levels: Vec<String> = values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect();
-            if levels.is_empty() {
-                /* An empty enumeration is not evidence of support. */
-                EffortSupport {
-                    values: Vec::new(),
-                    published: false,
-                    supported: parameter_accepted,
-                }
-            } else {
-                EffortSupport {
-                    values: levels,
-                    published: true,
-                    supported: true,
-                }
-            }
-        }
-        _ if parameter_accepted => EffortSupport {
-            /* Accepted by the gateway, level set not published for this model. */
-            values: Vec::new(),
-            published: false,
-            supported: true,
-        },
-        _ => EffortSupport {
-            values: Vec::new(),
-            published: false,
-            supported: false,
-        },
-    }
-}
-
-/// Checks an effort against what the model publishes, and refuses what it does
-/// not accept.
-///
-/// A level that cannot be verified is refused rather than sent: a silently
-/// downgraded effort is indistinguishable from the model simply running at a
-/// lower setting.
-fn check_effort(catalogue: &Value, model: &str, effort: &str) -> Result<(), String> {
-    let support = effort_support(catalogue, model);
-
-    if support.published {
-        if support.values.iter().any(|value| value == effort) {
-            return Ok(());
-        }
-        return Err(format!(
-            "This model does not accept effort \"{effort}\". It accepts: {}.",
-            support.values.join(", ")
-        ));
-    }
-
-    if support.supported {
-        return Err(
-            "This model's effort levels are not published, so that setting cannot be verified. Use the provider default instead."
-                .to_string(),
-        );
-    }
-
-    Err("This model does not support a reasoning-effort setting.".to_string())
-}
-
 /* -------------------------------------------------------------------------- */
 /* The chat                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/// The messages, in the provider's shape.
+/// The messages, in the OpenAI chat-completions shape.
+///
+/// The system prompt is the first message, which is where this shape puts
+/// it. Anthropic's shape has a field of its own for it, and is built
+/// separately.
 fn provider_messages(request: &ChatRequest, system: &str) -> Vec<Value> {
     let mut messages = vec![json!({ "role": "system", "content": system })];
     for message in &request.messages {
@@ -562,6 +1158,91 @@ fn provider_messages(request: &ChatRequest, system: &str) -> Vec<Value> {
     }
     messages
 }
+
+/// The messages, in Anthropic's Messages shape.
+///
+/// The system prompt is not a message here; it is a field of the request.
+/// The roles are the same two.
+fn anthropic_messages(request: &ChatRequest) -> Vec<Value> {
+    let mut messages = Vec::new();
+    for message in &request.messages {
+        let text = message
+            .parts
+            .iter()
+            .filter(|part| part.kind == "text")
+            .filter_map(|part| part.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let role = match message.role.as_str() {
+            "assistant" => "assistant",
+            _ => "user",
+        };
+        messages.push(json!({ "role": role, "content": text }));
+    }
+    messages
+}
+
+/// The messages, in Google's generate-content shape.
+///
+/// The system prompt is a field of its own, and a turn is a list of parts
+/// rather than a string.
+fn google_contents(request: &ChatRequest) -> Vec<Value> {
+    let mut contents = Vec::new();
+    for message in &request.messages {
+        let text = message
+            .parts
+            .iter()
+            .filter(|part| part.kind == "text")
+            .filter_map(|part| part.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let role = match message.role.as_str() {
+            "assistant" => "model",
+            _ => "user",
+        };
+        contents.push(json!({ "role": role, "parts": [{ "text": text }] }));
+    }
+    contents
+}
+
+/// The messages, in Cohere's shape.
+///
+/// The system prompt is its own turn here, and it says so by being a system
+/// turn rather than a field.
+fn cohere_messages(request: &ChatRequest, system: &str) -> Vec<Value> {
+    let mut messages = vec![json!({ "role": "system", "content": system })];
+    for message in &request.messages {
+        let text = message
+            .parts
+            .iter()
+            .filter(|part| part.kind == "text")
+            .filter_map(|part| part.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let role = match message.role.as_str() {
+            "assistant" => "assistant",
+            _ => "user",
+        };
+        messages.push(json!({ "role": role, "content": text }));
+    }
+    messages
+}
+
+/// How many tokens a reply may use.
+///
+/// Anthropic requires it: there is no default, and a request without it is
+/// refused. The OpenAI shape has a default the provider picks, so it is left
+/// out rather than guessed at.
+const ANTHROPIC_MAX_TOKENS: u64 = 8_192;
 
 /// The provider's usage, in the app's shape.
 fn map_usage(raw: &Value) -> Value {
@@ -598,40 +1279,53 @@ pub async fn chat(
     request: ChatRequest,
     on_event: Channel<ChatEvent>,
 ) -> Result<(), String> {
-    let provider = Provider::new();
+    /* The provider is the one the request names, which is the one the composer
+       showed the model list for. The two are the same by construction: the
+       client picked the provider, and it sent the same id back. */
+    let provider_id = request
+        .config
+        .as_ref()
+        .and_then(|config| config.provider_id.as_deref())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(crate::keys::DEFAULT_PROVIDER)
+        .to_string();
 
-    let key = crate::keys::get_api_key(&app)
-        .map_err(|error| error)?
-        .ok_or("No provider key is set. Add one in the settings.")?;
+    let provider = Provider::for_provider(&provider_id)
+        .ok_or_else(|| format!("\"{provider_id}\" is not a provider this app knows about."))?;
+
+    if !provider.is_supported() {
+        return Err(format!(
+            "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
+            provider.label
+        ));
+    }
+
+    let key = crate::keys::active_key(&app, &provider.id)?;
+    let provider = match key.as_ref().and_then(|key| key.base_url.as_deref()) {
+        Some(base) => Provider::for_provider_at(&provider.id, base)
+            .ok_or_else(|| format!("\"{provider_id}\" is not a provider this app knows about."))?,
+        None => provider,
+    };
+    let key = match key {
+        Some(key) => key.secret,
+        None if provider.is_keyless() => String::new(),
+        None => {
+            return Err(format!(
+                "No {} key is set. Add one in the settings.",
+                provider.label
+            ))
+        }
+    };
 
     /* The key has just been used, and the app knows that for certain — it is
        the app's own use, not the provider's, which would need an admin API. */
-    crate::keys::note_key_use(&app);
-
-    /* The catalogue is only fetched when there is an effort to check against
-       it, because a request that names no effort does not need it. */
-    let catalogue = if request
-        .config
-        .as_ref()
-        .and_then(|config| config.reasoning_effort.as_deref())
-        .map(str::trim)
-        .filter(|effort| !effort.is_empty())
-        .is_some()
-    {
-        let raw = catalogue(&app, &provider, false)
-            .await
-            .map(|catalogue| catalogue.body)
-            .unwrap_or_default();
-        Some(serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null))
-    } else {
-        None
-    };
+    crate::keys::note_key_use(&app, &provider.id);
 
     chat_with(
         &provider,
         &key,
         &request,
-        catalogue,
         &cancellations,
         &mut |event| {
             let _ = on_event.send(event);
@@ -649,7 +1343,6 @@ async fn chat_with<F>(
     provider: &Provider,
     key: &str,
     request: &ChatRequest,
-    catalogue: Option<Value>,
     cancellations: &Cancellations,
     on_event: &mut F,
 ) -> Result<(), String>
@@ -683,28 +1376,59 @@ where
         return Err("No model selected. Pick a model before sending.".to_string());
     }
 
-    let effort = request
+    let system = build_system_prompt(
+        &variant,
+        request.mode.as_deref(),
+        request.folder.as_deref(),
+    );
+
+    /* The body is the provider's own shape. The OpenAI one takes the system
+       prompt as the first message and the reasoning level under `reasoning`;
+       Anthropic's takes the prompt as a field of its own and the level under
+       `output_config`. */
+    let mut body = match provider.wire {
+        Wire::OpenAiChatCompletions => json!({
+            "model": model,
+            "messages": provider_messages(&request, &system),
+            "stream": true,
+        }),
+        Wire::AnthropicMessages => json!({
+            "model": model,
+            "system": system,
+            "messages": anthropic_messages(&request),
+            "max_tokens": ANTHROPIC_MAX_TOKENS,
+            "stream": true,
+        }),
+        Wire::GoogleGenerativeAi => json!({
+            "contents": google_contents(&request),
+            "systemInstruction": json!({ "parts": [{ "text": system }] }),
+        }),
+        Wire::CohereChat => json!({
+            "model": model,
+            "messages": cohere_messages(&request, &system),
+            "stream": true,
+        }),
+        /* Two providers are signed with credentials the app does not hold. */
+        Wire::AwsBedrock | Wire::GoogleVertex => {
+            return Err(format!(
+                "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
+                provider.label
+            ));
+        }
+    };
+
+    /* The reasoning preference, already checked and written the provider's
+       own way by the shared rule. The fields are the provider's, and they go
+       on the body as they are. */
+    if let Some(reasoning) = request
         .config
         .as_ref()
-        .and_then(|config| config.reasoning_effort.as_deref())
-        .map(str::trim)
-        .filter(|effort| !effort.is_empty())
-        .map(str::to_string);
-
-    let mut body = json!({
-        "model": model,
-        "messages": provider_messages(&request, &build_system_prompt(
-            &variant,
-            request.mode.as_deref(),
-            request.folder.as_deref(),
-        )),
-        "stream": true,
-    });
-
-    if let Some(effort) = effort.as_deref() {
-        let published = catalogue.clone().unwrap_or(Value::Null);
-        check_effort(&published, &model, effort)?;
-        body["reasoning"] = json!({ "effort": effort });
+        .and_then(|config| config.reasoning.as_ref())
+        .and_then(|reasoning| reasoning.as_object())
+    {
+        for (name, value) in reasoning {
+            body[name] = value.clone();
+        }
     }
 
     let request_id = request
@@ -713,7 +1437,7 @@ where
         .unwrap_or_else(|| "chat".to_string());
     let cancelled = cancellations.register(&request_id);
 
-    let outcome = stream(provider, &body, key, &cancelled, on_event).await;
+    let outcome = stream(provider, &body, &model, key, &cancelled, on_event).await;
     cancellations.finish(&request_id);
     outcome
 }
@@ -739,7 +1463,7 @@ enum StreamAction {
 /// The payloads are JSON objects, one per line, and a line that is not a
 /// complete object yet is left for the next one — the stream arrives in
 /// whatever pieces the network gives it.
-fn read_payload(payload: &str) -> StreamAction {
+fn read_payload(wire: Wire, payload: &str) -> StreamAction {
     let trimmed = payload.trim();
     if trimmed.is_empty() || trimmed == "[DONE]" {
         return StreamAction::Nothing;
@@ -752,32 +1476,174 @@ fn read_payload(payload: &str) -> StreamAction {
         return StreamAction::Failed(message.to_string());
     }
 
-    let model_id = event
-        .get("model")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let usage = event
-        .get("usage")
-        .filter(|usage| !usage.is_null())
-        .map(map_usage);
-    let delta = event
-        .pointer("/choices/0/delta/content")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    match wire {
+        /* The OpenAI shape: a choice, a delta, and the usage on the last
+           frame. */
+        Wire::OpenAiChatCompletions => {
+            let model_id = event
+                .get("model")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let usage = event
+                .get("usage")
+                .filter(|usage| !usage.is_null())
+                .map(map_usage);
+            let delta = event
+                .pointer("/choices/0/delta/content")
+                .and_then(Value::as_str)
+                .unwrap_or("");
 
-    if !delta.is_empty() {
-        return StreamAction::Delta(delta.to_string());
+            if !delta.is_empty() {
+                return StreamAction::Delta(delta.to_string());
+            }
+            if model_id.is_some() || usage.is_some() {
+                return StreamAction::Metadata { model_id, usage };
+            }
+            StreamAction::Nothing
+        }
+        /* Anthropic's shape: a named event, and the text under a content
+           block. */
+        Wire::AnthropicMessages => match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "content_block_delta" => {
+                let delta = event
+                    .pointer("/delta/text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !delta.is_empty() {
+                    return StreamAction::Delta(delta.to_string());
+                }
+                StreamAction::Nothing
+            }
+            "message_start" => StreamAction::Metadata {
+                model_id: event
+                    .pointer("/message/model")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                usage: event
+                    .pointer("/message/usage")
+                    .filter(|usage| !usage.is_null())
+                    .map(map_anthropic_usage),
+            },
+            "message_delta" => StreamAction::Metadata {
+                model_id: None,
+                usage: event
+                    .get("usage")
+                    .filter(|usage| !usage.is_null())
+                    .map(map_anthropic_usage),
+            },
+            "error" => {
+                let message = event
+                    .pointer("/error/message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The provider reported an error.");
+                StreamAction::Failed(message.to_string())
+            }
+            _ => StreamAction::Nothing,
+        },
+        /* Google's shape: a candidate, and the text under its parts. */
+        Wire::GoogleGenerativeAi => {
+            let model_id = event
+                .pointer("/modelVersion")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let usage = event
+                .get("usageMetadata")
+                .filter(|usage| !usage.is_null())
+                .map(map_google_usage);
+            let delta = event
+                .pointer("/candidates/0/content/parts/0/text")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+
+            if !delta.is_empty() {
+                return StreamAction::Delta(delta.to_string());
+            }
+            if model_id.is_some() || usage.is_some() {
+                return StreamAction::Metadata { model_id, usage };
+            }
+            StreamAction::Nothing
+        }
+        /* Cohere's shape: a named event, and the text under a message. */
+        Wire::CohereChat => match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "content-delta" => {
+                let delta = event
+                    .pointer("/delta/message/content/text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !delta.is_empty() {
+                    return StreamAction::Delta(delta.to_string());
+                }
+                StreamAction::Nothing
+            }
+            "message-end" => StreamAction::Metadata {
+                model_id: None,
+                usage: event
+                    .get("delta")
+                    .filter(|usage| !usage.is_null())
+                    .map(map_cohere_usage),
+            },
+            _ => StreamAction::Nothing,
+        },
+        Wire::AwsBedrock | Wire::GoogleVertex => StreamAction::Nothing,
     }
-    if model_id.is_some() || usage.is_some() {
-        return StreamAction::Metadata { model_id, usage };
-    }
-    StreamAction::Nothing
+}
+
+/// Anthropic's usage, in the app's shape.
+fn map_anthropic_usage(raw: &Value) -> Value {
+    let mut usage = serde_json::Map::new();
+    let mut put = |name: &str, value: Option<u64>| {
+        if let Some(value) = value {
+            usage.insert(name.to_string(), json!(value));
+        }
+    };
+    put("inputTokens", raw.get("input_tokens").and_then(Value::as_u64));
+    put("outputTokens", raw.get("output_tokens").and_then(Value::as_u64));
+    Value::Object(usage)
+}
+
+/// Google's usage, in the app's shape.
+fn map_google_usage(raw: &Value) -> Value {
+    let mut usage = serde_json::Map::new();
+    let mut put = |name: &str, value: Option<u64>| {
+        if let Some(value) = value {
+            usage.insert(name.to_string(), json!(value));
+        }
+    };
+    put("inputTokens", raw.get("promptTokenCount").and_then(Value::as_u64));
+    put("outputTokens", raw.get("candidatesTokenCount").and_then(Value::as_u64));
+    put("totalTokens", raw.get("totalTokenCount").and_then(Value::as_u64));
+    put(
+        "reasoningTokens",
+        raw.get("thoughtsTokenCount").and_then(Value::as_u64),
+    );
+    Value::Object(usage)
+}
+
+/// Cohere's usage, in the app's shape.
+fn map_cohere_usage(raw: &Value) -> Value {
+    let mut usage = serde_json::Map::new();
+    let mut put = |name: &str, value: Option<u64>| {
+        if let Some(value) = value {
+            usage.insert(name.to_string(), json!(value));
+        }
+    };
+    let tokens = raw.get("tokens");
+    put(
+        "inputTokens",
+        tokens.and_then(|t| t.get("input_tokens")).and_then(Value::as_u64),
+    );
+    put(
+        "outputTokens",
+        tokens.and_then(|t| t.get("output_tokens")).and_then(Value::as_u64),
+    );
+    Value::Object(usage)
 }
 
 /// Sends the request and reads the reply.
 async fn stream<F>(
     provider: &Provider,
     body: &Value,
+    model: &str,
     key: &str,
     cancelled: &Arc<AtomicBool>,
     on_event: &mut F,
@@ -785,9 +1651,8 @@ async fn stream<F>(
 where
     F: FnMut(ChatEvent),
 {
-    let response = http()
-        .post(provider.chat_url())
-        .bearer_auth(key)
+    let response = provider
+        .apply_auth(http().post(provider.chat_url(model)), Some(key))
         .json(body)
         .send()
         .await
@@ -829,7 +1694,7 @@ where
                 continue;
             };
 
-            match read_payload(payload) {
+            match read_payload(provider.wire, payload) {
                 StreamAction::Delta(delta) => {
                     on_event(ChatEvent::TextDelta { delta });
                 }
@@ -942,8 +1807,8 @@ pub(crate) fn redact(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatEvent, ChatRequest, Provider, StreamAction, build_system_prompt, check_effort,
-        chat_with, effort_support, map_usage, read_payload, redact,
+        ChatEvent, ChatRequest, Provider, StreamAction, Wire, build_system_prompt, chat_with,
+        map_usage, read_payload, redact,
     };
     use crate::provider::Cancellations;
     use serde_json::json;
@@ -1044,7 +1909,8 @@ mod tests {
             tools: None,
             config: Some(super::ChatConfig {
                 model_name: Some("vendor/model".to_string()),
-                reasoning_effort: None,
+                provider_id: None,
+                reasoning: None,
             }),
             request_id: Some("test".to_string()),
         }
@@ -1073,7 +1939,6 @@ mod tests {
             &Provider::at(&fake.base),
             "sk-test",
             &a_request("chat"),
-            None,
             &Cancellations::default(),
             &mut |event| events.push(event),
         ));
@@ -1131,7 +1996,6 @@ mod tests {
             &Provider::at(&fake.base),
             "sk-test",
             &request,
-            None,
             &Cancellations::default(),
             &mut |_| {},
         ));
@@ -1152,7 +2016,6 @@ mod tests {
             &Provider::at(&fake.base),
             "sk-test",
             &request,
-            None,
             &Cancellations::default(),
             &mut |_| {},
         ));
@@ -1171,7 +2034,6 @@ mod tests {
             &Provider::at(&fake.base),
             "sk-test",
             &request,
-            None,
             &Cancellations::default(),
             &mut |_| {},
         ));
@@ -1186,100 +2048,20 @@ mod tests {
         let mut request = a_request("chat");
         request.config = Some(super::ChatConfig {
             model_name: None,
-            reasoning_effort: None,
+            provider_id: None,
+            reasoning: None,
         });
 
         let outcome = runtime().block_on(chat_with(
             &Provider::at(&fake.base),
             "sk-test",
             &request,
-            None,
             &Cancellations::default(),
             &mut |_| {},
         ));
 
         assert!(outcome.unwrap_err().contains("No model selected"));
         assert!(fake.requests().is_empty(), "nothing should have been sent");
-    }
-
-    /// An effort the model does not publish is refused, and nothing is sent.
-    #[test]
-    fn an_unpublished_effort_is_refused_before_anything_is_sent() {
-        let fake = FakeProvider::start(vec![]);
-        let mut request = a_request("chat");
-        request.config = Some(super::ChatConfig {
-            model_name: Some("vendor/model".to_string()),
-            reasoning_effort: Some("xhigh".to_string()),
-        });
-
-        let outcome = runtime().block_on(chat_with(
-            &Provider::at(&fake.base),
-            "sk-test",
-            &request,
-            Some(json!({
-                "data": [{
-                    "id": "vendor/model",
-                    "supported_parameters": ["reasoning", "reasoning_effort"],
-                    "reasoning": { "supported_efforts": ["low", "medium", "high"] }
-                }]
-            })),
-            &Cancellations::default(),
-            &mut |_| {},
-        ));
-
-        assert!(outcome.unwrap_err().contains("does not accept effort"));
-        assert!(fake.requests().is_empty(), "nothing should have been sent");
-    }
-
-    /// An effort the model does publish goes out, on the request.
-    #[test]
-    fn a_published_effort_goes_out_on_the_request() {
-        let fake =
-            FakeProvider::start(vec![json!({"choices":[{"delta":{"content":"ok"}}]}).to_string()]);
-        let mut request = a_request("chat");
-        request.config = Some(super::ChatConfig {
-            model_name: Some("vendor/model".to_string()),
-            reasoning_effort: Some("high".to_string()),
-        });
-
-        runtime()
-            .block_on(chat_with(
-                &Provider::at(&fake.base),
-                "sk-test",
-                &request,
-                Some(json!({
-                    "data": [{
-                        "id": "vendor/model",
-                        "supported_parameters": ["reasoning", "reasoning_effort"],
-                        "reasoning": { "supported_efforts": ["low", "medium", "high"] }
-                    }]
-                })),
-                &Cancellations::default(),
-                &mut |_| {},
-            ))
-            .expect("the chat should succeed");
-
-        assert!(fake.requests().contains(r#""reasoning":{"effort":"high"}"#));
-    }
-
-    fn catalogue() -> serde_json::Value {
-        json!({
-            "data": [
-                {
-                    "id": "vendor/enumerated",
-                    "supported_parameters": ["reasoning", "reasoning_effort"],
-                    "reasoning": { "supported_efforts": ["high", "low", "medium"] }
-                },
-                {
-                    "id": "vendor/unnamed",
-                    "supported_parameters": ["reasoning", "reasoning_effort"]
-                },
-                {
-                    "id": "vendor/plain",
-                    "supported_parameters": ["tools"]
-                }
-            ]
-        })
     }
 
     #[test]
@@ -1307,48 +2089,6 @@ mod tests {
     fn an_unknown_mode_falls_back_to_the_first_one() {
         let prompt = build_system_prompt("code", Some("nonsense"), None);
         assert!(prompt.contains("real local repository"));
-    }
-
-    #[test]
-    fn a_published_level_is_accepted() {
-        assert!(check_effort(&catalogue(), "vendor/enumerated", "high").is_ok());
-    }
-
-    #[test]
-    fn a_level_the_model_does_not_publish_is_refused() {
-        let error = check_effort(&catalogue(), "vendor/enumerated", "xhigh")
-            .expect_err("xhigh is not published for this model");
-        assert!(error.contains("does not accept effort"));
-        assert!(error.contains("high"));
-    }
-
-    #[test]
-    fn a_level_that_cannot_be_verified_is_refused() {
-        let error = check_effort(&catalogue(), "vendor/unnamed", "high")
-            .expect_err("the levels are not published for this model");
-        assert!(error.contains("not published"));
-    }
-
-    #[test]
-    fn a_model_with_no_reasoning_at_all_is_refused() {
-        let error = check_effort(&catalogue(), "vendor/plain", "high")
-            .expect_err("this model has no reasoning setting");
-        assert!(error.contains("does not support"));
-    }
-
-    #[test]
-    fn a_model_that_is_not_in_the_catalogue_is_refused() {
-        let error = check_effort(&catalogue(), "vendor/missing", "high")
-            .expect_err("the model is not in the catalogue");
-        assert!(error.contains("does not support"));
-    }
-
-    #[test]
-    fn the_levels_are_read_from_the_catalogue() {
-        let support = effort_support(&catalogue(), "vendor/enumerated");
-        assert!(support.published);
-        assert!(support.supported);
-        assert_eq!(support.values, vec!["high", "low", "medium"]);
     }
 
     #[test]
@@ -1397,25 +2137,25 @@ mod tests {
     #[test]
     fn a_piece_of_the_answer_is_read() {
         assert_eq!(
-            read_payload(r#"{"choices":[{"delta":{"content":"Hello"}}]}"#),
+            read_payload(Wire::OpenAiChatCompletions, r#"{"choices":[{"delta":{"content":"Hello"}}]}"#),
             StreamAction::Delta("Hello".to_string())
         );
     }
 
     #[test]
     fn the_end_of_the_stream_is_not_an_answer() {
-        assert_eq!(read_payload("[DONE]"), StreamAction::Nothing);
-        assert_eq!(read_payload(""), StreamAction::Nothing);
+        assert_eq!(read_payload(Wire::OpenAiChatCompletions, "[DONE]"), StreamAction::Nothing);
+        assert_eq!(read_payload(Wire::OpenAiChatCompletions, ""), StreamAction::Nothing);
     }
 
     #[test]
     fn a_line_that_is_not_json_yet_is_left_alone() {
-        assert_eq!(read_payload(r#"{"choices":[{"del"#), StreamAction::Nothing);
+        assert_eq!(read_payload(Wire::OpenAiChatCompletions, r#"{"choices":[{"del"#), StreamAction::Nothing);
     }
 
     #[test]
     fn the_model_and_the_usage_are_read() {
-        match read_payload(
+        match read_payload(Wire::OpenAiChatCompletions, 
             r#"{"model":"vendor/model","usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}"#,
         ) {
             StreamAction::Metadata { model_id, usage } => {
@@ -1429,7 +2169,7 @@ mod tests {
     #[test]
     fn a_failure_in_the_middle_of_the_stream_is_read() {
         assert_eq!(
-            read_payload(r#"{"error":{"message":"The model is overloaded."}}"#),
+            read_payload(Wire::OpenAiChatCompletions, r#"{"error":{"message":"The model is overloaded."}}"#),
             StreamAction::Failed("The model is overloaded.".to_string())
         );
     }

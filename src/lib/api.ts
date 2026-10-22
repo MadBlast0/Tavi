@@ -20,9 +20,10 @@
  * nobody wrote down.
  */
 
-import { openRouterCatalogue, type SlimModel } from "./catalogue.ts"
+import { providerCatalogue, type SlimModel } from "./catalogue.ts"
 import * as desktop from "./desktop.ts"
 import { isDesktopApp } from "./platform.ts"
+import { providerFor } from "./providers.ts"
 import * as web from "./web.ts"
 import type { KeyStandingReport, ProviderKey } from "./secret.ts"
 
@@ -126,7 +127,24 @@ export type ChatRequest = {
   folder?: string
   config?: {
     modelName?: string
+    /**
+     * Which provider to ask.
+     *
+     * The composer sends the provider it showed the model list for, so the
+     * request and the list are about the same provider by construction. That
+     * is what stops the app offering a model the request will not use.
+     */
+    providerId?: string
     reasoningEffort?: string
+    /**
+     * The reasoning preference, already checked and written the provider's
+     * way.
+     *
+     * The desktop app has no server to check it against, so the check happens
+     * here, against the same shared rule the server uses. The fields are the
+     * provider's own, and they are sent as they are.
+     */
+    reasoning?: Record<string, unknown>
   }
 }
 
@@ -184,10 +202,11 @@ export const saveProviderKey = (
   provider: string,
   key: string,
   name?: string,
+  baseUrl?: string,
 ): Promise<void> =>
   isDesktopApp()
-    ? desktop.saveProviderKey(provider, key, name)
-    : web.saveProviderKey(provider, key, name)
+    ? desktop.saveProviderKey(provider, key, name, baseUrl)
+    : web.saveProviderKey(provider, key, name, baseUrl)
 
 export const replaceProviderKey = (id: string, key: string): Promise<void> =>
   isDesktopApp()
@@ -233,21 +252,29 @@ export const recheckProviderKey = (id: string): Promise<void> =>
  * The desktop gets the provider's own catalogue from Rust and reads it here,
  * with the same code the server uses, so the picker offers the same models
  * either way.
+ *
+ * The provider is named: the list is the one provider's, and the request that
+ * follows goes to that same provider.
  */
-export const fetchModels = async (): Promise<ModelCatalogue> => {
+export const fetchModels = async (providerId: string): Promise<ModelCatalogue> => {
   if (isDesktopApp()) {
-    const raw = await desktop.fetchModels()
+    const raw = await desktop.fetchModels(providerId)
+    const provider = providerFor(providerId)
     return {
-      models: openRouterCatalogue(JSON.parse(raw.body), {
-        connectionId: "openrouter",
-        providerId: "openrouter",
-        apiProtocol: "openai-chat-completions",
-      }),
+      models: providerCatalogue(
+        providerId,
+        JSON.parse(raw.body),
+        {
+          connectionId: providerId,
+          providerId,
+          apiProtocol: provider?.wire ?? "openai-chat-completions",
+        },
+      ),
       fetchedAt: raw.fetchedAt,
       degraded: raw.degraded,
     }
   }
-  return web.fetchModels()
+  return web.fetchModels(providerId)
 }
 
 /* -------------------------------------------------------------------------- */

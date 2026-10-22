@@ -35,6 +35,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::appfile;
+use crate::provider::{provider_for, Auth, ProviderInfo, Validation, PROVIDERS};
 
 /// The credential service the keys live under.
 const KEY_SERVICE: &str = "tavi";
@@ -52,8 +53,12 @@ const LEGACY_KEY_SERVICE: &str = "ai-app";
 /// The single credential name the key had before there was more than one.
 const LEGACY_KEY_USER: &str = "openrouter-api-key";
 
-/// The provider whose key the app's own requests use.
-const ACTIVE_PROVIDER: &str = "openrouter";
+/// The provider the app talks to when the client has not said which one.
+///
+/// The provider **in use** is the client's choice, and it is named in the
+/// request. This is the answer to "which provider, if the client has not
+/// said", and it is the provider the app used before the choice existed.
+pub(crate) const DEFAULT_PROVIDER: &str = "openrouter";
 
 /// The sidecar, beside the app's other data.
 const INDEX_FILE: &str = "provider-keys.json";
@@ -61,108 +66,6 @@ const INDEX_FILE: &str = "provider-keys.json";
 /// The shape of the sidecar this build understands.
 const INDEX_VERSION: u32 = 1;
 
-/// How a provider takes a key.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Auth {
-    /// `Authorization: Bearer <key>`.
-    Bearer,
-    /// `x-api-key: <key>`, with the version header Anthropic requires.
-    ApiKeyHeader,
-}
-
-/// How a provider's key can be checked.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Validation {
-    /// A free request that answers "no" for a bad key.
-    IdentityEndpoint,
-    /// No such endpoint. The only way to find out is to make a real
-    /// inference, which costs the user's quota, so it is only ever run when
-    /// the user asks for it.
-    InferenceProbe,
-}
-
-/// A provider the app can hold a key for.
-struct Provider {
-    id: &'static str,
-    label: &'static str,
-    /// Where the provider's keys are made.
-    ///
-    /// The pane reads this from the TypeScript table; it is here so the two
-    /// tables can be compared, field by field, by a test.
-    #[allow(dead_code)]
-    keys_url: &'static str,
-    /// The environment variable this provider's key is named in.
-    ///
-    /// It is what the website's server reads the key from, and what the
-    /// development key file is read for, so both halves of the app are given a
-    /// key by the same name.
-    env_var: &'static str,
-    /// How the provider takes the key.
-    auth: Auth,
-    /// The endpoint that answers "is this key good, and whose is it".
-    identity_url: &'static str,
-    /// The endpoint a real request goes to, for the providers whose check
-    /// costs one.
-    inference_url: &'static str,
-    /// Whether the provider's answer carries an account name and a limit.
-    reports_usage: bool,
-    /// How the key can be checked, and what it costs to check it.
-    validation: Validation,
-}
-
-const PROVIDERS: &[Provider] = &[
-    Provider {
-        id: "openrouter",
-        label: "OpenRouter",
-        keys_url: "https://openrouter.ai/keys",
-        env_var: "OPENROUTER_API_KEY",
-        auth: Auth::Bearer,
-        identity_url: "https://openrouter.ai/api/v1/key",
-        inference_url: "https://openrouter.ai/api/v1/chat/completions",
-        reports_usage: true,
-        validation: Validation::IdentityEndpoint,
-    },
-    Provider {
-        id: "anthropic",
-        label: "Anthropic",
-        keys_url: "https://console.anthropic.com/settings/keys",
-        env_var: "ANTHROPIC_API_KEY",
-        auth: Auth::ApiKeyHeader,
-        identity_url: "https://api.anthropic.com/v1/models",
-        inference_url: "https://api.anthropic.com/v1/messages",
-        reports_usage: false,
-        validation: Validation::IdentityEndpoint,
-    },
-    Provider {
-        id: "openai",
-        label: "OpenAI",
-        keys_url: "https://platform.openai.com/api-keys",
-        env_var: "OPENAI_API_KEY",
-        auth: Auth::Bearer,
-        identity_url: "https://api.openai.com/v1/models",
-        inference_url: "https://api.openai.com/v1/chat/completions",
-        reports_usage: false,
-        validation: Validation::IdentityEndpoint,
-    },
-    Provider {
-        id: "nvidia-nim",
-        label: "NVIDIA NIM",
-        keys_url: "https://build.nvidia.com/",
-        env_var: "NVIDIA_API_KEY",
-        auth: Auth::Bearer,
-        /* Public. `GET /v1/models` answers 200 with the whole catalogue to
-           any caller, with a bad key and with no key at all, so it cannot tell
-           a good key from a bad one and must not be used as a check. */
-        identity_url: "https://integrate.api.nvidia.com/v1/models",
-        inference_url: "https://integrate.api.nvidia.com/v1/chat/completions",
-        reports_usage: false,
-        validation: Validation::InferenceProbe,
-    },
-];
-
-fn provider_for(id: &str) -> Option<&'static Provider> {
-    PROVIDERS.iter().find(|provider| provider.id == id)
-}
 
 /* -------------------------------------------------------------------------- */
 /* The sidecar                                                                 */
@@ -232,6 +135,14 @@ struct KeyRecord {
     /// The vendor's prefix and the last four characters.
     #[serde(default)]
     masked_value: Option<String>,
+    /// The address this key belongs to, when it is not the provider's
+    /// default.
+    ///
+    /// Some providers do not live at one address: an Azure resource, a
+    /// Databricks workspace, a model running on this machine. The key says
+    /// which, and the key's address wins.
+    #[serde(default)]
+    base_url: Option<String>,
     /// What the provider last said.
     #[serde(flatten)]
     standing: Standing,
@@ -506,7 +417,7 @@ fn dev_keys_file() -> std::path::PathBuf {
 ///
 /// A release build does not contain any of this.
 #[cfg(debug_assertions)]
-fn dev_key(provider: &Provider) -> Option<String> {
+fn dev_key(provider: &ProviderInfo) -> Option<String> {
     let text = std::fs::read_to_string(dev_keys_file()).ok()?;
     for line in text.lines() {
         let line = line.trim();
@@ -530,7 +441,7 @@ fn dev_key(provider: &Provider) -> Option<String> {
 
 /// A release build has no development file to read.
 #[cfg(not(debug_assertions))]
-fn dev_key(_provider: &Provider) -> Option<String> {
+fn dev_key(_provider: &ProviderInfo) -> Option<String> {
     None
 }
 
@@ -568,7 +479,7 @@ fn migrate(store: &Store) -> Result<KeyIndex, String> {
            was more than one provider are moved rather than asked for again. */
         let found = match read_credential(&store.service, &old_account)? {
             Some(secret) => Some(secret),
-            None if provider.id == ACTIVE_PROVIDER => {
+            None if provider.id == DEFAULT_PROVIDER => {
                 match migrate_key(&store.service, &store.service, LEGACY_KEY_USER, &old_account)? {
                     Some(secret) => Some(secret),
                     None => migrate_key(&store.service, LEGACY_KEY_SERVICE, LEGACY_KEY_USER, &old_account)?,
@@ -597,6 +508,7 @@ fn migrate(store: &Store) -> Result<KeyIndex, String> {
         let now = now_secs();
         let record = KeyRecord {
             id: id.clone(),
+            base_url: None,
             provider: provider.id.to_string(),
             name: provider.label.to_string(),
             name_is_default: true,
@@ -747,11 +659,20 @@ fn standing_for_status(status: u16, checked_at: u64) -> Standing {
 }
 
 /// Where a provider's key page is asked of.
-fn identity_url(provider: &Provider) -> String {
-    if provider.id == ACTIVE_PROVIDER {
-        return crate::provider::Provider::new().key_url();
+///
+/// A provider whose identity endpoint says whose key it is has a key page of
+/// its own. The others have a model listing, which answers yes or no and
+/// nothing more. Which one it is comes from the provider's own row, not from
+/// its name.
+fn identity_url(provider: &ProviderInfo) -> String {
+    if provider.identity_reports_account {
+        if let Some(resolved) = crate::provider::Provider::for_provider(provider.id) {
+            return resolved.key_url();
+        }
     }
-    provider.identity_url.to_string()
+    /* The model listing. A listing answers "no" for a bad key and nothing
+       more, which is what a check needs. */
+    format!("{}/models", provider.base_url.trim_end_matches('/'))
 }
 
 /// What a provider says about a key.
@@ -762,7 +683,7 @@ fn identity_url(provider: &Provider) -> String {
 ///
 /// A provider whose check costs a request is only ever asked when the user
 /// asks for it. The list refresh never spends anything.
-async fn check(provider: &Provider, key: &str, spend: bool) -> Result<Standing, String> {    let checked_at = now_secs();
+async fn check(provider: &ProviderInfo, key: &str, spend: bool) -> Result<Standing, String> {    let checked_at = now_secs();
 
     if provider.validation == Validation::InferenceProbe {
         if !spend {
@@ -776,14 +697,39 @@ async fn check(provider: &Provider, key: &str, spend: bool) -> Result<Standing, 
         return check_by_inference(provider, key, checked_at).await;
     }
 
+    /* A provider with no key of its own cannot be checked: there is no key
+       to be right or wrong. */
+    if provider.keyless {
+        return Ok(Standing {
+            valid: None,
+            check_reason: Some("not-checked".to_string()),
+            checked_at: Some(checked_at),
+            ..Default::default()
+        });
+    }
+    if matches!(provider.auth, Auth::GoogleOAuth) {
+        return Ok(Standing {
+            valid: None,
+            check_reason: Some("not-checked".to_string()),
+            checked_at: Some(checked_at),
+            ..Default::default()
+        });
+    }
+
     let url = identity_url(provider);
+    let resolved = crate::provider::Provider::for_provider(provider.id);
     let mut request = crate::provider::http().get(&url);
     request = match provider.auth {
-        Auth::Bearer => request.bearer_auth(key),
-        Auth::ApiKeyHeader => request
-            .header("x-api-key", key)
-            .header("anthropic-version", "2023-06-01"),
+        Auth::Bearer | Auth::AwsBearer => request.bearer_auth(key),
+        Auth::Header(name) => request.header(name, key),
+        Auth::None | Auth::GoogleOAuth => request,
     };
+    if let Some(resolved) = resolved {
+        request = match resolved.extra_header() {
+            Some((name, value)) => request.header(name, value),
+            None => request,
+        };
+    }
 
     let response = request
         .send()
@@ -878,9 +824,9 @@ async fn check(provider: &Provider, key: &str, spend: bool) -> Result<Standing, 
 /// Taken from the provider's own catalogue rather than written down here,
 /// because a model that has been retired is answered with a status that says
 /// nothing about the key — and one already has been.
-async fn first_published_model(provider: &Provider) -> Result<String, String> {
+async fn first_published_model(provider: &ProviderInfo) -> Result<String, String> {
     let response = crate::provider::http()
-        .get(provider.identity_url)
+        .get(identity_url(provider))
         .send()
         .await
         .map_err(|e| format!("Could not reach {}: {e}", provider.label))?;
@@ -922,7 +868,7 @@ async fn first_published_model(provider: &Provider) -> Result<String, String> {
 /// this costs a request — which is why it only runs when the user asks for
 /// it, and why the request asks for a single token.
 async fn check_by_inference(
-    provider: &Provider,
+    provider: &ProviderInfo,
     key: &str,
     checked_at: u64,
 ) -> Result<Standing, String> {
@@ -934,8 +880,16 @@ async fn check_by_inference(
         "max_tokens": 1,
     });
 
+    let inference_url = crate::provider::Provider::for_provider(provider.id)
+        .map(|resolved| resolved.probe_url())
+        .ok_or_else(|| {
+            format!(
+                "\"{}\" is not a provider this app knows about.",
+                provider.id
+            )
+        })?;
     let response = crate::provider::http()
-        .post(provider.inference_url)
+        .post(inference_url)
         .bearer_auth(key)
         .json(&body)
         .send()
@@ -972,10 +926,11 @@ async fn check_by_inference(
  */
 fn put_key(
     store: &Store,
-    provider: &Provider,
+    provider: &ProviderInfo,
     secret: &str,
     name: Option<&str>,
     standing: Standing,
+    base_url: Option<&str>,
 ) -> Result<String, String> {
     let mut index = ensure_index(store)?;
 
@@ -1000,6 +955,10 @@ fn put_key(
 
     group.keys.push(KeyRecord {
         id: id.clone(),
+        base_url: base_url
+            .map(str::trim)
+            .filter(|base| !base.is_empty())
+            .map(|base| base.trim_end_matches('/').to_string()),
         provider: provider.id.to_string(),
         name: chosen,
         name_is_default,
@@ -1119,7 +1078,7 @@ fn take_key(store: &Store, id: &str) -> Result<(), String> {
 /* -------------------------------------------------------------------------- */
 
 /// One key, as the app knows it.
-fn key_json(record: &KeyRecord, group: &ProviderGroup, provider: &Provider) -> Value {
+fn key_json(record: &KeyRecord, group: &ProviderGroup, provider: &ProviderInfo) -> Value {
     json!({
         "id": record.id,
         "provider": record.provider,
@@ -1130,6 +1089,7 @@ fn key_json(record: &KeyRecord, group: &ProviderGroup, provider: &Provider) -> V
         "updatedAt": record.updated_at,
         "lastUsedAt": record.last_used_at,
         "maskedValue": record.masked_value,
+    "baseUrl": record.base_url,
         "source": Source::Store.as_str(),
         "active": group.active_key_id.as_deref() == Some(record.id.as_str()),
         "valid": record.standing.valid,
@@ -1211,7 +1171,10 @@ pub async fn list_provider_keys(app: AppHandle) -> Result<Vec<Value>, String> {
             "lastUsedAt": null,
             "maskedValue": mask_secret(&secret),
             "source": Source::DevFile.as_str(),
-            "active": provider.id == ACTIVE_PROVIDER,
+            /* The key in use for its provider. Which provider the app is
+               talking to is the client's choice, and it is named in the
+               request. */
+            "active": true,
             "valid": null,
             "checkReason": "not-checked",
             "checkedAt": null,
@@ -1282,6 +1245,7 @@ pub async fn save_provider_key(
     provider: String,
     key: String,
     name: Option<String>,
+    base_url: Option<String>,
 ) -> Result<(), String> {
     let provider =
         provider_for(&provider).ok_or("That provider is not one the app knows about.")?;
@@ -1301,7 +1265,14 @@ pub async fn save_provider_key(
 
     let path = index_path(&app)?;
     let store = Store::new(KEY_SERVICE, &path);
-    put_key(&store, provider, &secret, name.as_deref(), standing)?;
+    put_key(
+        &store,
+        provider,
+        &secret,
+        name.as_deref(),
+        standing,
+        base_url.as_deref(),
+    )?;
 
     Ok(())
 }
@@ -1405,34 +1376,56 @@ fn find_key(index: &KeyIndex, id: &str) -> Result<(String, usize), String> {
     Err("That key is not one the app holds.".to_string())
 }
 
-/// The key the app's own provider requests use.
+/// The key a provider's requests go out with.
 ///
 /// Not a command. The webview used to ask for the key and send it to a local
 /// server as a bearer header, which put a credential in JavaScript for no
 /// reason: the provider request is made here, and the key is used here.
-pub fn get_api_key(app: &AppHandle) -> Result<Option<String>, String> {
+///
+/// The provider is named, because the app can talk to more than one and the
+/// request says which. The key is the **active key of that provider** — an
+/// explicit pointer, never an inference.
+/// The key a provider's requests go out with, and the address it belongs to.
+#[derive(Debug, Clone)]
+pub struct ActiveKey {
+    /// The secret. Never in an answer the webview sees.
+    pub secret: String,
+    /// The address, when the key is not at the provider's default one.
+    pub base_url: Option<String>,
+}
+
+/// The active key of a provider, with the address it belongs to.
+pub fn active_key(app: &AppHandle, provider_id: &str) -> Result<Option<ActiveKey>, String> {
     let path = index_path(app)?;
     let store = Store::new(KEY_SERVICE, &path);
     let index = ensure_index(&store)?;
 
-    if let Some(group) = index.providers.get(ACTIVE_PROVIDER) {
+    if let Some(group) = index.providers.get(provider_id) {
         if let Some(id) = &group.active_key_id {
+            let base_url = group
+                .keys
+                .iter()
+                .find(|record| &record.id == id)
+                .and_then(|record| record.base_url.clone());
             if let Some(secret) = read_credential(&store.service, &format!("{KEY_USER_PREFIX}{id}"))? {
-                return Ok(Some(secret));
+                return Ok(Some(ActiveKey { secret, base_url }));
             }
         }
     }
 
     /* Nothing in the store. In a development build the key may be in the file
        the website's server reads. */
-    Ok(provider_for(ACTIVE_PROVIDER).and_then(dev_key))
+    Ok(provider_for(provider_id).and_then(dev_key).map(|secret| ActiveKey {
+        secret,
+        base_url: None,
+    }))
 }
 
 /// Notes that a key was just used.
 ///
 /// The app's own use, not the provider's — the provider's last-used time
 /// needs an admin API, and this is the one fact the app can know for sure.
-pub fn note_key_use(app: &AppHandle) {
+pub fn note_key_use(app: &AppHandle, provider_id: &str) {
     let path = match index_path(app) {
         Ok(path) => path,
         Err(_) => return,
@@ -1441,14 +1434,14 @@ pub fn note_key_use(app: &AppHandle) {
     let Ok(mut index) = ensure_index(&store) else {
         return;
     };
-    let Some(group) = index.providers.get(ACTIVE_PROVIDER) else {
+    let Some(group) = index.providers.get(provider_id) else {
         return;
     };
     let Some(id) = group.active_key_id.clone() else {
         return;
     };
     let now = now_secs();
-    let Some(provider) = index.providers.get_mut(ACTIVE_PROVIDER) else {
+    let Some(provider) = index.providers.get_mut(provider_id) else {
         return;
     };
     if let Some(record) = provider.keys.iter_mut().find(|record| record.id == id) {
@@ -1463,11 +1456,12 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        ACTIVE_PROVIDER, KEY_SERVICE, KEY_USER_PREFIX, PROVIDERS, Source, Standing, Store,
+        DEFAULT_PROVIDER, KEY_SERVICE, KEY_USER_PREFIX, Source, Standing, Store,
         days_from_civil, dev_key, ensure_index, entry_for, find_key, leading_prefix,
-        mask_secret, migrate_key, provider_for, put_active, put_key, put_name, put_secret,
+        mask_secret, migrate_key, put_active, put_key, put_name, put_secret,
         read_credential, read_index, take_key, timestamp,
     };
+    use crate::provider::{provider_for, PROVIDERS};
 
     /// The credential service the tests use.
     ///
@@ -1504,7 +1498,7 @@ mod tests {
     }
 
     /// The provider the tests use.
-    fn openrouter() -> &'static super::Provider {
+    fn openrouter() -> &'static super::ProviderInfo {
         provider_for("openrouter").expect("OpenRouter should be a provider")
     }
 
@@ -1512,7 +1506,7 @@ mod tests {
     fn a_key_is_stored_and_found_again() {
         let _credentials = credentials();
         let (store, path) = scratch("round-trip");
-        let id = put_key(&store, openrouter(), "sk-or-v1-secret-value", None, Standing::default())
+        let id = put_key(&store, openrouter(), "sk-or-v1-secret-value", None, Standing::default(), None)
             .expect("the key should be stored");
 
         let index = ensure_index(&store).expect("the index should be readable");
@@ -1532,9 +1526,9 @@ mod tests {
     fn adding_a_second_key_does_not_change_the_one_in_use() {
         let _credentials = credentials();
         let (store, path) = scratch("second-key");
-        let first = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default())
+        let first = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default(), None)
             .expect("the first key should be stored");
-        let second = put_key(&store, openrouter(), "sk-or-v1-second", None, Standing::default())
+        let second = put_key(&store, openrouter(), "sk-or-v1-second", None, Standing::default(), None)
             .expect("the second key should be stored");
 
         let index = ensure_index(&store).expect("the index should be readable");
@@ -1554,9 +1548,9 @@ mod tests {
     fn the_active_pointer_moves_when_it_is_moved() {
         let _credentials = credentials();
         let (store, path) = scratch("active");
-        let first = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default())
+        let first = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default(), None)
             .expect("the first key should be stored");
-        let second = put_key(&store, openrouter(), "sk-or-v1-second", None, Standing::default())
+        let second = put_key(&store, openrouter(), "sk-or-v1-second", None, Standing::default(), None)
             .expect("the second key should be stored");
 
         put_active(&store, &second).expect("the pointer should move");
@@ -1574,7 +1568,7 @@ mod tests {
     fn taking_away_the_key_in_use_leaves_the_provider_with_none() {
         let _credentials = credentials();
         let (store, path) = scratch("removed");
-        let id = put_key(&store, openrouter(), "sk-or-v1-only", None, Standing::default())
+        let id = put_key(&store, openrouter(), "sk-or-v1-only", None, Standing::default(), None)
             .expect("the key should be stored");
 
         take_key(&store, &id).expect("the key should be removable");
@@ -1596,7 +1590,7 @@ mod tests {
     fn the_sidecar_keeps_the_previous_copy() {
         let _credentials = credentials();
         let (store, path) = scratch("backup");
-        let id = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default())
+        let id = put_key(&store, openrouter(), "sk-or-v1-first", None, Standing::default(), None)
             .expect("the key should be stored");
         put_name(&store, &id, "Renamed").expect("the key should be renamed");
 
@@ -1629,7 +1623,7 @@ mod tests {
     fn a_secret_replaced_is_the_one_that_is_read_back() {
         let _credentials = credentials();
         let (store, path) = scratch("replaced");
-        let id = put_key(&store, openrouter(), "sk-or-v1-old", None, Standing::default())
+        let id = put_key(&store, openrouter(), "sk-or-v1-old", None, Standing::default(), None)
             .expect("the key should be stored");
 
         put_secret(&store, &id, "sk-or-v1-new", Standing::default())
@@ -1710,12 +1704,12 @@ mod tests {
         assert_eq!(before, ids.len(), "two providers share an id");
     }
 
-    /// The provider the app's own requests use is one of the providers it can
+    /// The provider the app falls back to is one of the providers it can
     /// hold a key for. A key for a provider that is not on the list would be
     /// stored and never used.
     #[test]
-    fn the_active_provider_is_one_we_know() {
-        assert!(provider_for(ACTIVE_PROVIDER).is_some());
+    fn the_default_provider_is_one_we_know() {
+        assert!(provider_for(DEFAULT_PROVIDER).is_some());
     }
 
     /// A provider that is not on the list is refused rather than filed under
@@ -1799,10 +1793,19 @@ mod tests {
     /// Every provider knows the environment variable its key is named in.
     ///
     /// A provider without one could never be given a key by the environment,
-    /// and the development file would have nothing to read for it.
+    /// and the development file would have nothing to read for it. A provider
+    /// that needs no key at all is the exception: it has none, on purpose.
     #[test]
     fn every_provider_names_its_environment_variable() {
         for provider in PROVIDERS {
+            if provider.keyless {
+                assert!(
+                    provider.env_var.is_empty(),
+                    "{} needs no key, so it should name no variable for one",
+                    provider.id
+                );
+                continue;
+            }
             assert!(
                 provider.env_var.starts_with(char::is_alphabetic),
                 "{} has no environment variable",

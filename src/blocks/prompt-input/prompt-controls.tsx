@@ -9,7 +9,9 @@ import {
   GitBranchIcon,
   KeyRoundIcon,
   MicIcon,
+  PlugIcon,
   SquareIcon,
+  TerminalIcon,
   PaperclipIcon,
   PlusIcon,
   SearchIcon,
@@ -41,6 +43,18 @@ import {
 import { Kbd, KbdGroup } from "@/components/kbd"
 import { NumberFlow } from "@/components/number-flow"
 import { openSettings } from "@/lib/open-settings"
+import { ProviderLogo } from "@/components/provider-logo"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPage,
+} from "@/components/command/command"
+import { PROVIDERS, providerFor } from "@/lib/providers"
+import type { ProviderKey } from "@/lib/secret"
 
 import {
   Tooltip,
@@ -703,17 +717,160 @@ function PromptInputEffort(props: EffortProps) {
 }
 
 /**
+ * The provider the request goes to.
+ *
+ * A button that says which provider is in use, and a palette that chooses
+ * one. The palette has two kinds of provider — an **API provider**, which is a
+ * key and an address, and a **CLI provider**, which is a program on this
+ * machine — and each opens the list of the ones that are set up.
+ *
+ * The list of API providers is the providers the user has a key for, because
+ * a provider with no key is one the app cannot reach: the picker says what is
+ * missing rather than offering something that will fail.
+ */
+function PromptInputProvider({
+  provider,
+  onProviderChange,
+  keys,
+}: {
+  provider: string
+  onProviderChange: (value: string) => void
+  keys: ProviderKey[]
+}) {
+  const context = usePromptInput("PromptInputProvider")
+  const [open, setOpen] = React.useState(false)
+  const current = providerFor(provider)
+  const chosen = current && keys.some((key) => key.provider === provider)
+
+  /* The providers the app can reach: the ones the user has a key for. */
+  const apiProviders = PROVIDERS.filter((entry) =>
+    keys.some((key) => key.provider === entry.id),
+  )
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) refocus(context.textareaRef.current)
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-label={
+              current
+                ? "Provider: " + current.label
+                : "Select a provider"
+            }
+            disabled={context.disabled}
+          />
+        }
+      >
+        {current ? (
+          <>
+            <ProviderLogo
+              provider={current.id}
+              providerLabel={current.label}
+              className="size-4"
+            />
+            <span className="min-w-0 truncate">{current.label}</span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate">Select a provider</span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-64 p-0"
+        align="start"
+        side="top"
+      >
+        <Command label="Provider">
+          <CommandInput placeholder="Search providers…" />
+          <CommandList>
+            <CommandGroup>
+              <CommandItem page="api" pageTitle="API provider">
+                <span className="flex items-center gap-2">
+                  <PlugIcon className="size-4 shrink-0" />
+                  API provider
+                </span>
+              </CommandItem>
+              <CommandItem page="cli" pageTitle="CLI provider">
+                <span className="flex items-center gap-2">
+                  <TerminalIcon className="size-4 shrink-0" />
+                  CLI provider
+                </span>
+              </CommandItem>
+            </CommandGroup>
+
+            <CommandPage id="api">
+              <CommandGroup heading="API providers">
+                {apiProviders.map((entry) => (
+                  <CommandItem
+                    key={entry.id}
+                    value={entry.id + " " + entry.label}
+                    onSelect={() => {
+                      onProviderChange(entry.id)
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <ProviderLogo
+                        provider={entry.id}
+                        providerLabel={entry.label}
+                        className="size-4"
+                      />
+                      {entry.label}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              {apiProviders.length === 0 ? (
+                <CommandEmpty>
+                  No provider key yet. Add one in Settings.
+                </CommandEmpty>
+              ) : null}
+            </CommandPage>
+
+            <CommandPage id="cli">
+              <CommandGroup heading="CLI providers">
+                <CommandItem disabled>
+                  No CLI provider is set up yet.
+                </CommandItem>
+              </CommandGroup>
+            </CommandPage>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * There is no provider key, so there is nothing to choose.
  *
  * The list is not fetched without one — it comes from the provider, and a list
  * of models that cannot be called is a list of things that will fail. So this
  * says what is missing, and offers the way to put it right.
  */
-function NoKeyState({ onAddKey }: { onAddKey: () => void }) {
+function NoKeyState({
+  onAddKey,
+  providerLabel,
+}: {
+  onAddKey: () => void
+  providerLabel?: string
+}) {
   return (
     <div className="flex flex-col items-start gap-2 px-2 py-3">
       <p className="text-sm">
-        Tavi needs a provider key before it can reach any model.
+        {providerLabel
+          ? "Tavi needs a " +
+            providerLabel +
+            " key before it can reach any of its models."
+          : "Tavi needs a provider key before it can reach any model."}
       </p>
       <Button type="button" size="xs" variant="outline" onClick={onAddKey}>
         <KeyRoundIcon className="size-4" />
@@ -729,6 +886,7 @@ function PromptInputModel({
   onModelChange,
   effort,
   onEffortChange,
+  provider,
   noKey,
   error,
   catalogue,
@@ -739,6 +897,14 @@ function PromptInputModel({
   onModelChange: (value: string) => void
   effort: string
   onEffortChange: (value: string) => void
+  /**
+   * The provider in use.
+   *
+   * Everything in this picker belongs to it: the models listed, the effort
+   * levels offered, and the key the request goes out with. It is named at the
+   * top of the picker, so the user can see whose models they are choosing.
+   */
+  provider: string
   /**
    * Whether there is no provider key at all.
    *
@@ -770,6 +936,7 @@ function PromptInputModel({
   const [query, setQuery] = React.useState("")
   const current = models.find((item) => item.value === model) ?? models[0]
   const { current: level, direction } = useEffortLevel(props.levels, effort)
+  const providerLabel = providerFor(provider)?.label
   const choose = (next: string) => {
     if (next !== model) haptic("tick")
     onModelChange(next)
@@ -816,7 +983,7 @@ function PromptInputModel({
             size="xs"
             variant="ghost"
             aria-label={`Model: ${current?.label ?? "No model selected"}, effort: ${level?.label ?? "none"}`}
-            disabled={context.disabled}
+            disabled={context.disabled || !provider}
           />
         }
       >
@@ -860,6 +1027,17 @@ function PromptInputModel({
         {/* The search field is hidden when there is nothing to search: a search
             box over an empty list is noise, and the list is empty because
             there is no key. */}
+        {providerLabel ? (
+          <div className="text-muted-foreground flex items-center gap-2 border-b pb-2 text-xs">
+            <ProviderLogo
+              provider={provider}
+              providerLabel={providerLabel}
+              className="size-3.5"
+            />
+            <span className="truncate">{providerLabel}</span>
+          </div>
+        ) : null}
+
         {noKey ? null : (
           <div className="flex items-center gap-2 pb-2">
             <SearchIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
@@ -928,6 +1106,7 @@ function PromptInputModel({
             })
           ) : noKey ? (
             <NoKeyState
+              providerLabel={providerFor(provider)?.label}
               onAddKey={() => {
                 setOpen(false)
                 openSettings("api-keys")
@@ -2404,6 +2583,7 @@ export {
   PromptInputMeter,
   PromptInputModel,
   PromptInputModelSelect,
+  PromptInputProvider,
   PromptInputSelect,
   PromptInputSuggestions,
   PromptInputTool,

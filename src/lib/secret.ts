@@ -144,6 +144,14 @@ export type ProviderKey = KeyStanding & {
   /** Where the secret is kept. */
   source: KeySource;
   /**
+   * The address this key belongs to, when it is not the provider's default.
+   *
+   * Some providers do not live at one address: an Azure resource, a
+   * Databricks workspace, a model running on this machine. The key says
+   * which, and the key's address wins.
+   */
+  baseUrl: string | null;
+  /**
    * Whether this is the key the app's requests go out with.
    *
    * Exactly one key per provider is active, and it is a pointer the user

@@ -100,8 +100,14 @@ export const saveProviderKey = async (
   provider: string,
   key: string,
   name?: string,
+  baseUrl?: string,
 ): Promise<void> => {
-  await invoke("save_provider_key", { provider, key, name: name ?? null })
+  await invoke("save_provider_key", {
+    provider,
+    key,
+    name: name ?? null,
+    baseUrl: baseUrl ?? null,
+  })
 }
 
 export const replaceProviderKey = async (
@@ -147,12 +153,18 @@ export const recheckProviderKey = async (id: string): Promise<void> => {
 /* The model catalogue                                                         */
 /* -------------------------------------------------------------------------- */
 
-export const fetchModels = async (): Promise<RawCatalogue> => {
+/**
+ * The catalogue for one provider.
+ *
+ * The provider is named, because the app can talk to more than one and the
+ * list has to be the one whose models the request will actually use.
+ */
+export const fetchModels = async (provider: string): Promise<RawCatalogue> => {
   const raw = await invoke<{
     body: string
     fetchedAt: number
     degraded: boolean
-  }>("model_catalogue", { force: false })
+  }>("model_catalogue", { provider, force: false })
   return {
     body: raw.body,
     fetchedAt: raw.fetchedAt,
