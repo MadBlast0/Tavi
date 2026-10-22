@@ -4,10 +4,10 @@ import * as React from "react"
 import {
   CircleCheckIcon,
   CircleHelpIcon,
+  EllipsisIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
   InfoIcon,
-  MoreHorizontalIcon,
   PackageIcon,
   RefreshCwIcon,
   TerminalIcon,
@@ -553,7 +553,7 @@ function CliProviderRow({
               />
             }
           >
-            <MoreHorizontalIcon className="size-4" />
+            <EllipsisIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onDetails(state)}>
