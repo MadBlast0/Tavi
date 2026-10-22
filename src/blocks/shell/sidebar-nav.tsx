@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  BellOffIcon,
   CircleSmallIcon,
   ClockIcon,
   FolderIcon,
@@ -40,11 +41,12 @@ import {
 } from "@/blocks/prompt-input/thread-bridge"
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
-import { listChats, onChatsChanged } from "@/lib/chats"
+import { listChats, onChatsChanged, type StoredChat } from "@/lib/chats"
 import { listWorkspaces } from "@/lib/workspace"
 import {
   listSessions,
   onSessionsChanged,
+  type StoredSession,
 } from "@/lib/sessions"
 import { formatWhen } from "@/lib/threads"
 import type { Side } from "@/lib/sides"
@@ -54,6 +56,40 @@ import {
   useWorkspace,
 } from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
+
+/**
+ * The rail's own view of a chat, and of a session.
+ *
+ * The row is given the few fields it actually reads, and the side it belongs
+ * to. **They are written down once, here**, because the rail builds this
+ * view twice — once when it first loads and once every time the stores say
+ * something changed — and two copies of the same list of fields are two
+ * places for a field to be left out of. One was, and the row showed a chat
+ * that had been muted as a chat that had not.
+ */
+const railChat = (chat: StoredChat): RailThread => ({
+  id: chat.id,
+  title: chat.title,
+  updatedAt: chat.updatedAt,
+  model: chat.model,
+  pinnedAt: chat.pinnedAt,
+  unreadAt: chat.unreadAt,
+  mutedAt: chat.mutedAt,
+  side: "chat",
+})
+
+const railSession = (session: StoredSession): RailThread => ({
+  id: session.id,
+  title: session.title,
+  updatedAt: session.updatedAt,
+  model: session.model,
+  folder: session.folder,
+  folderName: session.folderName,
+  pinnedAt: session.pinnedAt,
+  unreadAt: session.unreadAt,
+  mutedAt: session.mutedAt,
+  side: "code",
+})
 
 /**
  * Row geometry, shared by the destinations and the threads so the two read as
@@ -413,6 +449,16 @@ function ThreadRow({
             className="size-3 shrink-0 text-sidebar-foreground/50"
           />
         ) : null}
+        {/* The crossed-out bell says this thread is muted: it still runs, and
+            its reply still lands in it, but the reader does not want to be
+            interrupted about it. It is a symbol rather than a colour, because
+            a colour on its own is not a message. */}
+        {thread.mutedAt ? (
+          <BellOffIcon
+            aria-hidden="true"
+            className="size-3 shrink-0 text-sidebar-foreground/50"
+          />
+        ) : null}
         {/* The dot says this thread is answering right now. It is driven by
             the live stream rather than by a flag the row makes up, so it
             appears on exactly one row and only while a reply is in flight —
@@ -428,9 +474,17 @@ function ThreadRow({
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
-          trigger rather than beside it. */}
+          trigger rather than beside it.
+
+          It says one of three things, and never two at once: the thread is
+          answering, there is something in it the reader has not looked at,
+          or — when neither of those is true — when it was last touched. */}
       <SidebarMenuBadge className="text-sidebar-foreground/70">
-        {running ? "Running" : formatWhen(thread.updatedAt)}
+        {running
+          ? "Running"
+          : thread.unreadAt
+            ? "New"
+            : formatWhen(thread.updatedAt)}
       </SidebarMenuBadge>
     </ThreadContextMenu>
   )
@@ -455,26 +509,10 @@ export function SidebarNav() {
      A chat is not a code session, so the rail is not one list drawn twice: it
      is two lists, and the switch says which of them you are looking at. */
   const [chats, setChats] = React.useState<RailThread[]>(() =>
-    listChats().map((chat) => ({
-      id: chat.id,
-      title: chat.title,
-      updatedAt: chat.updatedAt,
-      model: chat.model,
-      pinnedAt: chat.pinnedAt,
-      side: "chat" as const,
-    })),
+    listChats().map(railChat),
   )
   const [sessions, setSessions] = React.useState<RailThread[]>(() =>
-    listSessions().map((session) => ({
-      id: session.id,
-      title: session.title,
-      updatedAt: session.updatedAt,
-      model: session.model,
-      folder: session.folder,
-      folderName: session.folderName,
-      pinnedAt: session.pinnedAt,
-      side: "code" as const,
-    })),
+    listSessions().map(railSession),
   )
   /* Per mode, for the same reason the lists themselves are: a chat list sorted
      one way and a project list sorted another is two answers to one list. Not
@@ -541,28 +579,8 @@ export function SidebarNav() {
      can also change in another tab. */
   React.useEffect(() => {
     const refresh = () => {
-      setChats(
-        listChats().map((chat) => ({
-          id: chat.id,
-          title: chat.title,
-          updatedAt: chat.updatedAt,
-          model: chat.model,
-          pinnedAt: chat.pinnedAt,
-          side: "chat" as const,
-        })),
-      )
-      setSessions(
-        listSessions().map((session) => ({
-          id: session.id,
-          title: session.title,
-          updatedAt: session.updatedAt,
-          model: session.model,
-          folder: session.folder,
-          folderName: session.folderName,
-          pinnedAt: session.pinnedAt,
-          side: "code" as const,
-        })),
-      )
+      setChats(listChats().map(railChat))
+      setSessions(listSessions().map(railSession))
     }
     refresh()
     const stopChats = onChatsChanged(refresh)

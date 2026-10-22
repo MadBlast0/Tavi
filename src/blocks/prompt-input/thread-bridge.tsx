@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import { takeIntent } from "@/lib/desktop"
+import { OPEN_THREAD } from "@/lib/open-thread"
 import { isDesktopApp } from "@/lib/platform"
 import type { Side } from "@/lib/sides"
 import { useComposerVariant } from "./composer-variant"
@@ -60,6 +61,25 @@ export function ThreadBridgeProvider({ children }: { children: React.ReactNode }
     () => ({ functions, activeId, setActiveId, runningId, setRunningId }),
     [activeId, runningId],
   )
+
+  /**
+   * A conversation asked for from outside the composer.
+   *
+   * The notification card that names a finished reply is raised from a module
+   * rather than from a component, so it cannot hold the composer's handlers.
+   * It asks for the conversation to be opened instead, and this is where the
+   * request lands — the bridge already publishes the composer's two entry
+   * points, so this is the same seam reached from a different side.
+   */
+  React.useEffect(() => {
+    const onOpen = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail
+      if (typeof id !== "string" || !id) return
+      functions.current?.open(id)
+    }
+    window.addEventListener(OPEN_THREAD, onOpen)
+    return () => window.removeEventListener(OPEN_THREAD, onOpen)
+  }, [])
 
   return (
     <ThreadBridgeContext.Provider value={value}>

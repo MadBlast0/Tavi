@@ -58,6 +58,10 @@ import {
   type StoredUsage,
 } from "@/lib/threads"
 import {
+  clearConversationUnread,
+  findConversation,
+} from "@/lib/conversations"
+import {
   beginPartial,
   discardPartial,
   finishPartial,
@@ -1139,6 +1143,11 @@ export function PromptBlock() {
         return
       }
 
+      /* Opening a conversation is what looking at it means, so the mark that
+         says there is something the reader has not looked at goes as the
+         conversation is opened. */
+      void clearConversationUnread(side, id)
+
       if (side === "chat") {
         const chat = findChat(id)
         if (!chat) {
@@ -1788,21 +1797,26 @@ export function PromptBlock() {
         if (saved) void discardPartial(threadId)
       })
 
-      /* The reply is on screen, so it needs no announcement — unless the app
-         is in the background, which is the whole case. The rule is written
-         once, in `notifications.ts`, and it is answered here by what this
-         component knows: the reply finished, and this is the conversation it
-         belongs to.
+      /* The reply has ended, and the app decides what to do about it: the
+         rule is written once, in `notifications.ts`, and it is answered here
+         by what this component knows — the reply finished, and this is the
+         conversation it belongs to.
 
-         The title is the conversation's name rather than the app's, because a
-         toast that says only "a reply finished" tells the reader nothing
-         when there is more than one conversation, and the whole point is
-         knowing which one to come back to. */
-      const title =
-        write.side === "chat"
-          ? findChat(threadId)?.title
-          : findSession(threadId)?.title
-      void announceReply({ title: title || "Tavi", text: shown })
+         The conversation is looked up rather than only its title carried
+         down, because the announcement also needs to know whether the
+         conversation has been muted and whether the reader is looking at
+         it, and both of those are the conversation's own facts. */
+      const conversation = findConversation(write.side, threadId)
+      void announceReply({
+        title: conversation?.title || "Tavi",
+        text: shown,
+        id: threadId,
+        side: write.side,
+        onScreen:
+          activeRef.current.side === write.side &&
+          activeRef.current.id === threadId,
+        muted: Boolean(conversation?.mutedAt),
+      })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "unknown error"

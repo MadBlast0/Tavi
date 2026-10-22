@@ -75,6 +75,20 @@ export const renameSession = (id: string, title: string) =>
 
 export const togglePinSession = (id: string) => sessionStore.togglePin(id)
 
+/**
+ * Notes that a reply finished in this session while the reader was elsewhere.
+ *
+ * The rail's own badge carries this, so the reader can see what they missed
+ * even on a machine where the operating system refused to raise a toast.
+ */
+export const markSessionUnread = (id: string) => sessionStore.markUnread(id)
+
+/** Notes that the reader has looked at this session. */
+export const clearSessionUnread = (id: string) => sessionStore.clearUnread(id)
+
+/** Turns this session's announcements on or off. */
+export const toggleMuteSession = (id: string) => sessionStore.toggleMute(id)
+
 export const forkSession = (id: string): Promise<StoredSession | undefined> =>
   sessionStore.fork(id)
 

@@ -847,6 +847,12 @@ so tool support is intermittent.
   app cannot write files and the model cannot run commands. So the wording is
   "a reply finished", and it is never "the task is finished" — which would be
   a claim the app cannot support.
+- **The system's toast cannot open the conversation.** Clicking it brings the app
+  to the front, which is the operating system's doing, and no further: the
+  notification plugin's action API is mobile-only. The card *inside* the app
+  can, and so can the conversation's own mark in the rail — which is the half
+  of the system that works everywhere, including on a machine where the
+  operating system will not raise a toast at all.
 - **Only the local environment exists.** The composer footer carries an
   environment picker because the upstream assistant-ui composer it is modelled on
   has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,

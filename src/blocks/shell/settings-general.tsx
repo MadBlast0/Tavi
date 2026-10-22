@@ -7,7 +7,9 @@ import { IconSwitch, type IconSwitchOption } from "@/components/icon-switch"
 import { SettingRow } from "@/components/setting-row"
 import { Switch } from "@/components/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
+import { Button } from "@/components/button"
 import {
+  announceTest,
   askForNotifications,
   notificationPreferences,
   setCompletionNotifications,
@@ -37,9 +39,21 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
  *
  * Phrased as what is missing rather than as "coming soon", because that is the
  * difference between a row that is waiting for something and one that is
- * pretending. Nothing in this file is enabled except the theme.
+ * pretending. The theme, the palette, the font and the notification rows are
+ * the ones in this file that work; the rest are waiting.
  */
 const NOT_BUILT = "Not built yet — there is nothing to configure yet"
+
+/**
+ * What the test row is really testing.
+ *
+ * A notification is raised by the operating system and not by the app, and
+ * the operating system may decline. On Windows only an *installed* app may
+ * raise one, and a development build is not installed, so a development build
+ * shows the notification under powershell's name or not at all.
+ */
+const TEST_WHY =
+  "On Windows, only an installed app may raise a notification. A development build shows one under powershell's name."
 
 /** A segmented control for a row that cannot be changed yet. */
 function Placeholder({
@@ -164,6 +178,12 @@ function PaletteRow() {
  * before the question, and the answer they give is the answer to a question
  * they were not asked. If it is refused, the setting goes back off and says
  * so.
+ *
+ * **The test row is not a decoration.** A notification is raised by the
+ * operating system and not by the app, and the operating system may decline
+ * — on Windows only an *installed* app may raise one, and a development
+ * build is not one. Without a way to ask, the reader is left guessing
+ * whether the app is broken or the system is saying no.
  */
 function NotificationRows() {
   const [preferences, setPreferences] = React.useState(notificationPreferences)
@@ -191,7 +211,7 @@ function NotificationRows() {
     <>
       <SettingRow
         label="Response completions"
-        description="Tell me when a reply finishes while the app is in the background."
+        description="Tell me when a reply finishes and the answer is not on screen."
       >
         <Switch
           checked={preferences.completions}
@@ -228,6 +248,22 @@ function NotificationRows() {
           }}
           aria-label="Show a preview"
         />
+      </SettingRow>
+
+      <SettingRow
+        label="Test notification"
+        description="Send one now, to see whether your system will show it."
+        why={TEST_WHY}
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void announceTest().then((granted) => setRefused(!granted))
+          }}
+        >
+          Send
+        </Button>
       </SettingRow>
 
       {refused ? (

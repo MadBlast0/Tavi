@@ -205,13 +205,25 @@ stores, with separate shapes and separate caps:
 | | Chat | Code session |
 |---|---|---|
 | Key | `tavi.chats.v1` | `tavi.code-sessions.v1` |
-| Shape | turns, model, effort, pin | turns, model, effort, agent mode, folder, pin |
+| Shape | turns, model, effort, pin, unread, mute | turns, model, effort, agent mode, folder, pin, unread, mute |
 | A folder | none — there is nowhere to put one | the folder's id and its name |
 | Grouped by | nothing; the list is flat | the project it was run against |
 | Id prefix | `c-` | `s-` |
 
 Each is a single JSON array, capped at 50, with attachment text captured at send
 time so a restored thread keeps its context.
+
+**Two of a thread's fields are about the reader rather than the
+conversation**, and they live on the thread because a thread is the thing
+they are about — a separate list of ids somewhere else could fall out of step
+with the conversations, and could not be deleted with them.
+
+| | |
+|---|---|
+| `unreadAt` | When a reply finished in this thread while the reader was elsewhere. The rail's badge says so until the thread is opened. It follows the **Response completions** setting, because a reader who has turned notifications off does not want to be told about a reply in any form. |
+| `mutedAt` | When the thread was muted. A muted thread is never announced, and it is never marked as having something the reader has not looked at. It still runs, and its reply still lands in it. |
+
+Both are timestamps, and both are absent until they apply.
 
 **Where the array lives is `src/lib/thread-repository.ts`'s business.** The
 website keeps it in `localStorage`; the desktop app keeps it in the app's own
