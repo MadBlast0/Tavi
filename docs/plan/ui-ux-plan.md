@@ -14,42 +14,113 @@
 
 ## Where the work has got to
 
-| Task | | What it produced |
+Every task in this plan, and the state it is in. The states are:
+
+| | |
+|---|---|
+| ✅ done | Finished, and its own checks have passed |
+| 🟡 partly | Some of it is done, and the Status block says what is not |
+| ▶ next | The next one to do |
+| ⬜ not started | Nothing done on it yet |
+
+**A task is only marked done once its own checks have passed.** A task
+that is half finished says so, in its Status block, rather than claiming
+to be finished — and `src/lib/plan-bookkeeping.test.ts` checks the two
+against each other, so the tracker cannot drift away from the work.
+
+| Task | State | What it produces |
 |---|---|---|
-| 0.1 | ✅ done | The implementation map: the stack, the entry points, the shell, the sidebar, the Chat/Code switch, the composers, the state, the check commands, and the vendored `react-resizable-panels` primitive that is on disk and imported by nothing |
+
+**Phase 0 — Audit the codebase and decide, before editing**
+
+| 0.1 | ✅ done | The audit: the stack, the entry points, the shell, the rail, the two sides, the composers, the state, the check commands, and the raw material on disk |
 | 0.2 | ✅ done | [`docs/visual-baseline.md`](../../visual-baseline.md) — the approved shape, as numbers, and the list of nine things that must not change |
-| 0.3 | ✅ done | The shadcn and Lucide audit: the component families that exist, the one primitive family in use, and the icon sizing convention |
-| 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — the docking decision: `react-resizable-panels` through the app's own component, with the drag built on top of it |
+| 0.3 | ✅ done | The findings, in the two documents it produced: the component map and the icon convention |
+| 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — the docking decision, and the proof of fit |
+
+**Phase 1 — The frontend foundation**
+
 | 1.1 | ✅ done | [`docs/tokens.md`](../../tokens.md) — the token map — and seven missing tokens, three of which the code already asked for |
 | 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
 | 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
 | 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
 | 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the six that are new |
+
+**Phase 2 — A workspace host, without changing the landing UI**
+
 | 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the container in the work area, with the surface stepping aside for it |
 | 2.2 | ✅ done | A **Workspace** row in the Code rail, which opens the workspace and closes it again |
 | 2.3 | ✅ done | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
-| 3.1 | ⬜ next | The icon-only button |
-| 3.2 | ⬜ | Menus and tooltips |
-| 3.3 | ⬜ | Popovers and pickers |
-| 3.4 | ⬜ | Dialogs and confirmations |
-| 3.5 | ⬜ | Status, empty, loading and error |
-| 4.1 | ⬜ | The pane frame |
-| 4.2 | ⬜ | The pane header |
-| 4.3 | ⬜ | The pane's actions |
-| 4.4 | ⬜ | The pane registry |
-| 4.5 | ⬜ | The pane's state slots |
-| 5.1 – 5.15 | ⬜ | The thirteen panes, and the consistency pass |
-| 6.1 – 6.5 | ⬜ | The layout engine, and the first panes in it |
-| 7.1 – 7.11 | ⬜ | The interactions: the Views menu, splitting, resizing, docking, focus, maximise, presets, reset, and the pane menu |
-| 8.1 – 8.5 | ⬜ | States, overlays, keyboard, narrow windows, and the polish pass |
-| 9.1 – 9.2 | ⬜ | The QA pass and the handoff note |
 
-Each task that is done carries a **Status** block with what it produced and
-where it went, and the block is only written after the task's own checks
-have passed. A task marked done is done.
+**Phase 3 — Reusable controls and overlay behaviour**
 
+| 3.1 | ▶ next | One icon-button pattern, used by every pane |
+| 3.2 | ⬜ not started | The menu and context-menu conventions |
+| 3.3 | ⬜ not started | The popover, select and command patterns |
+| 3.4 | ⬜ not started | One dialog and confirmation convention |
+| 3.5 | ⬜ not started | The shared patterns for a pane's unhappy states |
+
+**Phase 4 — The generic pane framework**
+
+| 4.1 | ⬜ not started | The frame every pane is drawn in |
+| 4.2 | ⬜ not started | The header: icon, title, actions, and the drag region |
+| 4.3 | ⬜ not started | The overflow menu, and the close, focus and maximise controls |
+| 4.4 | ⬜ not started | The registry of pane types, and the model of an instance |
+| 4.5 | ⬜ not started | The shared empty, loading, error and unavailable slots |
+
+**Phase 5 — Every pane's content, one pane at a time**
+
+| 5.1 | ⬜ not started | The Chat pane |
+| 5.2 | ⬜ not started | The Code Session pane |
+| 5.3 | ⬜ not started | The Diff Viewer: the overview and the file list |
+| 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
+| 5.5 | ⬜ not started | The Browser pane |
+| 5.6 | ⬜ not started | The Application Preview pane |
+| 5.7 | ⬜ not started | The Terminal pane |
+| 5.8 | ⬜ not started | The File Explorer pane |
+| 5.9 | ⬜ not started | The File Editor pane |
+| 5.10 | ⬜ not started | The Plan pane |
+| 5.11 | ⬜ not started | The Tasks pane |
+| 5.12 | ⬜ not started | The Agent Activity pane |
+| 5.13 | ⬜ not started | The File Preview pane |
+| 5.14 | ⬜ not started | The Logs pane |
+| 5.15 | ⬜ not started | One look across every pane |
+
+**Phase 6 — The layout engine**
+
+| 6.1 | ⬜ not started | The layout engine, proved on two nested panes |
+| 6.2 | ⬜ not started | The boundary between the app and the layout engine |
+| 6.3 | ⬜ not started | The layout's own shape, and the rules on it |
+| 6.4 | ⬜ not started | Panes drawn by the layout |
+| 6.5 | ⬜ not started | One pane, then several, and the six-pane cap |
+
+**Phase 7 — The interactions**
+
+| 7.1 | ⬜ not started | The menu that adds a view |
+| 7.2 | ⬜ not started | Closing a pane, and the empty branches it leaves |
+| 7.3 | ⬜ not started | Splitting a pane left, right, top or bottom |
+| 7.4 | ⬜ not started | Resizing the dividers, with minimum sizes |
+| 7.5 | ⬜ not started | Dragging a pane against another to split it |
+| 7.6 | ⬜ not started | Which pane has focus |
+| 7.7 | ⬜ not started | Maximising a pane, and putting it back |
+| 7.8 | ⬜ not started | The layout presets |
+| 7.9 | ⬜ not started | Resetting the layout, and recovering from a broken one |
+| 7.10 | ⬜ not started | The pane's context menu, and what each action does |
+| 7.11 | ⬜ not started | Keeping the layout between runs |
+
+**Phase 8 — States, keyboard, narrow windows, polish**
+
+| 8.1 | ⬜ not started | Every pane's states, checked against the list |
+| 8.2 | ⬜ not started | Menus, popovers and dialogs, checked |
+| 8.3 | ⬜ not started | The workspace by keyboard, and read aloud |
+| 8.4 | ⬜ not started | The workspace at 600 by 338 |
+| 8.5 | ⬜ not started | The last look, against the approved screens |
+
+**Phase 9 — Regression QA and the handoff**
+
+| 9.1 | ⬜ not started | The whole thing, exercised |
+| 9.2 | ⬜ not started | The note that says what is built and what is not |
 ---
-
 # 1. The non-negotiable product contract
 
 ## 1.1 Preserve the existing app first
