@@ -75,6 +75,7 @@ import {
   cloneRepository,
   fetchModels,
   listCliModels,
+  listCliProviders,
   listProjects,
   listProviderKeys,
   streamChat,
@@ -82,7 +83,12 @@ import {
   type ProviderKey,
   type ToolActivity,
 } from "@/lib/api"
-import { cliIdOf, isCliProviderId } from "@/lib/cli-providers"
+import {
+  cliIdOf,
+  isCliProviderId,
+  providerChoice,
+  type CliProviderState,
+} from "@/lib/cli-providers"
 import { SETTINGS_CLOSED } from "@/lib/open-settings"
 import {
   MODES as MODE_DEFINITIONS,
@@ -1019,6 +1025,37 @@ export function PromptBlock() {
    * the CLI has no list of its own, and the app shows no model picker for it
    * rather than an empty one. */
   const [cliModels, setCliModels] = React.useState<PromptModel[] | null>(null)
+  /* Why the list could not be read, when it could not be.
+   *
+   * A CLI that manages its own model has no list, and the picker is hidden for
+   * it. A CLI whose list could not be read is a different thing, and it says
+   * so rather than leaving a person to wonder where the model control went. */
+  const [cliModelsError, setCliModelsError] = React.useState<string | null>(null)
+  /* The lists that have been read, so that switching back to a provider does
+   * not ask the program for its models again. */
+  const cliModelLists = React.useRef(new Map<string, PromptModel[]>())
+
+  /* The CLI providers on this machine.
+   *
+   * They are read here, once, because two things need them: the menu that
+   * chooses one, and the model picker that says whose models are being
+   * chosen. */
+  const [cliProviders, setCliProviders] = React.useState<CliProviderState[]>([])
+  React.useEffect(() => {
+    let alive = true
+    void listCliProviders()
+      .then((states) => {
+        if (alive) setCliProviders(states)
+      })
+      .catch(() => {
+        /* A browser has no CLI providers, and a machine whose list could not
+           be read offers none rather than offering a broken one. */
+        if (alive) setCliProviders([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
   /** Every model's display name, including ones outside the free pool. */
   const [realNames, setRealNames] = React.useState<Record<string, string>>({})
   const [realSpecs, setRealSpecs] = React.useState<
@@ -1550,22 +1587,43 @@ export function PromptBlock() {
    * A CLI is not a model, and most of them do not publish a list: they
    * choose their own. One that does is asked for the list, and the list is
    * what the picker shows. One that does not is asked for nothing, and the
-   * picker is not shown at all. */
+   * picker is not shown at all.
+   *
+   * A list that has been read is kept, so that coming back to a provider
+   * does not ask the program for its models again. */
   React.useEffect(() => {
     if (!isCliProviderId(provider)) {
       setCliModels(null)
+      setCliModelsError(null)
+      return
+    }
+    const wanted = cliIdOf(provider);
+    const known = cliModelLists.current.get(wanted);
+    if (known) {
+      setCliModels(known)
+      setCliModelsError(null)
       return
     }
     let current = true
-    void listCliModels(cliIdOf(provider))
+    void listCliModels(wanted)
       .then((models) => {
         if (!current) return
-        setCliModels(models.map((id) => ({ value: id, label: id })))
+        const list = models.map((id) => ({ value: id, label: id }))
+        cliModelLists.current.set(wanted, list)
+        setCliModels(list)
+        setCliModelsError(null)
       })
-      .catch(() => {
+      .catch((problem: unknown) => {
         /* A CLI that will not say what models it has has no list to show.
-           The app shows no picker rather than an empty one. */
-        if (current) setCliModels([])
+           A CLI whose list could not be *read* is a different thing, and it
+           says so rather than leaving the picker to vanish. */
+        if (!current) return
+        setCliModels([])
+        setCliModelsError(
+          problem instanceof Error
+            ? problem.message
+            : "The models could not be read.",
+        )
       })
     return () => {
       current = false
@@ -2315,15 +2373,21 @@ export function PromptBlock() {
         onProviderChange={setProvider}
         keys={keys ?? []}
         locked={providerLocked}
+        cliProviders={cliProviders}
       />
       {/* A CLI that chooses its own model has no model picker: an empty
-          picker is a claim that there is a choice, and there is not one. */}
-      {isCliProviderId(provider) && (cliModels ?? []).length === 0 ? null : (
+          picker is a claim that there is a choice, and there is not one. A
+          CLI whose model list could not be read keeps its picker, and says
+          what went wrong. */}
+      {isCliProviderId(provider) &&
+      (cliModels ?? []).length === 0 &&
+      !cliModelsError ? null : (
         <PromptInputModel
           models={modelOptions}
           model={model}
           onModelChange={setModel}
           provider={provider}
+          providerLabel={providerChoice(provider, cliProviders)?.label}
           levels={isCliProviderId(provider) ? [] : efforts}
           effort={effort}
           onEffortChange={setEffort}
@@ -2331,7 +2395,7 @@ export function PromptBlock() {
           noKey={
             !isCliProviderId(provider) && keys !== null && !hasKey(keys, provider)
           }
-          error={modelsError}
+          error={cliModelsError ?? modelsError}
           catalogue={catalogueFreshness}
         />
       )}
