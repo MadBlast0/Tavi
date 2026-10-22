@@ -59,16 +59,31 @@ import {
 } from "@/lib/threads"
 import {
   clearConversationUnread,
-  findConversation,
 } from "@/lib/conversations"
 import {
-  beginPartial,
-  discardPartial,
-  finishPartial,
   flushAnswers,
-  writePartial,
 } from "@/lib/partials"
-import { announceReply } from "@/lib/notifications"
+import {
+  conversation,
+  failConversation,
+  forgetConversation,
+  loadConversation,
+  markConversationPending,
+  setConversationError,
+  setConversationReport,
+  setConversationTurns,
+  setShownConversation,
+  startConversation,
+  stopConversation,
+  subscribeConversation,
+  type RunFacts,
+} from "@/lib/conversation"
+import {
+  attachmentText,
+  fromStoredTurns,
+  toStoredTurns,
+  type Turn,
+} from "@/lib/turns"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
 import {
   cancelClone,
@@ -222,10 +237,6 @@ import {
 } from "@/components/message-scroller"
 
 import { StreamingText } from "./streaming-text"
-import {
-  replyMayTouchComposer,
-  threadIdFor,
-} from "./thread-writes"
 import { useComposerVariant } from "./composer-variant"
 import { useThreadBridge } from "./thread-bridge"
 import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
@@ -545,12 +556,6 @@ const starterPool = (
   return pool.slice(n).concat(pool.slice(0, n))
 }
 
-type Turn =
-  | { id: string; role: "user"; message: PromptMessage }
-  | { id: string; role: "assistant"; text: string; streaming: boolean; stopped?: boolean; incomplete?: boolean }
-  /** A model-written summary of everything above it; sent with later requests. */
-  | { id: string; role: "summary"; text: string }
-
 /**
  * What a thread records about the run that produced it.
  *
@@ -559,9 +564,7 @@ type Turn =
  * thread records the settings it was actually run with, not the ones that
  * happen to be in force when the answer arrives.
  */
-type WriteState = {
-  /** Which side the thread belongs to. */
-  side: Side
+type WriteState = RunFacts & {
   /**
    * The thread the turn belongs to.
    *
@@ -571,40 +574,12 @@ type WriteState = {
    * with the same conversation in it.
    */
   id: string | null
-  model: string
-  effort: string
-  /** The agent mode. Code only. */
-  mode: string
-  /** The folder's id and name. Code only. */
-  folderId: string | undefined
-  folderName: string | undefined
   /** The provider's accounting for the turn that just finished. */
   usage: PromptTokenUsage | null
 }
 
 /** Matches a typed `@path/to/file.ext` so it resolves like one from the menu. */
 const AT_REFERENCE = /@([\w./-]*[\w-]+\.[a-z0-9]{1,8})/gi
-
-const MAX_ATTACHMENT_BYTES = 400 * 1024
-
-/**
- * Reads an attachment into the prompt. Anything binary or oversized is stated
- * plainly rather than dropped, so the model knows it was referenced.
- */
-const attachmentText = async (file: PromptFile): Promise<string> => {
-  if (file.pasted?.text) return file.pasted.text
-  try {
-    const blob = file.file
-    if (blob.size > MAX_ATTACHMENT_BYTES) return "[Attached file is too large to inline.]"
-    const textual =
-      blob.type.startsWith("text/") ||
-      /^application\/(json|xml|yaml|javascript|typescript|toml)$/.test(blob.type)
-    if (!textual) return "[Attached file is not text and was not sent.]"
-    return await blob.text()
-  } catch {
-    return "[Attached file could not be read.]"
-  }
-}
 
 /**
  * The system prompt is not written here.
@@ -694,82 +669,6 @@ const CUT_OFF =
 const STOPPED =
   "\n\n[This answer was stopped before it finished, so it is incomplete. Carry on from where it stopped, and do not assume that anything after this point was written.]"
 
-/** Captures attachment text so a restored thread still carries its context. */
-const toStoredTurns = async (list: Turn[], known: WorkspaceFile[]): Promise<StoredTurn[]> =>
-  Promise.all(
-    list.map(async (turn): Promise<StoredTurn> => {
-      if (turn.role === "summary") return { id: turn.id, role: "summary", text: turn.text }
-      if (turn.role === "assistant") {
-        return {
-          id: turn.id,
-          role: "assistant",
-          text: turn.text,
-          ...(turn.stopped ? { stopped: true } : {}),
-          ...(turn.incomplete ? { incomplete: true } : {}),
-        }
-      }
-      const files = await Promise.all(
-        turn.message.files.map(async (file) => ({
-          name: file.name,
-          size: file.size,
-          text: (await attachmentText(file)).slice(0, 20_000),
-        })),
-      )
-      return {
-        id: turn.id,
-        role: "user",
-        text: turn.message.text,
-        files,
-        mentions: turn.message.mentions.map((mention) => ({
-          label: mention.label,
-          ...(known.some((file) => file.path === mention.id) ? { path: mention.id } : {}),
-        })),
-      }
-    }),
-  )
-
-/**
- * Rebuilds the view's turns from storage. Attachment text is restored through
- * `pasted`, which `attachmentText` reads first — the original `File` object
- * cannot survive a reload, and re-reading an empty blob would send nothing.
- */
-const fromStoredTurns = (list: StoredTurn[]): Turn[] =>
-  list.map((turn) => {
-    if (turn.role === "summary") return { id: turn.id, role: "summary", text: turn.text }
-    if (turn.role === "assistant") {
-      return {
-        id: turn.id,
-        role: "assistant",
-        text: turn.text,
-        streaming: false,
-        ...(turn.stopped ? { stopped: true } : {}),
-        ...(turn.incomplete ? { incomplete: true } : {}),
-      }
-    }
-    return {
-      id: turn.id,
-      role: "user",
-      message: {
-        text: turn.text,
-        files: turn.files.map((file, index) => ({
-          id: `${turn.id}-f${index}`,
-          file: new File([], file.name),
-          name: file.name,
-          size: file.size,
-          type: "text/plain",
-          state: "done" as const,
-          ...(file.text !== undefined
-            ? { pasted: { text: file.text, lines: countLines(file.text) } }
-            : {}),
-        })),
-        mentions: turn.mentions.map((mention, index) => ({
-          id: mention.path ?? `${turn.id}-m${index}`,
-          label: mention.label,
-        })),
-      },
-    }
-  })
-
 /**
  * Attachments are accepted locally; their text is read at send time and inlined
  * into the prompt by `expandUserTurn`, so nothing needs an upload endpoint.
@@ -834,8 +733,6 @@ function useDock(ref: React.RefObject<HTMLElement | null>, docked: boolean) {
  * was unreachable and its invented data has been removed rather than kept.
  */
 export function PromptBlock() {
-  const [turns, setTurns] = React.useState<Turn[]>([])
-  const [status, setStatus] = React.useState<PromptStatus>("ready")
   /* The switch that changes this lives in the sidebar; see composer-variant.tsx.
      It is a *surface* switch: it says which of the two places you are in, and
      each place has its own threads, its own model and its own composer. */
@@ -962,22 +859,13 @@ export function PromptBlock() {
     Record<string, ModelReasoningCapabilities>
   >({})
   /** Token usage exactly as the provider reported it on the last finished turn. */
-  const [usage, setUsage] = React.useState<PromptTokenUsage | null>(null)
-  /** Which model the server says it called, so a mismatch can be shown. */
-  const [servedModel, setServedModel] = React.useState<string | null>(null)
+  /* The usage, the model the server says it called, and the last thing that
+     went wrong all belong to the conversation, and the conversation is the
+     runtime's. They are read from it below, with the turns. */
   /** Folders this app has actually been given access to. Empty until one is picked. */
   const [folders, setFolders] = React.useState<Workspace[]>([])
   const [folderId, setFolderId] = React.useState<string | undefined>(undefined)
   const [projectFiles, setProjectFiles] = React.useState<WorkspaceFile[]>([])
-  /**
-   * The last conversation that could not be saved, if there was one.
-   *
-   * The conversation stays on screen either way — losing what the user can see
-   * would be worse than losing what is on disk — but a conversation that is
-   * only on screen is gone the next time the app opens, and that has to be
-   * said rather than discovered.
-   */
-  const [saveError, setSaveError] = React.useState<string | null>(null)
   /**
    * Something worth saying that is not an error — a folder was linked, a
    * clone finished. It goes away on the next thing that happens.
@@ -1009,6 +897,60 @@ export function PromptBlock() {
     code: null,
   })
   const activeSessionId = activeBySide[variant]
+
+  /**
+   * The conversation this composer is showing, and its live state.
+   *
+   * **The composer does not own a conversation. It reads one.** The turns, the
+   * status, the usage and the error all belong to the runtime, and the
+   * runtime is what outlives this component. So a reply keeps arriving when
+   * the reader looks at another conversation, and stopping one leaves the
+   * others running.
+   *
+   * The subscription is to this conversation alone, because the text arrives
+   * many times a second and nothing else in the app has any business
+   * redrawing for it.
+   */
+  const shownId = activeSessionId ?? null
+  const [, redraw] = React.useReducer((count: number) => count + 1, 0)
+  React.useEffect(
+    () => (shownId ? subscribeConversation(shownId, redraw) : undefined),
+    [shownId],
+  )
+  const shown = shownId ? conversation(shownId) : undefined
+  /**
+   * The turn the reader has just sent, and the conversation it belongs to.
+   *
+   * It is shown at once, because the reader pressed send and expects to see
+   * their own words; a moment later it is in the conversation, in the
+   * runtime, with the thread it belongs to.
+   *
+   * **It belongs to one conversation.** A half-sent message must not follow
+   * the reader into the next conversation, which is what a message that was
+   * only "the last one sent" would do — and it did, until this said which
+   * conversation it was for.
+   */
+  const [sent, setSent] = React.useState<{
+    turn: Turn
+    side: Side
+    /** The conversation it belongs to, or null while it is still being made. */
+    id: string | null
+  } | null>(null)
+  const turns = React.useMemo(() => {
+    const live = shown?.turns ?? []
+    if (!sent) return live
+    /* It is shown in its own conversation and nowhere else. */
+    if (sent.side !== variant) return live
+    if (sent.id !== shownId) return live
+    /* And it is dropped as soon as the runtime has it. */
+    if (live.some((turn) => turn.id === sent.turn.id)) return live
+    return [...live, sent.turn]
+  }, [shown?.turns, sent, variant, shownId])
+  const status: PromptStatus =
+    !shown || shown.status === "idle" ? "ready" : shown.status
+  const usage = shown?.usage ?? null
+  const servedModel = shown?.servedModel ?? null
+  const saveError = shown?.error ?? null
   const [canPick, setCanPick] = React.useState(false)
   /* Clone dialog. Opening it is what the folder menu triggers; the URL, the
      result and any failure all live here rather than in the menu, so a slow
@@ -1059,7 +1001,6 @@ export function PromptBlock() {
     }
   }, [])
   const [compacting, setCompacting] = React.useState(false)
-  const abortRef = React.useRef<AbortController | null>(null)
   const dockRef = React.useRef<HTMLDivElement>(null)
 
   /**
@@ -1078,18 +1019,6 @@ export function PromptBlock() {
     },
     []
   )
-  /**
-   * The thread being written, and the side it belongs to.
-   *
-   * A ref, because the write happens inside a stream that outlives the render
-   * that started it — and because a thread belongs to a side, so the side has
-   * to be known at the moment of the write rather than at the moment of the
-   * render that began it.
-   */
-  const activeRef = React.useRef<{ side: Side; id: string | null }>({
-    side: "chat",
-    id: null,
-  })
   const empty = turns.length === 0
   useDock(dockRef, !empty)
 
@@ -1099,30 +1028,37 @@ export function PromptBlock() {
   /**
    * Empties a side's conversation.
    *
-   * The composer holds the live copy of the thread that is open, and this is
+   * The runtime holds the live copy of the thread that is open, and this is
    * what "no thread is open" looks like. It is also what a thread that has
    * been deleted looks like: a conversation that no longer exists is not a
    * conversation, and leaving the other side's turns on screen under this
    * side's composer would be a lie about what is open.
+   *
+   * **A conversation with a reply in flight is not emptied.** The reply is
+   * still going to land in it, and throwing it away would lose the answer.
    */
   const clearThread = React.useCallback((side: Side) => {
-    setTurns([])
-    setUsage(null)
-    setServedModel(null)
-    activeRef.current = { side, id: null }
+    const open = activeBySide[side]
+    if (open) forgetConversation(open)
     setActiveBySide((current) =>
       current[side] === null ? current : { ...current, [side]: null },
     )
-  }, [])
+    if (side === variant) setShownConversation(null)
+  }, [activeBySide, variant])
 
   /**
    * Shows a thread, or nothing at all.
    *
-   * The store is the truth about a thread that is not open; the composer holds
+   * The store is the truth about a thread that is not open; the runtime holds
    * the live copy while it is open. Loading one replaces everything the
    * composer is showing — the turns, the usage, the model, the effort, and in
    * Code the folder and the agent mode — because a thread is a conversation
    * with its own settings rather than a window onto shared ones.
+   *
+   * **A reply in flight is not stopped.** It belongs to the conversation it
+   * was asked on, and it goes on being written whether or not anyone is
+   * looking at it. That is the whole of what the runtime is for, and it is
+   * why a reply can be running in a conversation the reader has left.
    *
    * The folder and the mode are Code's, so loading a chat does not touch
    * them, and loading a session restores them from the session rather than
@@ -1130,10 +1066,6 @@ export function PromptBlock() {
    */
   const loadThread = React.useCallback(
     (side: Side, id: string | null) => {
-      abortRef.current?.abort()
-      abortRef.current = null
-      setStatus("ready")
-
       if (!id) {
         clearThread(side)
         /* The folder and the agent mode are left alone.
@@ -1157,30 +1089,31 @@ export function PromptBlock() {
           clearThread(side)
           return
         }
-        setTurns(fromStoredTurns(chat.turns))
-        setUsage(chat.usage ?? null)
-        setServedModel(null)
-        activeRef.current = { side, id }
+        loadConversation(id, side, fromStoredTurns(chat.turns), {
+          usage: chat.usage ?? null,
+          servedModel: null,
+        })
         setActiveBySide((current) =>
           current[side] === id ? current : { ...current, [side]: id },
         )
+        if (side === variant) setShownConversation(id)
         if (chat.model) setModelBySide((current) => ({ ...current, [side]: chat.model! }))
         if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
         return
       }
-
       const session = findSession(id)
       if (!session) {
         clearThread(side)
         return
       }
-      setTurns(fromStoredTurns(session.turns))
-      setUsage(session.usage ?? null)
-      setServedModel(null)
-      activeRef.current = { side, id }
+      loadConversation(id, side, fromStoredTurns(session.turns), {
+        usage: session.usage ?? null,
+        servedModel: null,
+      })
       setActiveBySide((current) =>
         current[side] === id ? current : { ...current, [side]: id },
       )
+      if (side === variant) setShownConversation(id)
       if (session.model) setModelBySide((current) => ({ ...current, [side]: session.model! }))
       if (session.effort) setEffortBySide((current) => ({ ...current, [side]: session.effort! }))
       if (session.mode) setMode(session.mode)
@@ -1188,7 +1121,7 @@ export function PromptBlock() {
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
       )
     },
-    [folders, clearThread],
+    [folders, clearThread, variant],
   )
 
   /**
@@ -1569,49 +1502,21 @@ export function PromptBlock() {
     }
   }, [folderId])
 
-  /* Streams a reply from the chat route. */
+  /**
+   * Asks for a reply, and hands it to the runtime.
+   *
+   * **What is asked is prepared here; what happens is the runtime's.** The
+   * request needs the folder's files and the model's own capabilities, and
+   * those are this component's facts. The stream, the journal, the
+   * conversation the answer lands in, and the announcement are the runtime's
+   * — and they do not stop when the reader looks at another conversation.
+   */
   const respondReal = async (
     id: string,
     history: Turn[],
     write: WriteState,
     threadId: string,
   ) => {
-    const controller = new AbortController()
-    abortRef.current = controller
-    /* Hoisted so the abort and failure paths can store what actually arrived. */
-    let shown = ""
-    /* The provider's own accounting for the turn, as it arrives. It is kept
-       here as well as in state because the write happens after the stream has
-       ended, and by then the render that started it is long gone. */
-    let reported: PromptTokenUsage | null = null
-
-    /* The answer is written down while it is being written.
-       Until now it existed only in memory: between the message going out and
-       the answer finishing, a crash lost all of it. The journal is a file of
-       the conversation's own, appended to as the text arrives, and the answer
-       is found again on the next launch if the app dies in the middle of
-       writing it.
-
-       The journal is named by the conversation, and the conversation is the
-       one the reply was asked on — which the write that sent the message has
-       already settled. */
-    beginPartial(threadId, id, write.side, write.model)
-
-    /**
-     * Whether the composer is still showing the side this reply belongs to.
-     *
-     * A reply belongs to the side it was asked on. If the user has switched to
-     * the other surface while it was arriving, the composer is now showing a
-     * different conversation, and putting this one's turns back into it would
-     * put one side's conversation under the other side's composer — where the
-     * next message would take it along and save a session that has nothing to
-     * do with Code.
-     *
-     * The reply is still stored on the thread it belongs to. Only the composer
-     * is left alone.
-     */
-    const stillHere = () =>
-      replyMayTouchComposer(write.side, write.id, activeRef.current)
 
     try {
       /* Resolve every file the thread points at before the request goes out, so
@@ -1679,11 +1584,6 @@ export function PromptBlock() {
         })
       }
 
-      /* The turn is added before the request goes out, because the answer
-         arrives as events and there has to be somewhere to put them. */
-      setStatus("streaming")
-      setTurns((list) => [...list, { id, role: "assistant", text: "", streaming: true }])
-
       /* The reasoning preference, written the provider's way.
        *
        * A level the model does not publish is refused, and the refusal says
@@ -1697,19 +1597,19 @@ export function PromptBlock() {
             })
           : null;
       if (reasoning && reasoning.kind === "reject") {
-        setStatus("error")
-        setTurns((list) =>
-          list.map((turn) =>
-            turn.id === id
-              ? { ...turn, text: reasoning.message, streaming: false }
-              : turn,
-          ),
-        )
+        failConversation(threadId, id, reasoning.message)
         return
       }
 
-      await streamChat(
-        {
+      /* The request is prepared here, and the runtime takes it from here: the
+         stream, the journal, the conversation the answer lands in, and the
+         announcement. None of that stops when the reader looks at another
+         conversation, which is the whole point of it being there. */
+      startConversation({
+        id: threadId,
+        turnId: id,
+        turns: history,
+        request: {
           messages: outbound,
           /* The facts, not the prose. The server writes the system prompt, so
              that what a chat is told is a rule the client cannot ignore. */
@@ -1733,118 +1633,24 @@ export function PromptBlock() {
               : {}),
           },
         },
-        (event) => {
-          if (event.type === "error") {
-            throw new Error(event.errorText || "The stream reported an error")
-          }
-          if (event.type === "message-metadata") {
-            if (event.messageMetadata?.modelId) {
-              setServedModel(event.messageMetadata.modelId)
-            }
-            return
-          }
-          if (event.type === "finish") {
-            /* The provider's own accounting for the turn that just ended. This
-               is what the context dial reads — no estimate is involved. */
-            const usage = event.messageMetadata?.usage
-            if (usage) {
-              reported = usage as PromptTokenUsage
-              if (stillHere()) setUsage(usage as PromptTokenUsage)
-            }
-            return
-          }
-          if (event.type === "text-delta" && event.delta) {
-            shown += event.delta
-            const text = shown
-            /* Written down before the composer is asked whether it is still
-               showing this thread. The journal is the answer's own, and it is
-               written whether or not anyone is looking at it. */
-            writePartial(threadId, text)
-            if (!stillHere()) return
-            setTurns((list) =>
-              list.map((turn) =>
-                turn.id === id && turn.role === "assistant"
-                  ? { ...turn, text, streaming: true }
-                  : turn
-              )
-            )
-          }
+        write: {
+          side: write.side,
+          model: write.model,
+          effort: write.effort,
+          mode: write.mode,
+          folderId: write.folderId,
+          folderName: write.folderName,
         },
-        controller.signal,
-      )
-
-      /* Settle the turn from the text that actually arrived, then store it. The
-         reply is persisted here as well as on send, because until this point
-         only the user's half of the exchange exists.
-
-         The composer is only updated if it is still showing this side. A reply
-         that arrives after the user has switched is kept — it belongs to the
-         thread it was asked on — but it is not put on screen under the other
-         side's conversation. */
-      const settled: Turn[] = [
-        ...history,
-        { id, role: "assistant", text: shown, streaming: false },
-      ]
-      if (stillHere()) {
-        setTurns(settled)
-        setStatus("ready")
-      }
-      /* The answer is complete, so the journal says so. It is not removed
-         yet: the conversation is written next, and that write can fail. A
-         journal left behind is the answer, and the next launch puts it back. */
-      await finishPartial(threadId, false)
-      void persist(settled, { ...write, usage: reported }).then((saved) => {
-        if (saved) void discardPartial(threadId)
-      })
-
-      /* The reply has ended, and the app decides what to do about it: the
-         rule is written once, in `notifications.ts`, and it is answered here
-         by what this component knows — the reply finished, and this is the
-         conversation it belongs to.
-
-         The conversation is looked up rather than only its title carried
-         down, because the announcement also needs to know whether the
-         conversation has been muted and whether the reader is looking at
-         it, and both of those are the conversation's own facts. */
-      const conversation = findConversation(write.side, threadId)
-      void announceReply({
-        title: conversation?.title || "Tavi",
-        text: shown,
-        id: threadId,
-        side: write.side,
-        onScreen:
-          activeRef.current.side === write.side &&
-          activeRef.current.id === threadId,
-        muted: Boolean(conversation?.mutedAt),
+        /* The folder's files as they were when the turn was sent, because a
+           mention is recorded as a path only when the file still resolves. */
+        known: projectFiles,
       })
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "unknown error"
-      const settled: Turn[] =
-        (error as Error).name === "AbortError"
-          ? [...history, { id, role: "assistant", text: shown, streaming: false, stopped: true }]
-          : [
-              ...history,
-              {
-                id,
-                role: "assistant",
-                text: shown
-                  ? `${shown}\n\n[Stopped: ${message}]`
-                  : `Request failed: ${message}`,
-                streaming: false,
-              },
-            ]
-      if (stillHere()) {
-        setTurns(settled)
-        setStatus("ready")
-      }
-      /* The answer stopped rather than finished, and the journal says so. */
-      await finishPartial(threadId, true)
-      void persist(settled, { ...write, usage: reported }).then((saved) => {
-        if (saved) void discardPartial(threadId)
-      })
-    } finally {
-      abortRef.current = null
+      /* The request could not be prepared, so the reply never started. The
+         conversation says so rather than being left with a turn that will
+         never be written. */
+      const message = error instanceof Error ? error.message : "unknown error"
+      failConversation(threadId, id, `Request failed: ${message}`)
     }
   }
 
@@ -1888,36 +1694,16 @@ export function PromptBlock() {
             folder: write.folderId,
             folderName: write.folderName,
           })
-    /* The reply's own write reuses the thread this one made. */
+    /* The write made the thread, so the thread the reply belongs to exists
+       from here on. */
     write.id = saved.id
-    /* Which thread the composer has open. Only a write that belongs to the
-       thread now on screen may change it: a reply that arrives after the user
-       has switched surfaces, or pressed "New", belongs to the thread it was
-       asked on — not to the conversation now on screen. If it were allowed to
-       change it, the next message on the side now showing would find no open
-       thread and make a second one with the same conversation in it. */
-    if (replyMayTouchComposer(write.side, asked, activeRef.current)) {
-      activeRef.current = { side: write.side, id: saved.id }
-      /* The thread the side had open, whatever side the composer is on — the
-         rail highlights it, and switching back to that side finds it. */
-      setActiveBySide((current) => ({ ...current, [write.side]: saved.id }))
-    }
 
     /* A write that was refused is not a failure the user can see on their own:
        the conversation is still on screen, and the rail still lists it, and
-       both are gone the next time the app opens. So it is said out loud.
-
-       Whether it happened is also returned, because the answer's journal is
-       only removed once the answer is safely in the conversation. A journal
-       left behind is the answer, and the next launch puts it back. */
+       both are gone the next time the app opens. So it is said out loud. */
     const failure =
       write.side === "chat" ? chatWriteError() : sessionWriteError()
-    if (failure) {
-      setStatus("error")
-      setSaveError(failure)
-    } else {
-      setSaveError(null)
-    }
+    setConversationError(saved.id, failure)
     return !failure
   }
 
@@ -1934,7 +1720,7 @@ export function PromptBlock() {
     side: variant,
     /* The thread this turn belongs to: the one that is open on this side, or
        none yet, in which case the write makes one. */
-    id: threadIdFor(variant, activeRef.current),
+    id: activeBySide[variant],
     model,
     effort,
     mode,
@@ -1945,10 +1731,12 @@ export function PromptBlock() {
 
   const send = async (message: PromptMessage) => {
     const id = `${Date.now()}`
-    const next: Turn[] = [...turns, { id: `${id}-user`, role: "user", message }]
-    setTurns(next)
-    setStatus("submitted")
+    const userTurn: Turn = { id: `${id}-user`, role: "user", message }
+    const next: Turn[] = [...turns, userTurn]
     const write = captureWrite()
+    /* The reader's own words appear at once, before the thread they belong
+       to exists. The runtime has them a moment later. */
+    setSent({ turn: userTurn, side: write.side, id: write.id })
     /* The message is saved before the request goes out. A reply is written to
        the thread the message was asked on, and that thread has to exist
        before the reply can arrive. */
@@ -1957,23 +1745,32 @@ export function PromptBlock() {
        one — so the reply has a thread to belong to and a journal to be
        written against. */
     const threadId = write.id
-    if (!threadId) return
+    if (!threadId) {
+      setSent(null)
+      return
+    }
+    /* The thread the side had open, whatever side the composer is on — the
+       rail highlights it, and switching back to that side finds it. */
+    setActiveBySide((current) => ({ ...current, [write.side]: threadId }))
+    if (write.side === variant) setShownConversation(threadId)
+    /* The conversation now holds the reader's half of the exchange, and it
+       is waiting for the request to go out. */
+    setConversationTurns(threadId, write.side, next)
+    markConversationPending(threadId)
+    /* The turn now belongs to a thread, and the thread is where it is. */
+    setSent({ turn: userTurn, side: write.side, id: threadId })
     void respondReal(`${id}-assistant`, next, write, threadId)
   }
 
+  /**
+   * Stops the reply on the conversation being shown, and only that one.
+   *
+   * The runtime holds one abort handle per conversation, so stopping a reply
+   * in one conversation leaves every other reply running.
+   */
   const stop = () => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setStatus("ready")
-    /* Settled outside the updater: updaters must stay pure, and React may run
-       one twice in development, which would store the thread twice. */
-    const settled = turns.map((turn) =>
-      turn.role === "assistant" && turn.streaming
-        ? { ...turn, streaming: false, stopped: true }
-        : turn,
-    )
-    setTurns(settled)
-    void persist(settled, captureWrite())
+    if (!shownId) return
+    stopConversation(shownId)
   }
 
   /* Opens a folder the user will actually grant us, and keeps it in recents.
@@ -2071,12 +1868,9 @@ export function PromptBlock() {
   React.useEffect(() => {
     threadBridge.setActiveId(activeSessionId)
   }, [activeSessionId, threadBridge])
-  /* Which thread is answering is state for the same reason. The rail draws the
-     thread list, so a row has to be able to say that this one is working — and
-     it is the live stream that says so, not a flag the row makes up. */
-  React.useEffect(() => {
-    threadBridge.setRunningId(busy ? activeSessionId : null)
-  }, [busy, activeSessionId, threadBridge])
+  /* Which thread is answering is the runtime's, not the composer's: a reply
+     can be running in a conversation the composer is not showing, and the
+     rail draws every conversation on the side. */
 
   /**
    * Switching sides shows the other side's thread.
@@ -2213,8 +2007,13 @@ export function PromptBlock() {
         { id: `${Date.now()}-summary`, role: "summary", text: summary },
         ...turns.slice(cut),
       ]
-      setTurns(next)
-      setUsage(null)
+      /* The conversation is the runtime's, and so is its accounting: a
+         summary is a new conversation, and the old turn's usage is not the
+         new one's. */
+      if (shownId) {
+        setConversationTurns(shownId, variant, next)
+        setConversationReport(shownId, null, null)
+      }
       await persist(next, captureWrite())
     } catch {
       // Leave the thread untouched; a failed compaction should cost nothing.

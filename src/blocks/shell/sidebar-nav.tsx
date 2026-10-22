@@ -42,6 +42,7 @@ import {
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
 import { listChats, onChatsChanged, type StoredChat } from "@/lib/chats"
+import { isRunning, subscribeStatuses } from "@/lib/conversation"
 import { listWorkspaces } from "@/lib/workspace"
 import {
   listSessions,
@@ -525,6 +526,18 @@ export function SidebarNav() {
   const sort = sortByMode[variant]
 
   /**
+   * The rail draws a running dot, and the dot is about whether a
+   * conversation is answering — not about what it is saying.
+   *
+   * So it listens to the *status*, and not to the conversations themselves:
+   * the text arrives many times a second, and a rail of fifty rows has no
+   * business redrawing for it. And a reply can be running in a conversation
+   * this side is not showing, which is the whole point of the runtime.
+   */
+  const [, redraw] = React.useReducer((count: number) => count + 1, 0)
+  React.useEffect(() => subscribeStatuses(redraw), [])
+
+  /**
    * The names of the folders this app has been given access to.
    *
    * This is a lookup table, not a list of anything the rail shows. The rail
@@ -680,7 +693,7 @@ export function SidebarNav() {
                     key={thread.id}
                     thread={thread}
                     active={thread.id === bridge.activeId}
-                    running={thread.id === bridge.runningId}
+                    running={isRunning(thread.id)}
                     onOpen={onOpen}
                   />
                 ))}
@@ -695,7 +708,7 @@ export function SidebarNav() {
                     key={thread.id}
                     thread={thread}
                     active={thread.id === bridge.activeId}
-                    running={thread.id === bridge.runningId}
+                    running={isRunning(thread.id)}
                     onOpen={onOpen}
                   />
                 ))}
