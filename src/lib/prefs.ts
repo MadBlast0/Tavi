@@ -51,6 +51,8 @@ export const PREF = {
   mode: "mode",
   font: "font",
   sidebar: "sidebar",
+  /** The conversation each side had open, so it can be put back. */
+  lastThread: "last-thread",
 } as const;
 
 /**

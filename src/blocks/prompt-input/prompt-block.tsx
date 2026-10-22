@@ -101,7 +101,7 @@ import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
 } from "@/lib/modes"
-import type { Side } from "@/lib/sides"
+import { SIDES, type Side } from "@/lib/sides"
 import { DEFAULT_PROVIDER_ID } from "@/lib/providers"
 import { serializeReasoning } from "@/lib/provider-reasoning"
 import { unknownCapabilities } from "@/lib/reasoning"
@@ -825,6 +825,14 @@ export function PromptBlock() {
      runtime's. They are read from it below, with the turns. */
   /** Folders this app has actually been given access to. Empty until one is picked. */
   const [folders, setFolders] = React.useState<Workspace[]>([])
+  /**
+   * Whether the folders have been read.
+   *
+   * It is not the same as "there are folders": a machine with none of them
+   * still has to be able to restore a conversation, and waiting for a list
+   * that is never going to arrive would mean never restoring one.
+   */
+  const [foldersRead, setFoldersRead] = React.useState(false)
   const [folderId, setFolderId] = React.useState<string | undefined>(undefined)
   const [projectFiles, setProjectFiles] = React.useState<WorkspaceFile[]>([])
   /**
@@ -1256,8 +1264,56 @@ export function PromptBlock() {
     setCanPick(isDesktopApp() || supportsDirectoryPicker())
   }, [])
 
+  /**
+   * The last conversation on each side is put back.
+   *
+   * The app is a place you come back to, and a place you come back to has
+   * the conversation you were in. Each side remembers its own, and they are
+   * put back when the app opens.
+   *
+   * It waits for the folders, because a code session's folder is part of the
+   * session, and a session restored without its folder is not the session.
+   */
+  const restored = React.useRef(false)
   React.useEffect(() => {
-    void listWorkspaces().then(setFolders)
+    if (restored.current) return
+    if (!foldersRead) return
+    restored.current = true
+    for (const side of SIDES) {
+      /* A side the reader has already opened is left alone: they asked for
+         that one, and it is newer than the one the app remembers. */
+      if (activeBySide[side]) continue
+      const id = readPref(sidePref(PREF.lastThread, side))
+      /* A conversation that is not there any more — deleted, or on another
+         machine — is not put back, and the side opens empty. */
+      if (id) loadThread(side, id)
+    }
+  }, [foldersRead, loadThread, activeBySide])
+
+  /**
+   * Each side remembers the conversation it had open.
+   *
+   * It is written from the one place that knows it, so that a conversation
+   * opened from the rail, a conversation made by sending the first message,
+   * and a conversation closed by pressing "New" are all the same fact
+   * recorded in the same place.
+   *
+   * **It waits for the restore.** Before the conversations are put back there
+   * is nothing open, and writing that would erase the very thing the
+   * restore is about to read.
+   */
+  React.useEffect(() => {
+    if (!restored.current) return
+    for (const side of SIDES) {
+      writePref(sidePref(PREF.lastThread, side), activeBySide[side] ?? undefined)
+    }
+  }, [activeBySide])
+
+  React.useEffect(() => {
+    void listWorkspaces().then((list) => {
+      setFolders(list)
+      setFoldersRead(true)
+    })
   }, [])
 
   /**

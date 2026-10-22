@@ -295,7 +295,7 @@ feature that is not there.
 | ⬜ | **The command palette** — Ctrl/Cmd+K, listing the active side's conversations and the app's commands | 5 |
 | ⬜ | **Search over conversations** — up to 50 per side | 5 |
 | ⬜ | **Archive** — needs a second list and a way back out of it | 5 |
-| ⬜ | **Restore the last open conversation per side** after a reload | 3 |
+| ✅ | **Restore the last open conversation per side** after a reload | 3 |
 | ⬜ | **Artifacts** — what a conversation produced | — |
 | ⬜ | **Scheduled** — things that run on their own | — |
 | ⬜ | **Routines** | — |
