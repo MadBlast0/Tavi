@@ -253,29 +253,49 @@ export const announceReply = async (reply: FinishedReply): Promise<void> => {
   const preferences = notificationPreferences();
   const appInFront = await systemHasFocus();
 
-  /* The mark comes first, and it comes regardless of whether an interruption
-     follows: it is the app's own record of what the reader has not looked
-     at, and the operating system may decline to raise a toast — on Windows
-     only an *installed* application may — while the rail's badge does not
-     depend on the operating system's good behaviour. */
-  if (reply.id && shouldMark(preferences, reply, appInFront)) {
-    await markConversationUnread(reply.side, reply.id)
+  if (!shouldAnnounce(preferences, reply, appInFront)) {
+    await markIfUnread(preferences, reply, appInFront)
+    return
   }
 
-  if (!shouldAnnounce(preferences, reply, appInFront)) return;
-
-  const body = preferences.preview ? previewOf(reply.text) : NO_PREVIEW;
+  /* An answer with nothing in it has no first line to show, and a
+     notification with an empty body is a notification that says nothing. */
+  const preview = preferences.preview ? previewOf(reply.text) : ""
+  const body = preview || NO_PREVIEW
 
   /* Where the reader is decides where the announcement goes. The app is in
      the background, and the operating system is the only thing that can
      reach them; the app is in the front, and the app itself is the thing in
      front of them. */
   if (!appInFront) {
-    showSystemNotification(reply.title, body);
-    return;
+    showSystemNotification(reply.title, body)
+  } else {
+    announceInApp({ title: reply.title, body, id: reply.id })
   }
 
-  announceInApp({ title: reply.title, body, id: reply.id })
+  await markIfUnread(preferences, reply, appInFront)
+}
+
+/**
+ * Notes that the conversation has something the reader has not looked at.
+ *
+ * The mark is the app's own record, and it does not depend on the operating
+ * system: the operating system may decline to raise a toast — on Windows only
+ * an *installed* application may — while the rail's badge does not depend on
+ * the operating system's good behaviour.
+ *
+ * It is written after the announcement, and not before, because the
+ * announcement is the urgent half and the mark is the record. The reader
+ * should not wait on a disk write to be told.
+ */
+const markIfUnread = async (
+  preferences: NotificationPreferences,
+  reply: FinishedReply,
+  appInFront: boolean,
+): Promise<void> => {
+  if (!reply.id) return
+  if (!shouldMark(preferences, reply, appInFront)) return
+  await markConversationUnread(reply.side, reply.id)
 }
 
 /**
