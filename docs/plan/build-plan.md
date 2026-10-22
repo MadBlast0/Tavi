@@ -79,43 +79,51 @@ one call, either back-end, already taking an `AbortSignal`.
 
 ---
 
-## Layer 2 — A conversation runtime ⬜ ← **the next piece**
+## Layer 2 — A conversation runtime ✅ ← **done**
 
 **What it is.** The lifecycle of a reply, owned by something that outlives any
 component.
 
-**Why it is the next piece.** Today the composer *is* the runtime. In
+**Why it was the next piece.** The composer *was* the runtime. In
 `src/blocks/prompt-input/prompt-block.tsx` — about 1,900 lines — the turns,
-the status, the abort handle, the folder, the agent mode and the error are all
-component state. So:
+the status, the abort handle, the folder, the agent mode and the error were
+all component state. So:
 
 > Switch to another thread, and the composer re-renders for a different
 > thread. The reply in flight is aborted and its partial text kept, marked
 > stopped. The comment in the code says it plainly: *"One composer, one
 > stream."*
 
-That single rule is what stands between the app and every parallel feature.
-It has to go first, because panes, notifications, per-thread badges and
-restoring a running conversation all assume a reply can outlive the thing
-showing it.
+That single rule was what stood between the app and every parallel feature.
+It has gone first, and this is where it went.
 
 ### Front-end work
 
 | # | Task | Where | Notes |
 |---|---|---|---|
-| F1 | A store holding one entry per thread | new `src/lib/conversation.ts` | `{ status, partial, error, usage, model, startedAt }` |
+| F1 | A store holding one entry per thread | `src/lib/conversation.ts` | `{ status, turns, usage, servedModel, error, compacting, startedAt, turnId }` |
 | F2 | `start(threadId, request)` | same | calls `api.streamChat`, feeds the events in, registers the abort controller |
 | F3 | `stop(threadId)` | same | aborts **that** thread's controller, and no other |
-| F4 | A way for views to subscribe | same | a view re-renders when its own thread's state changes |
+| F4 | A way for views to subscribe | same | a view re-renders when its own thread's state changes; the rail listens to the *status* only |
 | F5 | Move `turns` and `status` out of the composer | `prompt-block.tsx` | the composer reads the store instead of owning it |
-| F6 | Move `abortRef` out | `prompt-block.tsx` | one controller per thread, held by the store |
-| F7 | Stop aborting when the view changes | `prompt-block.tsx`, in `loadThread` | the *"one composer, one stream"* rule goes |
+| F6 | Move `abortRef` out | `prompt-block.tsx` | one controller per thread, held by the runtime |
+| F7 | Stop aborting when the view changes | `prompt-block.tsx`, in `loadThread` | the *"one composer, one stream"* rule has gone |
 | F8 | Persist the partial while it streams | `prompt-block.tsx` / `src/lib/threads.ts` | ✅ **done** — the journal, written by `src/lib/partials.ts`, so a reply is not lost if the app is closed mid-stream |
-| F9 | Per-thread error and compaction | `prompt-block.tsx` | `saveError` and `compacting` are single-valued today |
+| F9 | Per-thread error and compaction | `src/lib/conversation.ts` | both are the conversation's, so a reader who switched conversations does not find the next one busy |
 | F10 | The rail's badge reads per-thread status | `sidebar-nav.tsx` | replaces the single `bridge.runningId` |
 | F11 | A draft belongs to a thread | `prompt-block.tsx` | today a draft belongs to a side |
 | F12 | Drop the "still here" check | `prompt-block.tsx` (`replyMayTouchComposer`) | turns belong to the thread, not to the composer |
 | F13 | Drop the cross-checking `activeRef` | `prompt-block.tsx` | it exists only to stop one side's reply landing in the other |
+
+**The turn vocabulary moved with it.** `src/lib/turns.ts` holds the live
+shape of a turn, the stored shape, and the conversions between them, because
+the runtime needs them as much as the composer does.
+
+**What is in the runtime.** The request, the stream, the events, the journal,
+the conversation the answer lands in, and the announcement. **What is not** is
+*what is asked*: the request is prepared by the composer, because preparing
+it needs the folder's files and the model's own capabilities, and those are
+the viewer's facts.
 
 ### Back-end work
 
@@ -140,16 +148,26 @@ was already built for this and has simply never been asked to do it.
   answer is written to a journal as it arrives, and a cut-off answer is put
   back into its conversation on the next launch, marked as one that did not
   finish, and the model is told so on the next turn.
-- ⬜ A reply keeps streaming after you switch to another thread or another side.
-- ⬜ Two threads can stream at the same time.
-- ⬜ Stopping one thread leaves the others running.
-- ⬜ The rail shows which thread is running, per thread.
+- ✅ **A reply keeps streaming after you switch to another thread or another
+  side.** The reply belongs to the conversation, and the conversation is not
+  the one on screen.
+- ✅ **Two threads can stream at the same time.** One abort handle per
+  conversation, and one live state per conversation.
+- ✅ **Stopping one thread leaves the others running.** The stop names the
+  conversation, and only that conversation's controller is aborted.
+- ✅ **The rail shows which thread is running, per thread.** The rail listens
+  to the *status*, and not to the conversations themselves: the text arrives
+  many times a second, and a rail of fifty rows has no business redrawing
+  for it.
 
-**What is left of Layer 2 is the runtime itself** — the thirteen front-end
-tasks above, `F1` to `F13`. The journal was written by the composer, because
-that is what holds the stream today; when the runtime arrives it becomes the
-writer and the composer becomes a reader, which is a change of one call site
-and nothing else.
+**All four were checked in the running app**, and two of them were broken
+until they were not: a half-sent message was following the reader into the
+next conversation, and loading a conversation whose reply was in flight was
+loading the stored turns over the top of the live ones — which threw the
+answer away and then wrote the conversation back without it.
+
+**What is left of Layer 2** is Layer 3, which is views: several
+conversations open at once.
 
 ---
 
