@@ -190,7 +190,10 @@ export function CliProviderPane({
               )}
             >
               {label}
-              {loading ? null : (
+              {/* The count is of what this build can see, and a browser
+                  cannot see any of them — so the browser shows no count
+                  rather than a count of nothing. */}
+              {loading || !isDesktopApp() ? null : (
                 <Badge appearance="muted" shape="pill" size="sm">
                   {counts.known}
                 </Badge>
@@ -205,16 +208,18 @@ export function CliProviderPane({
             </InfoHint>
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onRescan}
-            disabled={loading || busy !== null}
-          >
-            <RefreshCwIcon className="size-4" />
-            Look again
-          </Button>
+          {isDesktopApp() ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onRescan}
+              disabled={loading || busy !== null}
+            >
+              <RefreshCwIcon className="size-4" />
+              Look again
+            </Button>
+          ) : null}
         </div>
 
         {!isDesktopApp() ? (
@@ -224,66 +229,77 @@ export function CliProviderPane({
         ) : null}
       </div>
 
-      {/* The search, the filter and the order share a row, because they are
-          three ways of looking at the same list and are used together. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <InputGroup size="sm" className="min-w-48 flex-1">
-          <InputGroupAddon>
-            <PackageIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search CLI providers"
-            placeholder="Search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
+      {/* A browser cannot see this computer's programs, so it is shown
+          nothing at all rather than a list of nothing. A count of zero
+          would be a claim — that there are no CLI providers anywhere — and
+          the app knows of nineteen. */}
+      {!isDesktopApp() ? null : (
+        <>
+          {/* The search, the filter and the order share a row, because they
+              are three ways of looking at the same list and are used
+              together. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <InputGroup size="sm" className="min-w-48 flex-1">
+              <InputGroupAddon>
+                <PackageIcon />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search CLI providers"
+                placeholder="Search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </InputGroup>
 
-        <Select
-          value={filter}
-          onValueChange={(value) => setFilter(value as CliFilter)}
-        >
-          <SelectTrigger size="sm" aria-label="Filter CLI providers">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CLI_FILTERS.map((entry) => (
-              <SelectItem key={entry.value} value={entry.value}>
-                {entry.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <Select
+              value={filter}
+              onValueChange={(value) => setFilter(value as CliFilter)}
+            >
+              <SelectTrigger size="sm" aria-label="Filter CLI providers">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLI_FILTERS.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Select
-          value={order}
-          onValueChange={(value) => setOrder(value as CliOrder)}
-        >
-          <SelectTrigger size="sm" aria-label="Order CLI providers">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CLI_ORDERS.map((entry) => (
-              <SelectItem key={entry.value} value={entry.value}>
-                {entry.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <Select
+              value={order}
+              onValueChange={(value) => setOrder(value as CliOrder)}
+            >
+              <SelectTrigger size="sm" aria-label="Order CLI providers">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLI_ORDERS.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      {/* The counts. They are of everything, so they do not move as the
-          search narrows the list. */}
-      <p className="text-xs text-muted-foreground">
-        {counts.known} known · {counts.installed} installed · {counts.enabled}{" "}
-        enabled
-        {counts.updates > 0 ? ` · ${counts.updates} with an update` : ""}
-        {counts.attention > 0 ? ` · ${counts.attention} need attention` : ""}
-      </p>
+          {/* The counts. They are of everything, so they do not move as the
+              search narrows the list. */}
+          <p className="text-xs text-muted-foreground">
+            {counts.known} known · {counts.installed} installed · {counts.enabled}{" "}
+            enabled
+            {counts.updates > 0 ? ` · ${counts.updates} with an update` : ""}
+            {counts.attention > 0
+              ? ` · ${counts.attention} need attention`
+              : ""}
+          </p>
+        </>
+      )}
 
       {loading ? (
         <CliSkeleton />
-      ) : shown.length === 0 ? (
+      ) : !isDesktopApp() ? null : shown.length === 0 ? (
         <CliEmpty query={query} filter={filter} />
       ) : (
         <ItemGroup variant="default">
@@ -507,7 +523,7 @@ function CliEmpty({ query, filter }: { query: string; filter: CliFilter }) {
           {searching
             ? "No CLI provider matches what you typed."
             : filter === "all"
-              ? "Tavi knows of no CLI providers."
+              ? "There are no CLI providers to show."
               : "No CLI provider is in this state."}
         </EmptyDescription>
       </EmptyHeader>
