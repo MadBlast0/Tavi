@@ -753,6 +753,12 @@ pub struct ChatRequest {
     pub mode: Option<String>,
     /// The folder's name. Code only.
     pub folder: Option<String>,
+    /// The folder's id. Code only.
+    ///
+    /// A name is not enough to say which folder is meant — two folders can
+    /// have the same name — and a CLI provider has to be started in the right
+    /// one, so the id is sent as well.
+    pub folder_id: Option<String>,
     /// The client used to send the system prompt as prose. It is refused now.
     pub system: Option<String>,
     /// Tools the client wants to offer. A chat may not carry any.
@@ -821,6 +827,30 @@ pub enum ChatEvent {
     },
     #[serde(rename = "error")]
     Error { error: EventError },
+    /// A tool the agent used.
+    ///
+    /// Only a CLI provider sends these. An API provider has no tools of its
+    /// own, so it sends none, and the composer shows no activity for it.
+    #[serde(rename = "tool")]
+    Tool { tool: ToolEvent },
+}
+
+/// What a tool did.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolEvent {
+    /// The name the program calls the tool by.
+    pub name: String,
+    /// What it was doing, in words.
+    pub title: String,
+    /// How far it got: running, completed or failed.
+    pub status: String,
+    /// What it was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
+    /// What it said.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -847,7 +877,7 @@ pub struct Cancellations {
 }
 
 impl Cancellations {
-    fn register(&self, id: &str) -> Arc<AtomicBool> {
+    pub(crate) fn register(&self, id: &str) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
         if let Ok(mut entries) = self.entries.lock() {
             entries.insert(id.to_string(), flag.clone());
@@ -855,7 +885,7 @@ impl Cancellations {
         flag
     }
 
-    fn finish(&self, id: &str) {
+    pub(crate) fn finish(&self, id: &str) {
         if let Ok(mut entries) = self.entries.lock() {
             entries.remove(id);
         }
@@ -1905,6 +1935,7 @@ mod tests {
             variant: Some(variant.to_string()),
             mode: None,
             folder: None,
+            folder_id: None,
             system: None,
             tools: None,
             config: Some(super::ChatConfig {
