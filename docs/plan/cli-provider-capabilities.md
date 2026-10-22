@@ -138,7 +138,7 @@ The plan names three modes. This is where each one stands.
 |---|---|---|
 | **Protocol** | A documented agent protocol over standard input and output. OpenCode speaks one (`opencode acp`). | **Declared, not read yet.** The mode is in the model and the catalogue says so, but nothing reads the protocol. The structured mode is what the app uses today. |
 | **Structured** | A documented headless mode whose output can be read. | **Working for OpenCode**, and checked against the program's own output. Claude Code and Gemini CLI have documented interfaces of this kind; their recipes are written from the documentation and are marked as not having been checked against the program. |
-| **Terminal** | A real pseudo-terminal, for a program that needs one. | **Not built.** The mode is in the model — the app knows a tool can want one — but there is no terminal to put it in. It needs a terminal emulator on the front end, a real PTY on the back, and a tool that insists on one to try it on. |
+| **Terminal** | A real pseudo-terminal, for a program that needs one. | **Built, and checked.** `src-tauri/src/pty.rs` opens a real pseudo-terminal, runs a program in it, reads what it draws, takes what is typed at it, resizes it, and reports the program's own exit code. The test proves the program really had a terminal and not a pipe: a terminal turns a newline into a carriage return and a newline, and a pipe does not. **There is no surface that shows one yet** — that needs a terminal emulator on the front end and a place in the thread for it. |
 
 A terminal is a **fallback**, not the shape of the whole feature. It is
 there for the tools that will not do anything else, and building one without

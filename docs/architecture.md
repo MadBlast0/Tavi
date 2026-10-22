@@ -102,6 +102,16 @@ id is kept with the thread. The thread and the program's session are the
 same conversation rather than two copies of it, so the program remembers
 what it was told rather than being told again.
 
+**A program that insists on a terminal gets one.** Most of them do not, and
+for those the app uses the program's own headless mode — a conversation
+rather than a screen of escape sequences. For the ones that do,
+`src-tauri/src/pty.rs` opens a real pseudo-terminal: the program is started
+in it, what it draws is read as it draws it, what is typed at it is written
+to it, it can be resized, and it is waited for so that its own exit code is
+reported. **What comes out of a terminal is meant to be drawn, not read**,
+and nothing in the app draws one yet — the terminal is a capability, and a
+surface that shows it is separate work.
+
 ---
 
 ## 2. The storage layer
