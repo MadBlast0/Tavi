@@ -61,8 +61,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 **Phase 3 — Reusable controls and overlay behaviour**
 
 | 3.1 | ✅ done | One icon-button pattern, used by every pane |
-| 3.2 | ▶ next | The menu and context-menu conventions |
-| 3.3 | ⬜ not started | The popover, select and command patterns |
+| 3.2 | ✅ done | The menu and context-menu conventions |
+| 3.3 | ▶ next | The popover, select and command patterns |
 | 3.4 | ⬜ not started | One dialog and confirmation convention |
 | 3.5 | ⬜ not started | The shared patterns for a pane's unhappy states |
 
@@ -1371,6 +1371,28 @@ defaults the tooltip to the bottom.
 
 **Acceptance criteria:** The workspace can use standard menus without inconsistent behavior or invented component APIs.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/tooltip`, `@/components/dropdown-menu`, `@/components/context-menu` — all on Base UI |
+| The check | `src/lib/menu.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 and §3 |
+
+**What this task found.** All three primitives are already on the canonical
+family — Base UI — and all three carry the same destructive variant, so a
+menu that offers a destructive action looks the same whether it is opened
+from a trigger or from a right click. The pane's own menu uses the shared
+dropdown with `align="end"`, so it does not cover the pane's title, and
+its close action is destructive. The tooltip opens on focus as well as on
+hover, so a keyboard user gets the name.
+
+Nothing was added. The primitives cover the job, and a custom menu would
+have been a second one. The conventions are written down in
+`docs/components.md` §3, and the pane's menu is the proof that they are
+followed.
 ## Task 3.3 — Standardize popovers and selection pickers
 
 **Prompt to the coding AI:**
