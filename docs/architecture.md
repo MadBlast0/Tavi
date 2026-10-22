@@ -182,7 +182,43 @@ it becomes the writer, and the composer becomes a reader.
 
 ---
 
-## 7. What is deliberately not being built
+## 7. Saying that something finished
+
+A reply that is being written is on screen, and the reader reads it as it
+arrives. The moment the app is not in front, the answer is happening
+somewhere the reader cannot see, and the only way they find out is by coming
+back and looking.
+
+**So the app says so, in three places, and each of them is a different fact.**
+
+| | What it is |
+|---|---|
+| **The operating system's toast** | An interruption. The reader is elsewhere and the app cannot reach them, so the operating system is asked to. |
+| **The card inside the app** | The same interruption, for when the reader *is* in the app — and the one that can be acted on, because the plugin's action API is mobile-only and a system's toast cannot open a conversation. |
+| **The conversation's own mark** | A record, not an interruption. A conversation whose reply finished while the reader was elsewhere says so in the rail, until it is opened. |
+
+**Where the reader is decides where the announcement goes.** The app is in
+the background, and the operating system is the only thing that can reach
+out of the app; the app is in the front, and the app itself is the thing in
+front of the reader. One rule, two destinations, and no announcement that
+arrives twice.
+
+**The rule is written once**, as *"is this conversation the one being looked
+at?"*, and it is answered by the thing that owns the conversation. The
+composer answers it today. When the conversation runtime arrives it answers
+the same question the same way, and the rule does not change.
+
+**A conversation can be muted**, from its own menu, beside **Pin**. A muted
+conversation still runs, and its reply still lands in it — the reader simply
+does not want to be interrupted about it, which is a different thing from not
+wanting the answer.
+
+The whole of it, including what it cannot do, is in
+[`plan/notifications.md`](plan/notifications.md).
+
+---
+
+## 8. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.

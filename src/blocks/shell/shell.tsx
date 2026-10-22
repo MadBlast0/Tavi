@@ -313,14 +313,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
        The `resizing` flag suspends the vendored sidebar's own width animation.
        Left running, it eases the rail toward the pointer at a quarter of a
-       second per frame and the whole panel trails the cursor. */
+       second per frame and the whole panel trails the cursor.
+
+        The number itself lives on the root rather than here, so that anything
+        portalled to the body can clear the bar as well. */
     <SidebarProvider
       data-resizing={resizing ? "" : undefined}
       open={railOpen}
       onOpenChange={onRailOpenChange}
       style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}
       className={cn(
-        "relative bg-sidebar [--shell-top-bar-h:1.75rem]",
+        "relative bg-sidebar",
         "data-[resizing]:[&_[data-slot=sidebar]]:transition-none",
         "data-[resizing]:[&_[data-slot=sidebar-container]]:transition-none",
       )}
