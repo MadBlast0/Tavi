@@ -22,7 +22,6 @@ front-end and back-end work, and what it unblocks.
 | [`../storage.md`](../storage.md) | Where every piece of data lives, on each platform |
 | [`later-on.md`](later-on.md) | What was deliberately deferred, and why |
 | [`api-keys-and-parity.md`](api-keys-and-parity.md) | The API keys screen and the desktop/web parity audit |
-| [`notifications.md`](notifications.md) | Telling the user that a reply finished while they were not looking at it |
 | **This one** | **What to build next, bottom-up** |
 
 ## Where the ideas come from
@@ -130,7 +129,7 @@ Almost none, and that is the useful finding.
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
 | B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. The design is in [`../architecture.md`](../architecture.md) §6 |
-| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule, the card, the mark, the mute and the settings. Planned and built in [`notifications.md`](notifications.md) |
+| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule, the card, the mark, the mute and the settings. Designed and built in [`../architecture.md`](../architecture.md) §7 |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
 was already built for this and has simply never been asked to do it.
@@ -239,7 +238,7 @@ works. When the runtime arrives, the rule widens to "this conversation is not
 the one on screen", which is the case of watching one conversation while
 another finishes. The rule is written once and the runtime answers it.
 
-The whole of it is in [`notifications.md`](notifications.md).
+The whole of it is in [`../architecture.md`](../architecture.md) §7.
 
 ---
 

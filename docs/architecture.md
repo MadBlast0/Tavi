@@ -208,13 +208,49 @@ at?"*, and it is answered by the thing that owns the conversation. The
 composer answers it today. When the conversation runtime arrives it answers
 the same question the same way, and the rule does not change.
 
+**What the answer is.** An announcement is made when all of these are true:
+the reader has asked to be told, the conversation is not muted, and the answer
+was somewhere the reader could not see — unless they asked to be told either
+way. "Somewhere they could not see" is two facts and not one: the app has to
+be in the front, *and* the conversation has to be the one on screen. A
+conversation the composer is showing is not visible while the app is behind
+another window.
+
+**What it says.** The title is the conversation's name, not the app's — a
+toast that says only "a reply finished" tells the reader nothing when there
+is more than one conversation, and the whole point is knowing which one to
+come back to. The body is the first line of the answer, or "A reply
+finished." when the preview is off. It never says the task is finished: the
+app knows when the provider stopped sending text, and it knows nothing else,
+because a chat cannot write files and a model cannot run commands.
+
+**A reply that was stopped is not announced.** The reader pressed the button;
+they know.
+
 **A conversation can be muted**, from its own menu, beside **Pin**. A muted
 conversation still runs, and its reply still lands in it — the reader simply
 does not want to be interrupted about it, which is a different thing from not
-wanting the answer.
+wanting the answer. It is not marked either: the mark says "New" beside the
+conversation's name, and a reader who muted it has said they do not want to
+be nudged about it.
 
-The whole of it, including what it cannot do, is in
-[`plan/notifications.md`](plan/notifications.md).
+**The settings** are in Settings → General → Notifications: whether to be
+told, whether to be told even when the answer is on screen, and whether the
+first line of the answer is shown. The permission is asked for when the
+first is turned on and not before — a permission asked for before the reader
+knows what it is for is a permission asked for before the question — and a
+refusal puts the setting back off. A fourth row sends a test notification,
+because a notification is raised by the operating system and the operating
+system may decline: on Windows only an *installed* app may raise one.
+
+**What it cannot do.** The system's toast cannot open the conversation — the
+plugin's action API is mobile-only — and the card inside the app can. A
+browser tab that is closed gets no notification at all: the browser's
+notification API is the tab's own, and a notification that outlived the tab
+would need a push service and a service worker. And a conversation that
+finished while the reader was elsewhere is recorded on the conversation
+itself rather than in a history, because a second list of what the app has
+announced would be a second place for a conversation to be.
 
 ---
 
