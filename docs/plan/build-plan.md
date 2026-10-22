@@ -22,6 +22,7 @@ front-end and back-end work, and what it unblocks.
 | [`../storage.md`](../storage.md) | Where every piece of data lives, on each platform |
 | [`later-on.md`](later-on.md) | What was deliberately deferred, and why |
 | [`api-keys-and-parity.md`](api-keys-and-parity.md) | The API keys screen and the desktop/web parity audit |
+| [`in-flight-answers.md`](in-flight-answers.md) | The design for writing an answer down while it is still being written |
 | **This one** | **What to build next, bottom-up** |
 
 ## Where the ideas come from
@@ -128,7 +129,7 @@ Almost none, and that is the useful finding.
 | B3 | The abort signal reaches Rust | `src/lib/desktop.ts` | ✅ already works — a `requestId` per call, and `cancel_chat` names it |
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
-| B6 | Write the partial to disk during a stream | `src-tauri/src/threads.rs` | ⬜ **new** — so a crash mid-stream does not lose the answer |
+| B6 | Write the partial to disk during a stream | `src-tauri/src/threads.rs` | ⬜ **new** — so a crash mid-stream does not lose the answer. Designed in full in [`in-flight-answers.md`](in-flight-answers.md) |
 | B7 | The notification plugin | `src-tauri/Cargo.toml` | ⬜ **new** — there is no notification plugin at all |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
