@@ -63,8 +63,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 | 3.1 | ✅ done | One icon-button pattern, used by every pane |
 | 3.2 | ✅ done | The menu and context-menu conventions |
 | 3.3 | ✅ done | The popover, select and command patterns |
-| 3.4 | ▶ next | One dialog and confirmation convention |
-| 3.5 | ⬜ not started | The shared patterns for a pane's unhappy states |
+| 3.4 | ✅ done | One dialog and confirmation convention |
+| 3.5 | ▶ next | The shared patterns for a pane's unhappy states |
 
 **Phase 4 — The generic pane framework**
 
@@ -1429,6 +1429,26 @@ Task 7.1.
 
 **Acceptance criteria:** A common dialog convention exists for future rename/reset/unsaved-demo-state interactions.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/dialog`, `@/components/alert-dialog` — both on Base UI |
+| The check | `src/lib/dialog.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** Both primitives are already on the canonical
+family — Base UI's drawer — and both carry a title, a description and a
+close. The alert dialog also carries a cancel and an action, which is what
+makes it a confirmation rather than a form. The dialog has a body slot,
+which is where a form's fields go.
+
+Nothing was added. The primitives cover the job, and a custom dialog would
+have been a second one. The conventions are written down in
+`docs/components.md` §3: a dialog is a form that wants focus, a
+confirmation is for destructive or disruptive actions and only then.
 ## Task 3.5 — Standardize status, empty, loading, error and toast patterns
 
 **Prompt to the coding AI:**
