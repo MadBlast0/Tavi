@@ -22,7 +22,7 @@ front-end and back-end work, and what it unblocks.
 | [`../storage.md`](../storage.md) | Where every piece of data lives, on each platform |
 | [`later-on.md`](later-on.md) | What was deliberately deferred, and why |
 | [`api-keys-and-parity.md`](api-keys-and-parity.md) | The API keys screen and the desktop/web parity audit |
-| [`in-flight-answers.md`](in-flight-answers.md) | The design for writing an answer down while it is still being written |
+| [`notifications.md`](notifications.md) | Telling the user that a reply finished while they were not looking at it |
 | **This one** | **What to build next, bottom-up** |
 
 ## Where the ideas come from
@@ -129,8 +129,8 @@ Almost none, and that is the useful finding.
 | B3 | The abort signal reaches Rust | `src/lib/desktop.ts` | ✅ already works — a `requestId` per call, and `cancel_chat` names it |
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
-| B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. Designed and built in [`in-flight-answers.md`](in-flight-answers.md) |
-| B7 | The notification plugin | `src-tauri/Cargo.toml` | ⬜ **new** — there is no notification plugin at all |
+| B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. The design is in [`../architecture.md`](../architecture.md) §6 |
+| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule and the settings. Planned and built in [`notifications.md`](notifications.md) |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
 was already built for this and has simply never been asked to do it.
@@ -214,16 +214,27 @@ conversation can be opened beside the current one from the rail.
 
 ---
 
-## Layer 6 — Saying that something finished ⬜
+## Layer 6 — Saying that something finished ✅
 
 | | Task | Where | Side |
 |---|---|---|---|
-| ⬜ | A notification when an unfocused conversation finishes | `src-tauri/Cargo.toml`, a Rust command | back-end |
-| ⬜ | The notification says which conversation, and that a reply **ended** | new | front-end |
-| ⬜ | A setting for when to be told | `src/blocks/shell/settings-*.tsx` | front-end |
+| ✅ | The notification plugin and its permission | `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, `src-tauri/capabilities/default.json` | back-end |
+| ✅ | The adapters, and the seam | `src/lib/desktop.ts`, `src/lib/web.ts`, `src/lib/api.ts` | both |
+| ✅ | A notification when a reply finishes and the app is not in front | `src/lib/notifications.ts` | front-end |
+| ✅ | The notification says which conversation, and that a reply **ended** | same | front-end |
+| ✅ | A setting for when to be told | `src/blocks/shell/settings-general.tsx` | front-end |
 
-**Done when** a conversation finishes while you are looking at another one, and
-you are told once.
+**Done when** a reply finishes while the app is in the background, and you
+are told once. ✅
+
+**What is left of it** is the wider rule. Today a reply is stopped the moment
+another conversation is opened, so the only way to be *not* looking at a
+finished reply is to be in another application — and that is the case that
+works. When the runtime arrives, the rule widens to "this conversation is not
+the one on screen", which is the case of watching one conversation while
+another finishes. The rule is written once and the runtime answers it.
+
+The whole of it is in [`notifications.md`](notifications.md).
 
 ---
 

@@ -116,6 +116,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Raising a toast from the operating system. The permission it needs
+        // is in `capabilities/default.json`, and it is narrow: three
+        // commands, not the plugin's whole default set.
+        .plugin(tauri_plugin_notification::init())
         .manage(for_state)
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())

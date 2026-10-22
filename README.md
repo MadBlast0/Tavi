@@ -831,6 +831,22 @@ so tool support is intermittent.
   so `service-not-allowed` or `network` is the likely outcome. The app reports
   which of those happened rather than failing silently, but reporting it is not
   the same as working.
+- **A notification only works for an installed app on Windows.** The desktop app
+  raises a toast from the operating system when a reply finishes while the app
+  is in the background, and the operating system decides which applications
+  may raise one: **only an installed one**. A development build shows a toast
+  from powershell, with powershell's name and icon, and an installed build
+  shows the app's. That is the platform's rule about which applications may
+  interrupt, not something the app can work around. The website's
+  notifications are the browser's own, and a browser tab that is **closed**
+  gets none — the tab is not there to raise one, and a notification that
+  outlived it would need a push service and a service worker.
+- **A notification says a reply finished, and nothing more.** The app knows when
+  the provider stopped sending text. It does not know whether the answer's
+  "I'll run the tests and fix what fails" was followed by anything, because the
+  app cannot write files and the model cannot run commands. So the wording is
+  "a reply finished", and it is never "the task is finished" — which would be
+  a claim the app cannot support.
 - **Only the local environment exists.** The composer footer carries an
   environment picker because the upstream assistant-ui composer it is modelled on
   has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,

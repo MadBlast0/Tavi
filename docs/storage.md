@@ -28,7 +28,7 @@ what removes it.
 | The provider key | The OS credential store on the desktop; the server's own file on the website | A credential. Never logged, never sent back to a browser | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
 | The provider a request goes to | A per-side preference, in the browser's storage | Low. A choice about where a request goes | Until the user clears site data | Clearing site data |
 | The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
-| Preferences: model, effort, agent mode, the rail's open state | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
+| Preferences: model, effort, agent mode, the rail's open state, the notification choices | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
@@ -83,7 +83,14 @@ delete it on a schedule.
 ### Preferences — `localStorage`
 
 `src/lib/prefs.ts`. Model, effort level, agent mode, app font, and whether the
-rail is open.
+rail is open. The notification choices are in `src/lib/notifications.ts`,
+under the same namespace: `tavi.notify.completions`, `tavi.notify.in-front`
+and `tavi.notify.preview`.
+
+They are **not** per side. Whether to be told that a reply finished is a
+question about the reader and the machine, not about Chat or Code, and a
+reader who wants to know when a chat finishes wants to know when a session
+does too.
 
 The model and the effort are remembered **per side**: `tavi.model.chat` and
 `tavi.model.code`, `tavi.effort.chat` and `tavi.effort.code`. Chat and Code

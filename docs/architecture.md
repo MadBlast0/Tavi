@@ -150,7 +150,39 @@ Each stage left the app working, and each is a commit.
 
 ---
 
-## 6. What is deliberately not being built
+## 6. The journal of answers in flight
+
+An answer exists in memory until it ends. Without more than that, a crash in
+the middle of writing one loses all of it, because the conversation file is
+written when the answer ends and not before.
+
+**So an answer in flight is written down as it grows**, in a journal of its
+own: `partials/<conversation-id>.jsonl`, one file per conversation, beside
+the conversation file.
+
+| The decision | Why |
+|---|---|
+| **One file per conversation, not one file for all of them** | Two answers being written at once must not be able to overwrite each other. A shared file would have to be rewritten whole, and a rewrite from the frontend's memory loses the other answer's newer turns. |
+| **Appended to, never rewritten** | A write adds a line, so a write is cheap enough to do often, and a crash can lose only the last line rather than the whole answer. |
+| **Every line carries the whole of the answer** | A line the crash cut in half is then discarded, and the line before it still has the answer. A journal of only the new text would lose the piece the half-written line was carrying. |
+| **The last line is the complete one** | The reader takes the last whole line, and it is the whole answer. A journal whose last line does not say the answer ended is one that was cut off. |
+| **The journal is separate from the conversation file** | The conversation file holds conversations; a journal holds an answer that has not become one yet. They have different lifetimes, and the conversation file's own boundary — one file for both collections — is not disturbed by it. |
+| **The journal is removed only once the answer is in the conversation** | A conversation write can fail, and a journal left behind is the answer, recovered on the next launch. A journal is also kept when the conversations could not be read at all: a store that cannot be read is a temporary thing, and the answer is worth more than the tidiness of having swept it away. |
+
+**The behaviour it matches.** A comparable desktop coding application writes
+its sessions as JSON Lines — one file per session, appended to, with the
+lines of one assistant message sharing an id, the early ones partial and the
+last one complete — and marks an interrupted tool call as cut off and tells
+the model so. That is the shape here. The field names are this app's, and
+the conversations themselves are still one file, which is B6.
+
+**What it does not change.** The journal is written by the composer today,
+because that is what holds the reply. When the conversation runtime arrives
+it becomes the writer, and the composer becomes a reader.
+
+---
+
+## 7. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.
