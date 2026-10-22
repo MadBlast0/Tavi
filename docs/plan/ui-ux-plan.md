@@ -68,8 +68,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 **Phase 4 — The generic pane framework**
 
-| 4.1 | ▶ next | The frame every pane is drawn in |
-| 4.2 | ⬜ not started | The header: icon, title, actions, and the drag region |
+| 4.1 | ✅ done | The frame every pane is drawn in |
+| 4.2 | ▶ next | The header: icon, title, actions, and the drag region |
 | 4.3 | ⬜ not started | The overflow menu, and the close, focus, maximize and pop-out controls |
 | 4.4 | ⬜ not started | The registry of pane types, and the model of an instance |
 | 4.5 | ⬜ not started | The shared empty, loading, error and unavailable slots |
@@ -1523,6 +1523,33 @@ carries a label, a symbol or a shape as well as a colour.
 
 **Reference:** The pane frame. Claude Code Desktop's panes: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The frame | `src/blocks/workspace/pane.tsx` — the pane frame, with a header strip, a scrollable content area, and the three controls |
+| The check | `src/lib/pane.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The frame already existed, written against the
+reference: a flat region on the window's background, no card, no rounded
+corner, no shadow, separated from its neighbour by a single hairline. The
+header is a strip of a fixed height, with the pane's mark and title on
+the left and the three controls — pop out, the menu's chevron, and close —
+on the right, each an icon-only button with its name. The content area
+takes the rest and clips, so the pane scrolls its own content and the
+window does not move.
+
+What was missing was the instance's identity and its secondary context.
+The frame now takes an `id`, a `type` key and an optional `context`
+string, so a pane can say which instance it is, which type it is, and
+what it is about — a filename, a session, a project — and the header
+shows the context beside the title.
+
+The frame does not own the layout tree and does not run anything. It
+draws itself and asks for its content.
 ## Task 4.2 — Implement the pane header
 
 **Prompt to the coding AI:**
