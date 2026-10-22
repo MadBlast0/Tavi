@@ -245,7 +245,7 @@ depends on:
 
 **Decision:** Do the three steps in the order given: let the settings dialog open on a section, give the model picker a “no key” state with a button that opens it on **API keys**, and scope the list to the key’s provider only once the app can talk to more than one provider.
 
-**All three are done.** The app talks to thirty providers across four request shapes, and the provider in use is a per-side preference that the catalogue, the list, the key and the request all follow.
+**All three are done.** The app talks to twenty-eight providers across four request shapes, and the provider in use is a per-side preference that the catalogue, the list, the key and the request all follow.
 
 ---
 
@@ -2120,13 +2120,40 @@ the group is a `list` and the rows are `listitem`s inside it.
 
 **What was done.** **P48** ✅: the settings dialog opens on a section, and
 the model picker's button opens it on **API keys**. **P49** ✅: the picker says
-why there is no model and offers the way out. **P50** ✅: the app talks to more than one provider now — thirty of them,
-across four request shapes — and the model list is scoped to the provider in
-use. The provider is a per-side preference, like the model and the effort, and
-everything follows it: the catalogue that is fetched, the list that is shown,
-the key the request goes out with, and the provider the request is sent to. The
-list and the request are about the same provider by construction, rather than
-by agreeing to.
+why there is no model and offers the way out. **P50** ✅: the app talks to more
+than one provider now — twenty-eight of them and any OpenAI-compatible endpoint
+of the user's own, across four request shapes — and the model list is scoped to
+the provider in use. The provider is a per-side preference, like the model and
+the effort, and everything follows it: the catalogue that is fetched, the list
+that is shown, the key the request goes out with, and the provider the request
+is sent to. The list and the request are about the same provider by
+construction, rather than by agreeing to.
+
+The provider is chosen in the composer, by a control of its own beside the
+model one, and the model picker waits for it — the models belong to one. The
+control opens a dropdown with two kinds of provider, an **API provider** and a
+**CLI provider**, and pointing at either opens **its own dropdown beside it**:
+the API one is a searchable list of the providers the user has a key for, and
+the CLI one is where the CLI providers will be. A thread records the provider
+it was started with, the way it records the model and the effort.
+
+**Every address was checked against the provider itself.** A provider that
+answers 401 to a request it understands and 404 to one it does not is how the
+addresses were settled: a wrong address is a 404, and a right one with no key
+is a 401. Three were wrong and are now right — Perplexity's models are under
+`/v1` and its chat is not, and DeepInfra's chat is under `/openai`.
+
+**A provider says where a reasoning level goes.** The field is not the same
+everywhere — OpenRouter takes `reasoning: { effort }`, OpenAI and the
+OpenAI-compatible providers take a top-level `reasoning_effort`, and Anthropic
+takes `output_config: { effort }` — and a level sent in the wrong field is
+one the provider ignores. The field is in the provider's own row, and both
+halves of the app read it from there.
+
+**Two providers were taken out.** Amazon Bedrock and Google Vertex AI are
+signed with AWS credentials and with Google's own rather than with a key, and
+the app has no client for either. A provider the app cannot talk to is not a
+provider the app supports.
 
 The provider is chosen in the composer, by a control of its own beside the
 model one, and the model picker waits for it — the models belong to one. The
@@ -2838,18 +2865,43 @@ the files as they are.
 **The app talks to more than one provider now.** The last item, **P50**, was
 deferred on G-D: the app could only talk to one provider, so scoping the model
 list to a key's provider would have scoped it to a provider the request did not
-use. The app now talks to **thirty** providers across **four** request shapes,
-and the provider in use is a per-side preference that the catalogue, the list,
-the key and the request all follow — so the list and the request are about the
-same provider by construction rather than by agreeing to.
+use. The app now talks to **twenty-eight** providers across **four** request
+shapes, and to any OpenAI-compatible endpoint of the user's own, and the
+provider in use is a per-side preference that the catalogue, the list, the key
+and the request all follow — so the list and the request are about the same
+provider by construction rather than by agreeing to.
 
-**A provider is a shape and some configuration.** Most of the thirty speak the
+**Every address was checked against the provider itself.** A provider that
+answers 401 to a request it understands and 404 to one it does not is how the
+addresses were settled: a wrong address is a 404, and a right one with no key
+is a 401. Three were wrong and are now right — Perplexity's models are under
+`/v1` and its chat is not, and DeepInfra's chat is under `/openai`.
+
+**The AI SDK's OpenAI package is not the OpenAI-compatible one.** Its default
+is the Responses API, which only OpenAI has, so every provider that speaks
+chat completions and is not OpenAI goes through the compatible package
+instead. Twenty of them would have been sent a request their API has never
+heard of.
+
+**A provider says where a reasoning level goes.** The field is not the same
+everywhere, and a level sent in the wrong field is one the provider ignores.
+It is in the provider's own row, and both halves of the app read it from
+there.
+
+**Two providers were taken out.** Amazon Bedrock and Google Vertex AI are
+signed with AWS credentials and with Google's own rather than with a key, and
+the app has no client for either. A provider the app cannot talk to is not a
+provider the app supports.
+
+**A provider is a shape and some configuration.** Most of the twenty-eight speak the
 OpenAI chat-completions shape and differ only in the address they live at and
 how the key is sent, and those are fields rather than code. Anthropic's
 Messages, Google's generate-content and Cohere's chat are three more shapes,
-and there are three clients. Two of the thirty — **Amazon Bedrock** and
-**Google Vertex AI** — are signed with AWS credentials and with Google's own
-rather than with a key, and the app says so plainly rather than taking a
+and there are three clients. Two of the providers that were in the list at the
+start — **Amazon Bedrock** and **Google Vertex AI** — are signed with AWS
+credentials and with Google's own rather than with a key, and they are not in
+the list at all: a provider the app cannot talk to is not a provider the app
+supports, and the app says so plainly rather than taking a
 credential it cannot use.
 
 **A key may carry the address it belongs to.** Some providers do not live at one

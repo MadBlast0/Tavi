@@ -205,19 +205,33 @@ work in item 1.
 
 ## 6. Multiple provider connections
 
-**Status:** adapters exist for OpenRouter, Anthropic, OpenAI and NVIDIA NIM, but
-there is exactly one hardcoded connection — `defaultConnection()` in
-`server/models.ts`, which is OpenRouter.
+**Status:** **built.** The app talks to twenty-eight providers and to any
+OpenAI-compatible endpoint of your own, and the provider in use is a per-side
+preference that the catalogue, the model list, the key and the request all
+follow.
 
-**What it needs.** A connections list the user can add to, credentials per
-connection read from the environment (or the OS keychain), a provider picker, and
-cache keys that already account for the connection — `ModelTarget` carries
-`connectionId`, `providerId` and `apiProtocol` precisely so this does not
-collapse into "the model string".
+The list is one table in `src/lib/providers.ts` — the address each provider
+lives at, how its key is sent, the shape of a request, and the field a
+reasoning level goes in — and the same table is read by the website's server
+and by the desktop's Rust, with a test that says the two agree. Four request
+shapes have clients: the OpenAI chat-completions one, Anthropic's Messages,
+Google's generate-content and Cohere's chat.
 
-**Also needed.** Anthropic and OpenAI have had no live run yet, because this
-checkout has no key for either. Their parsing is fixture-tested only. Adding the
-keys to `.env.local` would let both be verified against real capability data.
+A **custom endpoint** covers the rest: a gateway, a proxy, or a model on this
+machine, at an address the key carries.
+
+**What is still not built.** A **connections list** the user can add to, with
+credentials per connection, rather than one provider chosen from a fixed
+list. The current design is one connection per provider, which is what
+twenty-eight providers of the “one key, one provider” kind need; a gateway
+that fronts several providers under one name is a different shape.
+
+**Also not verified live.** Only OpenRouter has had a live run, because this
+checkout has no key for any other provider. Everything else is
+fixture-tested, and **every address in the table was checked against the
+provider itself** — a right address with no key answers 401, and a wrong one
+answers 404. Adding keys to `.env.local` would let the rest be verified
+against real capability data.
 
 ---
 

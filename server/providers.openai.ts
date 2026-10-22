@@ -31,7 +31,8 @@ import {
   openaiDocumentedValues,
 } from "../src/lib/provider-capabilities.ts";
 import {
-  serializeReasoning,
+  checkReasoning,
+  sdkOptionsFor,
   type ReasoningPreferences,
   type SerializedReasoning,
 } from "../src/lib/provider-reasoning.ts";
@@ -54,7 +55,7 @@ export const openaiAdapter: ModelProviderAdapter = {
       throw new Error("OPENAI_API_KEY is not set");
     }
     const base = connection.baseUrl ?? "https://api.openai.com/v1";
-    const response = await fetch(`${base}/models`, {
+    const response = await fetch(`${base}${connection.modelsPath ?? "/models"}`, {
       headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
     });
     if (!response.ok) {
@@ -85,7 +86,10 @@ export const openaiAdapter: ModelProviderAdapter = {
     capabilities: ModelReasoningCapabilities,
     preferences: ReasoningPreferences,
   ): SerializedReasoning {
-    return serializeReasoning("openai", capabilities, preferences);
+    const verdict = checkReasoning(capabilities, preferences);
+    if (!verdict.ok) return { kind: "reject", message: verdict.message };
+    const fields = sdkOptionsFor("openai", verdict.level);
+    return fields ? { kind: "payload", fields } : { kind: "omit" };
   },
 };
 

@@ -273,10 +273,11 @@ export const checkProviderKey = (
   provider: string,
   key: string,
   spend: boolean,
+  baseUrl?: string,
 ): Promise<KeyStandingReport> =>
   isDesktopApp()
-    ? desktop.checkProviderKey(provider, key, spend)
-    : web.checkProviderKey(provider, key, spend)
+    ? desktop.checkProviderKey(provider, key, spend, baseUrl)
+    : web.checkProviderKey(provider, key, spend, baseUrl)
 
 export const recheckProviderKey = (id: string): Promise<void> =>
   isDesktopApp() ? desktop.recheckProviderKey(id) : web.recheckProviderKey(id)

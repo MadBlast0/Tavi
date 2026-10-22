@@ -21,6 +21,7 @@ import {
   DEFAULT_PROVIDER_ID,
   providerFor,
 } from "../src/lib/providers.ts";
+import { activeKey } from "./key-store.ts";
 import type { ModelReasoningCapabilities } from "../src/lib/reasoning.ts";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -180,7 +181,11 @@ export const connectionFor = (providerId: string): ProviderConnection => {
     id: provider.id,
     providerId: provider.id,
     apiProtocol: provider.wire,
-    baseUrl: provider.baseUrl,
+    /* The key's own address wins over the provider's default, because a
+       provider of the user's own — a gateway, a proxy, a model on this
+       machine — is not at anybody else's address. */
+    baseUrl: activeKey(providerId)?.baseUrl ?? provider.baseUrl,
+    modelsPath: provider.modelsPath,
     credentialRef: provider.envVar,
   };
 };

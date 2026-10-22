@@ -41,10 +41,6 @@ pub(crate) enum Auth {
     /// `x-goog-api-key`. They are not interchangeable, and the provider's own
     /// name is the only place that says which is which.
     Header(&'static str),
-    /// A bearer token AWS issues for Bedrock.
-    AwsBearer,
-    /// Google's own credentials, which the app cannot hold as a key.
-    GoogleOAuth,
     /// No key at all. A model running on this machine does not need one.
     None,
 }
@@ -65,21 +61,9 @@ pub(crate) enum Wire {
     GoogleGenerativeAi,
     /// `POST {base}/chat`, with Cohere's body.
     CohereChat,
-    /// Bedrock's Converse API, which is signed with AWS credentials.
-    AwsBedrock,
-    /// Vertex's generateContent, which is signed with Google's credentials.
-    GoogleVertex,
 }
 
-impl Wire {
-    /// Whether the app has a client for this shape.
-    ///
-    /// Two providers are signed with credentials the app does not hold — AWS's
-    /// and Google's — and the app says so rather than pretending.
-    pub(crate) fn is_supported(self) -> bool {
-        !matches!(self, Wire::AwsBedrock | Wire::GoogleVertex)
-    }
-}
+
 
 /// How a provider's key can be checked.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -110,6 +94,12 @@ pub(crate) struct ProviderInfo {
     pub(crate) base_url: &'static str,
     /// The shape of a chat request for this provider.
     pub(crate) wire: Wire,
+    /// How the provider takes a reasoning level, on the wire.
+    pub(crate) reasoning_field: &'static str,
+    /// The path of the model listing, when it is not `/models`.
+    pub(crate) models_path: Option<&'static str>,
+    /// The path of the chat request, when it is not the one the shape implies.
+    pub(crate) chat_path: Option<&'static str>,
     /// A query parameter every request needs.
     ///
     /// Azure's OpenAI endpoint takes its API version as one, and has no
@@ -133,12 +123,32 @@ pub(crate) struct ProviderInfo {
 /// The providers the app knows about.
 pub(crate) const PROVIDERS: &[ProviderInfo] = &[
     ProviderInfo {
+        id: "custom",
+        label: "Custom endpoint",
+        env_var: "CUSTOM_API_KEY",
+        auth: Auth::Bearer,
+        base_url: "",
+        wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "reasoning_effort",
+        models_path: None,
+        chat_path: None,
+        query: None,
+        extra_headers: None,
+        reports_usage: false,
+        validation: Validation::IdentityEndpoint,
+        identity_reports_account: false,
+        keyless: false,
+    },
+    ProviderInfo {
         id: "openai",
         label: "OpenAI",
         env_var: "OPENAI_API_KEY",
         auth: Auth::Bearer,
         base_url: "https://api.openai.com/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "reasoning_effort",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -153,6 +163,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Header("x-api-key"),
         base_url: "https://api.anthropic.com/v1",
         wire: Wire::AnthropicMessages,
+        reasoning_field: "output_config.effort",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: Some(("anthropic-version", "2023-06-01")),
         reports_usage: false,
@@ -167,6 +180,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Header("x-goog-api-key"),
         base_url: "https://generativelanguage.googleapis.com/v1beta",
         wire: Wire::GoogleGenerativeAi,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -181,6 +197,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://openrouter.ai/api/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "reasoning.effort",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: true,
@@ -195,6 +214,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.deepseek.com",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -209,6 +231,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.x.ai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -223,6 +248,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.mistral.ai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -237,6 +265,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.groq.com/openai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -251,6 +282,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.together.xyz/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -265,6 +299,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.fireworks.ai/inference/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -279,6 +316,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.cerebras.ai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -293,6 +333,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://integrate.api.nvidia.com/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "reasoning_effort",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -307,6 +350,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://router.huggingface.co/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -319,36 +365,11 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         label: "DeepInfra",
         env_var: "DEEPINFRA_API_KEY",
         auth: Auth::Bearer,
-        base_url: "https://api.deepinfra.com/v1/openai",
+        base_url: "https://api.deepinfra.com/v1",
         wire: Wire::OpenAiChatCompletions,
-        query: None,
-        extra_headers: None,
-        reports_usage: false,
-        validation: Validation::IdentityEndpoint,
-        identity_reports_account: false,
-        keyless: false,
-    },
-    ProviderInfo {
-        id: "amazon-bedrock",
-        label: "Amazon Bedrock",
-        env_var: "AWS_BEARER_TOKEN_BEDROCK",
-        auth: Auth::AwsBearer,
-        base_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
-        wire: Wire::AwsBedrock,
-        query: None,
-        extra_headers: None,
-        reports_usage: false,
-        validation: Validation::IdentityEndpoint,
-        identity_reports_account: false,
-        keyless: false,
-    },
-    ProviderInfo {
-        id: "google-vertex",
-        label: "Google Vertex AI",
-        env_var: "GOOGLE_APPLICATION_CREDENTIALS",
-        auth: Auth::GoogleOAuth,
-        base_url: "https://us-central1-aiplatform.googleapis.com/v1",
-        wire: Wire::GoogleVertex,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: Some("/openai/chat/completions"),
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -363,6 +384,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Header("api-key"),
         base_url: "https://YOUR-RESOURCE.openai.azure.com/openai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: Some(("api-version", "2024-10-21")),
         extra_headers: None,
         reports_usage: false,
@@ -377,6 +401,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.moonshot.ai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -391,6 +418,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.z.ai/api/paas/v4",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -405,6 +435,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -419,6 +452,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.minimax.io/anthropic/v1",
         wire: Wire::AnthropicMessages,
+        reasoning_field: "output_config.effort",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: Some(("anthropic-version", "2023-06-01")),
         reports_usage: false,
@@ -433,6 +469,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.perplexity.ai",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: Some("/v1/models"),
+        chat_path: Some("/chat/completions"),
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -447,6 +486,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::None,
         base_url: "http://localhost:11434/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -461,6 +503,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::None,
         base_url: "http://localhost:8000/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -475,6 +520,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.replicate.com/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -489,6 +537,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.sambanova.ai/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -503,6 +554,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://api.cohere.com/v2",
         wire: Wire::CohereChat,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -517,6 +571,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://gateway.ai.cloudflare.com/v1/YOUR-ACCOUNT/YOUR-GATEWAY",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -531,6 +588,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://us-south.ml.cloud.ibm.com/ml/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -545,6 +605,9 @@ pub(crate) const PROVIDERS: &[ProviderInfo] = &[
         auth: Auth::Bearer,
         base_url: "https://YOUR-WORKSPACE.cloud.databricks.com/ai-gateway/mlflow/v1",
         wire: Wire::OpenAiChatCompletions,
+        reasoning_field: "none",
+        models_path: None,
+        chat_path: None,
         query: None,
         extra_headers: None,
         reports_usage: false,
@@ -576,6 +639,12 @@ pub struct Provider {
     auth: Auth,
     /// The shape of a chat request.
     wire: Wire,
+    /// How the provider takes a reasoning level, on the wire.
+    reasoning_field: &'static str,
+    /// The path of the model listing, when it is not `/models`.
+    models_path: Option<&'static str>,
+    /// The path of the chat request, when it is not the one the shape implies.
+    chat_path: Option<&'static str>,
     /// A query parameter every request needs.
     query: Option<(&'static str, &'static str)>,
     /// A header every request needs, beside the one the key goes in.
@@ -593,6 +662,9 @@ impl Provider {
             wire: info.wire,
             query: info.query,
             extra_headers: info.extra_headers,
+            reasoning_field: info.reasoning_field,
+            models_path: info.models_path,
+            chat_path: info.chat_path,
         })
     }
 
@@ -618,11 +690,6 @@ impl Provider {
         Provider::for_provider_at("openrouter", base).expect("OpenRouter is a provider")
     }
 
-    /// Whether the app has a client for this provider.
-    pub fn is_supported(&self) -> bool {
-        self.wire.is_supported()
-    }
-
     /// Whether the provider needs a key at all.
     pub fn is_keyless(&self) -> bool {
         provider_for(&self.id).map(|info| info.keyless).unwrap_or(false)
@@ -631,21 +698,31 @@ impl Provider {
     /// The path of the chat request, under the provider's base address.
     ///
     /// Two of the shapes carry the model's own name in the path, and one
-    /// carries a colon before the action.
+    /// carries a colon before the action. A provider whose own path is not the
+    /// one its shape implies says so in the table.
     fn chat_path(&self, model: &str) -> String {
+        if let Some(path) = self.chat_path {
+            return path.replace("{model}", model);
+        }
         match self.wire {
             Wire::OpenAiChatCompletions => "/chat/completions".to_string(),
             Wire::AnthropicMessages => "/messages".to_string(),
             Wire::GoogleGenerativeAi => format!("/models/{model}:streamGenerateContent"),
             Wire::CohereChat => "/chat".to_string(),
-            Wire::AwsBedrock => format!("/model/{model}/converse"),
-            Wire::GoogleVertex => format!("/models/{model}:streamGenerateContent"),
         }
     }
 
     /// The path of the model listing, under the provider's base address.
     fn models_path(&self) -> &'static str {
-        "/models"
+        self.models_path.unwrap_or("/models")
+    }
+
+    /// How the provider takes a reasoning level, on the wire.
+    ///
+    /// The field is not the same everywhere, and a level sent in the wrong
+    /// field is one the provider ignores.
+    fn reasoning_field(&self) -> &str {
+        self.reasoning_field
     }
 
     fn catalogue_url(&self) -> String {
@@ -693,7 +770,6 @@ impl Provider {
                 format!("{}/models:streamGenerateContent", self.base)
             }
             Wire::CohereChat => format!("{}/chat", self.base),
-            Wire::AwsBedrock | Wire::GoogleVertex => format!("{}/", self.base),
         }
     }
 
@@ -708,9 +784,7 @@ impl Provider {
     ) -> reqwest::RequestBuilder {
         let request = match (self.auth, key) {
             (Auth::None, _) => request,
-            (Auth::GoogleOAuth, _) => request,
             (Auth::Bearer, Some(key)) => request.bearer_auth(key),
-            (Auth::AwsBearer, Some(key)) => request.bearer_auth(key),
             (Auth::Header(name), Some(key)) => request.header(name, key),
             (_, None) => request,
         };
@@ -778,13 +852,13 @@ pub struct ChatConfig {
     /// The composer sends the provider it showed the model list for, so the
     /// request and the list are about the same provider by construction.
     pub provider_id: Option<String>,
-    /// The reasoning preference, already checked and written the provider's
-    /// way.
+    /// The reasoning level, already checked against the model.
     ///
     /// The desktop app has no server to check it against, so the check happens
-    /// in the webview, against the same shared rule the server uses. The
-    /// fields are the provider's own, and they are sent as they are.
-    pub reasoning: Option<Value>,
+    /// in the webview, against the same shared rule the website's server uses.
+    /// The level is the provider's own word for it, and it goes out in the
+    /// field the provider takes it in.
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1129,15 +1203,6 @@ pub async fn model_catalogue(
     let provider = Provider::for_provider(&provider)
         .ok_or_else(|| format!("\"{provider}\" is not a provider this app knows about."))?;
 
-    /* A provider signed with credentials the app does not hold is refused
-       here, with the reason, rather than at the first request. */
-    if !provider.is_supported() {
-        return Err(format!(
-            "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
-            provider.label
-        ));
-    }
-
     let key = crate::keys::active_key(&app, &provider.id)?;
     let provider = match key.as_ref().and_then(|key| key.base_url.as_deref()) {
         Some(base) => Provider::for_provider_at(&provider.id, base)
@@ -1329,13 +1394,6 @@ pub async fn chat(
     let provider = Provider::for_provider(&provider_id)
         .ok_or_else(|| format!("\"{provider_id}\" is not a provider this app knows about."))?;
 
-    if !provider.is_supported() {
-        return Err(format!(
-            "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
-            provider.label
-        ));
-    }
-
     let key = crate::keys::active_key(&app, &provider.id)?;
     let provider = match key.as_ref().and_then(|key| key.base_url.as_deref()) {
         Some(base) => Provider::for_provider_at(&provider.id, base)
@@ -1444,25 +1502,27 @@ where
             "stream": true,
         }),
         /* Two providers are signed with credentials the app does not hold. */
-        Wire::AwsBedrock | Wire::GoogleVertex => {
-            return Err(format!(
-                "{} is signed with credentials rather than with a key, and this app does not hold those yet.",
-                provider.label
-            ));
-        }
     };
 
-    /* The reasoning preference, already checked and written the provider's
-       own way by the shared rule. The fields are the provider's, and they go
-       on the body as they are. */
-    if let Some(reasoning) = request
+    /* The reasoning level goes in the field this provider takes it in.
+     *
+     * The field is not the same everywhere — OpenRouter takes `reasoning: {
+     * effort }`, OpenAI and the OpenAI-compatible providers take a top-level
+     * `reasoning_effort`, and Anthropic takes `output_config: { effort }` —
+     * and a level sent in the wrong field is one the provider ignores. Which
+     * field is which is in the provider's own row. */
+    if let Some(effort) = request
         .config
         .as_ref()
-        .and_then(|config| config.reasoning.as_ref())
-        .and_then(|reasoning| reasoning.as_object())
+        .and_then(|config| config.reasoning_effort.as_deref())
+        .map(str::trim)
+        .filter(|effort| !effort.is_empty())
     {
-        for (name, value) in reasoning {
-            body[name] = value.clone();
+        match provider.reasoning_field() {
+            "reasoning.effort" => body["reasoning"] = json!({ "effort": effort }),
+            "reasoning_effort" => body["reasoning_effort"] = json!(effort),
+            "output_config.effort" => body["output_config"] = json!({ "effort": effort }),
+            _ => {}
         }
     }
 
@@ -1619,7 +1679,6 @@ fn read_payload(wire: Wire, payload: &str) -> StreamAction {
             },
             _ => StreamAction::Nothing,
         },
-        Wire::AwsBedrock | Wire::GoogleVertex => StreamAction::Nothing,
     }
 }
 
@@ -1946,7 +2005,7 @@ mod tests {
             config: Some(super::ChatConfig {
                 model_name: Some("vendor/model".to_string()),
                 provider_id: None,
-                reasoning: None,
+                reasoning_effort: None,
             }),
             request_id: Some("test".to_string()),
         }
@@ -2085,7 +2144,7 @@ mod tests {
         request.config = Some(super::ChatConfig {
             model_name: None,
             provider_id: None,
-            reasoning: None,
+            reasoning_effort: None,
         });
 
         let outcome = runtime().block_on(chat_with(

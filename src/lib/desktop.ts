@@ -147,8 +147,14 @@ export const checkProviderKey = async (
   provider: string,
   key: string,
   spend: boolean,
+  baseUrl?: string,
 ): Promise<KeyStandingReport> =>
-  invoke<KeyStandingReport>("check_provider_key", { provider, key, spend })
+  invoke<KeyStandingReport>("check_provider_key", {
+    provider,
+    key,
+    spend,
+    baseUrl: baseUrl ?? null,
+  })
 
 export const recheckProviderKey = async (id: string): Promise<void> => {
   await invoke("recheck_provider_key", { id })

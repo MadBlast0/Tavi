@@ -294,20 +294,28 @@ the app starts it, reads what it says, and never asks it for a key. The
 program keeps its own account and its own configuration, and Tavi neither
 sees nor stores them.
 
-A provider is a **shape** and some **configuration**. Most of the thirty
-providers the app knows about speak the OpenAI chat-completions shape and
-differ only in the address they live at and how the key is sent. Anthropic's
-Messages, Google's generate-content and Cohere's chat are three more shapes.
-Two of them — Amazon Bedrock and Google Vertex AI — are signed with AWS
-credentials and with Google's own rather than with a key, and the app says so
-plainly.
+A provider is a **shape** and some **configuration**. Most of the
+twenty-eight providers the app knows about speak the OpenAI chat-completions
+shape and differ only in the address they live at and how the key is sent.
+Anthropic's Messages, Google's generate-content and Cohere's chat are three
+more shapes.
+
+**A provider also says where a reasoning level goes.** The field is not the
+same everywhere — OpenRouter takes `reasoning: { effort }`, OpenAI and the
+OpenAI-compatible providers take a top-level `reasoning_effort`, and Anthropic
+takes `output_config: { effort }` — and a level sent in the wrong field is
+one the provider ignores. The field is in the provider's own row, and both
+halves of the app read it from there.
 
 **A key may carry the address it belongs to.** Some providers do not live at
 one address: an Azure resource, a Databricks workspace, a model running on
-this machine. The key says which, and the key's address wins over the
-provider's default. The address is part of the key's metadata, and it is
-written next to the key rather than beside it — the address is not a secret,
-but it is not the provider's either.
+this machine, a gateway of your own. The key says which, and the key's
+address wins over the provider's default. The address is part of the key's
+metadata, and it is written next to the key rather than beside it — the
+address is not a secret, but it is not the provider's either.
+
+**A custom endpoint** is a provider of that kind: the OpenAI
+chat-completions shape at an address the user gives.
 
 ### Secrets - OS credential store
 

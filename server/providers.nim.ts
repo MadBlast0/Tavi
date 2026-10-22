@@ -40,7 +40,8 @@ import {
   nimDocumentedEfforts,
 } from "../src/lib/provider-capabilities.ts";
 import {
-  serializeReasoning,
+  checkReasoning,
+  sdkOptionsFor,
   type ReasoningPreferences,
   type SerializedReasoning,
 } from "../src/lib/provider-reasoning.ts";
@@ -61,7 +62,7 @@ export const nimAdapter: ModelProviderAdapter = {
     const headers: Record<string, string> = { accept: "application/json" };
     // NIM permits unauthenticated listing, but a key gives the account's models.
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-    const response = await fetch(`${base}/models`, { headers });
+    const response = await fetch(`${base}${connection.modelsPath ?? "/models"}`, { headers });
     if (!response.ok) {
       throw new Error(`NIM models request failed: HTTP ${response.status}`);
     }
@@ -87,10 +88,13 @@ export const nimAdapter: ModelProviderAdapter = {
   },
 
   serializeReasoning(
-    _capabilities: ModelReasoningCapabilities,
+    capabilities: ModelReasoningCapabilities,
     preferences: ReasoningPreferences,
   ): SerializedReasoning {
-    return serializeReasoning("nvidia-nim", _capabilities, preferences);
+    const verdict = checkReasoning(capabilities, preferences);
+    if (!verdict.ok) return { kind: "reject", message: verdict.message };
+    const fields = sdkOptionsFor("nvidia-nim", verdict.level);
+    return fields ? { kind: "payload", fields } : { kind: "omit" };
   },
 };
 
