@@ -5,6 +5,7 @@ import { readyChats } from "./lib/chats";
 import { restoreFontFamily, warmInstalledFonts } from "./lib/fonts";
 import { runMigrations } from "./lib/migrations";
 import { restorePalette } from "./lib/palette";
+import { recoverAnswers } from "./lib/partials";
 import { readySessions } from "./lib/sessions";
 import "./index.css";
 
@@ -47,6 +48,12 @@ const paint = () => {
   );
 };
 
-void Promise.all([readyChats(), readySessions()]).then(paint, paint);
+// The answers that were cut off are put back before the first paint, so a
+// conversation that was interrupted is whole by the time it can be seen. A
+// recovery that fails is not a reason to stop the app from opening: the
+// conversation is still there, and the answer that was lost is still lost.
+void Promise.all([readyChats(), readySessions()])
+  .then(() => recoverAnswers())
+  .then(paint, paint);
 setTimeout(paint, PAINT_WAIT_MS);
 

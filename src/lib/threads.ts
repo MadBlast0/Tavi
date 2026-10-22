@@ -51,7 +51,17 @@ export type StoredTool = {
 
 export type StoredTurn =
   | { id: string; role: "user"; text: string; files: StoredFile[]; mentions: StoredMention[] }
-  | { id: string; role: "assistant"; text: string; stopped?: boolean; tools?: StoredTool[] }
+  | {
+      id: string
+      role: "assistant"
+      text: string
+      /** The user stopped it. */
+      stopped?: boolean
+      /** It did not finish — the app died, or was closed, while it was being written. */
+      incomplete?: boolean
+      /** The tools a CLI provider's agent used. */
+      tools?: StoredTool[]
+    }
   /** Carries the summary it stands for, so it can be sent with later turns. */
   | { id: string; role: "summary"; text: string }
 
@@ -120,6 +130,29 @@ export type ThreadBase = {
    * thread that is unpinned and re-pinned comes back to the top.
    */
   pinnedAt?: number
+  /**
+   * When a reply finished in this thread while the reader was looking
+   * somewhere else, or absent if there is nothing waiting.
+   *
+   * This is the app's own record of what the reader has not looked at, and it
+   * is set whether or not a notification was sent: the operating system may
+   * refuse to raise one — on Windows only an *installed* application may — and
+   * the rail's own badge does not depend on the operating system's good
+   * behaviour.
+   *
+   * It is cleared when the thread is opened, which is what "looking at it"
+   * means.
+   */
+  unreadAt?: number
+  /**
+   * When the thread was muted, or absent if it is not.
+   *
+   * A muted thread is never announced, and it is never marked as having
+   * something the reader has not looked at. It still runs, and its reply
+   * still lands in it; the reader simply does not want to be interrupted
+   * about it, which is a different thing from not wanting the answer.
+   */
+  mutedAt?: number
 }
 
 /** What a caller writes when saving a thread. */
@@ -161,6 +194,17 @@ export type ThreadStore<E extends object> = {
   clear: () => Promise<void>
   rename: (id: string, title: string) => Promise<void>
   togglePin: (id: string) => Promise<void>
+  /**
+   * Notes that a reply finished in this thread while the reader was elsewhere.
+   *
+   * The reader has not looked at this thread since the last time it was
+   * marked, and the thread's own badge says so until it is opened.
+   */
+  markUnread: (id: string) => Promise<void>
+  /** Notes that the reader has looked at this thread. */
+  clearUnread: (id: string) => Promise<void>
+  /** Turns the thread's announcements on or off. */
+  toggleMute: (id: string) => Promise<void>
   fork: (id: string) => Promise<(ThreadBase & E) | undefined>
   /**
    * The last write that did not happen, if there was one.
@@ -431,6 +475,65 @@ export const createThreadStore = <E extends object>(options: {
   }
 
   /**
+   * Notes that a reply finished here while the reader was elsewhere.
+   *
+   * The mark is the thread's own, so it survives a restart and so deleting
+   * the thread takes it with it — there is no list of ids somewhere else to
+   * fall out of step with the conversations.
+   */
+  const markUnread = async (id: string) => {
+    await ready()
+    apply(
+      threads.map((thread) =>
+        thread.id === id ? { ...thread, unreadAt: Date.now() } : thread,
+      ),
+    )
+    await write(threads)
+  }
+
+  /**
+   * Notes that the reader has looked at this thread.
+   *
+   * Opening a conversation is what looking at it means, so the mark goes
+   * when the thread is opened and not before.
+   */
+  const clearUnread = async (id: string) => {
+    await ready()
+    let changed = false
+    apply(
+      threads.map((thread) => {
+        if (thread.id !== id || !thread.unreadAt) return thread
+        changed = true
+        const { unreadAt: _dropped, ...rest } = thread
+        return rest as ThreadBase & E
+      }),
+    )
+    if (changed) await write(threads)
+  }
+
+  /**
+   * Turns this thread's announcements on or off.
+   *
+   * Muting a thread does not stop it running and does not stop its reply
+   * being written. It says that the reader does not want to be interrupted
+   * about it, which is a different thing from not wanting the answer.
+   */
+  const toggleMute = async (id: string) => {
+    await ready()
+    apply(
+      threads.map((thread) => {
+        if (thread.id !== id) return thread
+        if (thread.mutedAt) {
+          const { mutedAt: _dropped, ...rest } = thread
+          return rest as ThreadBase & E
+        }
+        return { ...thread, mutedAt: Date.now() }
+      }),
+    )
+    await write(threads)
+  }
+
+  /**
    * Copies a thread, its whole conversation, into a new one beside it.
    *
    * The copy carries the original's model, effort and — in Code — its folder
@@ -477,6 +580,9 @@ export const createThreadStore = <E extends object>(options: {
     clear,
     rename,
     togglePin,
+    markUnread,
+    clearUnread,
+    toggleMute,
     fork,
     lastError: () => failure,
     subscribe,

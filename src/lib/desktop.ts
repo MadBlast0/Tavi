@@ -21,6 +21,11 @@
 import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window"
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification"
 import { openUrl } from "@tauri-apps/plugin-opener"
 
 import { isDesktopApp } from "./platform.ts"
@@ -30,6 +35,8 @@ import type {
   CloneProgress,
   CloneResult,
   KeyStandingReport,
+  NotificationPermission,
+  PartialJournal,
   ProjectsListing,
   RawCatalogue,
   Workspace,
@@ -396,6 +403,100 @@ export const writeThreads = async (
 export const clearThreads = async (kind: string): Promise<void> => {
   await invoke("clear_threads", { kind })
 }
+
+/* -------------------------------------------------------------------------- */
+/* The answers in flight                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Adds one line to the journal of an answer that is being written.
+ *
+ * The journal is a file of the app's own, and Rust appends to it. The file
+ * only ever grows, so this is cheap enough to call as the answer arrives.
+ */
+export const appendPartial = async (
+  threadId: string,
+  line: string
+): Promise<void> => {
+  await invoke("append_partial", { threadId, line })
+}
+
+/**
+ * Every journal that is there.
+ *
+ * The lines are given as they are on disk. A journal whose last line was cut
+ * short by a crash comes back whole, and reading it is the frontend's job —
+ * it is the one that knows what a line means.
+ */
+export const readPartials = async (): Promise<PartialJournal[]> => {
+  const raw = await invoke<string>("read_partials")
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as PartialJournal[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** Removes one journal. */
+export const clearPartial = async (threadId: string): Promise<void> => {
+  await invoke("clear_partial", { threadId })
+}
+
+/** Removes every journal. */
+export const clearPartials = async (): Promise<void> => {
+  await invoke("clear_partials")
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notifications                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the operating system will let the app raise a toast.
+ *
+ * On Windows it does not ask: a toast is a toast, and the permission is
+ * reported as granted whether or not the toast will be delivered — the
+ * operating system only lets an *installed* application raise one, and says
+ * so by not showing it.
+ */
+export const notificationPermission = async (): Promise<NotificationPermission> => {
+  const granted = await isPermissionGranted();
+  return granted ? "granted" : "default";
+};
+
+/**
+ * Asks the operating system for permission to raise a toast.
+ *
+ * The answer is the permission's new state, and a refusal is a refusal.
+ */
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  const permission = await requestPermission();
+  return permission === "granted";
+};
+
+/** Raises a toast. */
+export const showNotification = (title: string, body: string): void => {
+  sendNotification({ title, body });
+};
+
+/**
+ * Whether the app is in front of the reader.
+ *
+ * The window's own focus, which is the operating system's answer rather than
+ * the app's guess at it.
+ */
+export const windowHasFocus = async (): Promise<boolean> => {
+  const window = appWindow();
+  if (!window) return false;
+  try {
+    return await window.isFocused();
+  } catch {
+    /* A window that cannot say is treated as not in front, which is the safe
+       direction: the reader is told rather than left wondering. */
+    return false;
+  }
+};
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

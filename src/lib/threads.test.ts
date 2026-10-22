@@ -79,6 +79,11 @@ const aTurn = (text: string) => ({
 
 beforeEach(() => {
   globalThis.localStorage.clear();
+  /* The refusal is test state as well as the contents are, and the test that
+     sets it does not unset it. A flag left on makes every later test's
+     writes fail, and the failure reads as a broken store rather than as a
+     broken test. */
+  (globalThis.localStorage as unknown as MemoryStorage).refuseWrites = false;
 });
 
 test("a thread is named after the first thing said in it", () => {
@@ -337,4 +342,82 @@ test("a write that is refused is reported and the conversation is kept", async (
     2,
     "the conversation should still be the one that was written",
   );
+});
+
+/**
+ * A thread that has something the reader has not looked at says so, and stops
+ * saying so once it is looked at.
+ *
+ * The mark is the thread's own, so it survives a restart and so deleting the
+ * thread takes it with it.
+ */
+test("a thread is marked as having something unread, and unmarked when it is looked at", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+
+  assert.equal(chats.find(chat.id)?.unreadAt, undefined);
+
+  await chats.markUnread(chat.id);
+  assert.ok(
+    typeof chats.find(chat.id)?.unreadAt === "number",
+    "the thread should say there is something unread",
+  );
+
+  await chats.clearUnread(chat.id);
+  assert.equal(
+    chats.find(chat.id)?.unreadAt,
+    undefined,
+    "looking at the thread should clear the mark",
+  );
+});
+
+/**
+ * The mark survives a restart.
+ *
+ * The reader may not open the app again for a day, and a mark that was in
+ * memory only would be gone by then, which is the one time it matters.
+ */
+test("the unread mark is kept on disk", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.markUnread(chat.id);
+
+  const stored = JSON.parse(
+    globalThis.localStorage.getItem("tavi.chats.v1")!,
+  ) as Record<string, unknown>[];
+  assert.ok(typeof stored[0].unreadAt === "number");
+});
+
+/**
+ * Muting a thread turns on and off, and the thread keeps its conversation.
+ *
+ * A muted thread still runs, and its reply still lands in it. The reader
+ * simply does not want to be interrupted about it.
+ */
+test("a thread can be muted and unmuted without losing its conversation", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+
+  await chats.toggleMute(chat.id);
+  assert.ok(typeof chats.find(chat.id)?.mutedAt === "number");
+  assert.equal(chats.find(chat.id)?.turns.length, 1);
+
+  await chats.toggleMute(chat.id);
+  assert.equal(chats.find(chat.id)?.mutedAt, undefined);
+  assert.equal(chats.find(chat.id)?.turns.length, 1);
+});
+
+/**
+ * Muting one thread does not mute another.
+ *
+ * The mark is the thread's own, so there is no shared state to spill over.
+ */
+test("muting one thread leaves the others alone", async () => {
+  const { chats } = stores();
+  const first = await chats.create({ turns: [aTurn("one")] });
+  const second = await chats.create({ turns: [aTurn("two")] });
+
+  await chats.toggleMute(first.id);
+
+  assert.equal(chats.find(second.id)?.mutedAt, undefined);
 });

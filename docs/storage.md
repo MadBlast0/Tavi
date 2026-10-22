@@ -29,7 +29,7 @@ what removes it.
 | The provider a request goes to | A per-side preference, in the browser's storage | Low. A choice about where a request goes | Until the user clears site data | Clearing site data |
 | The CLI providers' own preferences | `cli-providers.json` beside the app's data, on the desktop. There is nothing on the website | Low. Which programs are offered, and whether they may update themselves | Until the app is reinstalled | Overwritten |
 | The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
-| Preferences: model, effort, agent mode, the rail's open state | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
+| Preferences: model, effort, agent mode, the rail's open state, the notification choices | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
@@ -84,7 +84,14 @@ delete it on a schedule.
 ### Preferences — `localStorage`
 
 `src/lib/prefs.ts`. Model, effort level, agent mode, app font, and whether the
-rail is open.
+rail is open. The notification choices are in `src/lib/notifications.ts`,
+under the same namespace: `tavi.notify.completions`, `tavi.notify.in-front`
+and `tavi.notify.preview`.
+
+They are **not** per side. Whether to be told that a reply finished is a
+question about the reader and the machine, not about Chat or Code, and a
+reader who wants to know when a chat finishes wants to know when a session
+does too.
 
 The model and the effort are remembered **per side**: `tavi.model.chat` and
 `tavi.model.code`, `tavi.effort.chat` and `tavi.effort.code`. Chat and Code
@@ -199,13 +206,25 @@ stores, with separate shapes and separate caps:
 | | Chat | Code session |
 |---|---|---|
 | Key | `tavi.chats.v1` | `tavi.code-sessions.v1` |
-| Shape | turns, model, effort, pin | turns, model, effort, agent mode, folder, pin |
+| Shape | turns, model, effort, pin, unread, mute | turns, model, effort, agent mode, folder, pin, unread, mute |
 | A folder | none — there is nowhere to put one | the folder's id and its name |
 | Grouped by | nothing; the list is flat | the project it was run against |
 | Id prefix | `c-` | `s-` |
 
 Each is a single JSON array, capped at 50, with attachment text captured at send
 time so a restored thread keeps its context.
+
+**Two of a thread's fields are about the reader rather than the
+conversation**, and they live on the thread because a thread is the thing
+they are about — a separate list of ids somewhere else could fall out of step
+with the conversations, and could not be deleted with them.
+
+| | |
+|---|---|
+| `unreadAt` | When a reply finished in this thread while the reader was elsewhere. The rail's badge says so until the thread is opened. It follows the **Response completions** setting, because a reader who has turned notifications off does not want to be told about a reply in any form. |
+| `mutedAt` | When the thread was muted. A muted thread is never announced, and it is never marked as having something the reader has not looked at. It still runs, and its reply still lands in it. |
+
+Both are timestamps, and both are absent until they apply.
 
 **Where the array lives is `src/lib/thread-repository.ts`'s business.** The
 website keeps it in `localStorage`; the desktop app keeps it in the app's own
@@ -464,12 +483,42 @@ same and two copies of the app share one key. The same is true of the
 website's server's own key file (`TAVI_KEYS_DIR`): one key for one user, and
 the app's whole design says a key lives in one place.
 
+#### The journals — app data
+
+`src-tauri/src/partials.rs` writes `partials/<conversation-id>.jsonl` into the
+app data directory: one file per conversation, holding the answer that is
+being written right now.
+
+An answer exists in memory until it ends. Without a journal, a crash in the
+middle of writing one loses all of it. With one, the answer so far is on disk
+while it is still arriving, and it is found again on the next launch.
+
+The file is **appended to** and never rewritten: a line is added as the answer
+grows, and a crash can lose only the last line rather than the whole answer.
+The directory is `0700` and the files `0600` on the platforms that have such a
+bit; on Windows they inherit the app data folder's ACL, which is the user's
+alone. The conversation id is checked before it becomes a path, so a name that
+was not made by this app cannot point the write somewhere else.
+
+A journal holds the same text a conversation holds, so it goes when the
+conversation goes: **Settings → Privacy** removes the journals of the side
+being cleared, and removes the rest when everything is removed.
+
+The journal is temporary. The answer is written to `threads.json` when it
+ends, and the journal is removed then — but only once that write has
+succeeded. A journal left behind is an answer that was cut off, and the next
+launch puts it back into its conversation, marked as one that did not finish.
+
+On the website there is no app data directory, so the journal goes in the
+browser's storage under `tavi.partial.<conversation-id>`, and the same
+recovery happens. The website's conversations are already evictable, so a
+journal there is a kindness rather than a guarantee.
+
 #### Window state — app data
 
 `src-tauri/src/window_state.rs` writes `window-state.json` into the app data
 directory: the window's size and whether it was maximized, so the app opens as
 large as it was left rather than at the size it was configured with.
-
 It is app data and not a preference because it belongs to the installed
 program rather than to the webview's profile: a window that forgets how big it
 was is a window that opens at the wrong size every morning, and the state

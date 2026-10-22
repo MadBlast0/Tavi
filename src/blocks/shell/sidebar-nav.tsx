@@ -2,14 +2,17 @@
 
 import * as React from "react"
 import {
+  BellOffIcon,
   CircleSmallIcon,
   ClockIcon,
   FolderIcon,
+  LayoutPanelLeftIcon,
   ListFilterIcon,
   PinIcon,
   PlusIcon,
   ShapesIcon,
   SlidersHorizontalIcon,
+  XIcon,
   ZapIcon,
 } from "lucide-react"
 
@@ -38,15 +41,55 @@ import {
 } from "@/blocks/prompt-input/thread-bridge"
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
-import { listChats, onChatsChanged } from "@/lib/chats"
+import { listChats, onChatsChanged, type StoredChat } from "@/lib/chats"
 import { listWorkspaces } from "@/lib/workspace"
 import {
   listSessions,
   onSessionsChanged,
+  type StoredSession,
 } from "@/lib/sessions"
 import { formatWhen } from "@/lib/threads"
 import type { Side } from "@/lib/sides"
+import {
+  closeWorkspace,
+  openWorkspace,
+  useWorkspace,
+} from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
+
+/**
+ * The rail's own view of a chat, and of a session.
+ *
+ * The row is given the few fields it actually reads, and the side it belongs
+ * to. **They are written down once, here**, because the rail builds this
+ * view twice — once when it first loads and once every time the stores say
+ * something changed — and two copies of the same list of fields are two
+ * places for a field to be left out of. One was, and the row showed a chat
+ * that had been muted as a chat that had not.
+ */
+const railChat = (chat: StoredChat): RailThread => ({
+  id: chat.id,
+  title: chat.title,
+  updatedAt: chat.updatedAt,
+  model: chat.model,
+  pinnedAt: chat.pinnedAt,
+  unreadAt: chat.unreadAt,
+  mutedAt: chat.mutedAt,
+  side: "chat",
+})
+
+const railSession = (session: StoredSession): RailThread => ({
+  id: session.id,
+  title: session.title,
+  updatedAt: session.updatedAt,
+  model: session.model,
+  folder: session.folder,
+  folderName: session.folderName,
+  pinnedAt: session.pinnedAt,
+  unreadAt: session.unreadAt,
+  mutedAt: session.mutedAt,
+  side: "code",
+})
 
 /**
  * Row geometry, shared by the destinations and the threads so the two read as
@@ -179,6 +222,11 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
   ],
   code: [
     { id: "new", label: "New", icon: PlusIcon },
+    {
+      id: "workspace",
+      label: "Workspace",
+      icon: LayoutPanelLeftIcon,
+    },
     {
       id: "artifacts",
       label: "Artifacts",
@@ -401,6 +449,16 @@ function ThreadRow({
             className="size-3 shrink-0 text-sidebar-foreground/50"
           />
         ) : null}
+        {/* The crossed-out bell says this thread is muted: it still runs, and
+            its reply still lands in it, but the reader does not want to be
+            interrupted about it. It is a symbol rather than a colour, because
+            a colour on its own is not a message. */}
+        {thread.mutedAt ? (
+          <BellOffIcon
+            aria-hidden="true"
+            className="size-3 shrink-0 text-sidebar-foreground/50"
+          />
+        ) : null}
         {/* The dot says this thread is answering right now. It is driven by
             the live stream rather than by a flag the row makes up, so it
             appears on exactly one row and only while a reply is in flight —
@@ -416,9 +474,17 @@ function ThreadRow({
       </SidebarMenuButton>
       {/* The badge is absolutely positioned over the row, and the context
           menu's trigger is the row itself, so the badge is carried inside the
-          trigger rather than beside it. */}
+          trigger rather than beside it.
+
+          It says one of three things, and never two at once: the thread is
+          answering, there is something in it the reader has not looked at,
+          or — when neither of those is true — when it was last touched. */}
       <SidebarMenuBadge className="text-sidebar-foreground/70">
-        {running ? "Running" : formatWhen(thread.updatedAt)}
+        {running
+          ? "Running"
+          : thread.unreadAt
+            ? "New"
+            : formatWhen(thread.updatedAt)}
       </SidebarMenuBadge>
     </ThreadContextMenu>
   )
@@ -436,30 +502,17 @@ export function SidebarNav() {
   const { variant } = useComposerVariant()
   const bridge = useThreadBridge()
   const newThread = useNewThread()
+  /* Whether the workspace has the work area. The row has to say which it
+     will do, and the only way it can know is by asking. */
+  const { open: workspaceOpen } = useWorkspace()
   /* The two lists, kept apart.
      A chat is not a code session, so the rail is not one list drawn twice: it
      is two lists, and the switch says which of them you are looking at. */
   const [chats, setChats] = React.useState<RailThread[]>(() =>
-    listChats().map((chat) => ({
-      id: chat.id,
-      title: chat.title,
-      updatedAt: chat.updatedAt,
-      model: chat.model,
-      pinnedAt: chat.pinnedAt,
-      side: "chat" as const,
-    })),
+    listChats().map(railChat),
   )
   const [sessions, setSessions] = React.useState<RailThread[]>(() =>
-    listSessions().map((session) => ({
-      id: session.id,
-      title: session.title,
-      updatedAt: session.updatedAt,
-      model: session.model,
-      folder: session.folder,
-      folderName: session.folderName,
-      pinnedAt: session.pinnedAt,
-      side: "code" as const,
-    })),
+    listSessions().map(railSession),
   )
   /* Per mode, for the same reason the lists themselves are: a chat list sorted
      one way and a project list sorted another is two answers to one list. Not
@@ -526,28 +579,8 @@ export function SidebarNav() {
      can also change in another tab. */
   React.useEffect(() => {
     const refresh = () => {
-      setChats(
-        listChats().map((chat) => ({
-          id: chat.id,
-          title: chat.title,
-          updatedAt: chat.updatedAt,
-          model: chat.model,
-          pinnedAt: chat.pinnedAt,
-          side: "chat" as const,
-        })),
-      )
-      setSessions(
-        listSessions().map((session) => ({
-          id: session.id,
-          title: session.title,
-          updatedAt: session.updatedAt,
-          model: session.model,
-          folder: session.folder,
-          folderName: session.folderName,
-          pinnedAt: session.pinnedAt,
-          side: "code" as const,
-        })),
-      )
+      setChats(listChats().map(railChat))
+      setSessions(listSessions().map(railSession))
     }
     refresh()
     const stopChats = onChatsChanged(refresh)
@@ -566,6 +599,23 @@ export function SidebarNav() {
        firing straight afterwards and switching the surface out from under
        them. */
     newThread(variant)
+  }
+
+  /**
+   * The workspace, in and out.
+   *
+   * The row says which it will do rather than carrying one label and
+   * changing only a mark: a row that says "Workspace" and closes the
+   * workspace when pressed is a row that lies about what it does, and the
+   * rail is the one place the user is looking when they decide to leave.
+   *
+   * Opening the workspace does not touch the conversation or the composer.
+   * They are still there when the workspace is closed again, exactly as
+   * they were.
+   */
+  function onWorkspace() {
+    if (workspaceOpen) closeWorkspace()
+    else openWorkspace()
   }
 
   function onOpen(id: string) {
@@ -587,10 +637,22 @@ export function SidebarNav() {
                 className={ROW}
                 disabled={Boolean(entry.why)}
                 title={entry.why}
-                onClick={entry.id === "new" ? onNew : undefined}
+                onClick={
+                  entry.id === "new"
+                    ? onNew
+                    : entry.id === "workspace"
+                      ? onWorkspace
+                      : undefined
+                }
               >
-                <entry.icon />
-                {entry.label}
+                {entry.id === "workspace" && workspaceOpen ? (
+                  <XIcon />
+                ) : (
+                  <entry.icon />
+                )}
+                {entry.id === "workspace" && workspaceOpen
+                  ? "Close workspace"
+                  : entry.label}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

@@ -1142,20 +1142,21 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
                 Some(number) => (true, Some(path.clone()), Some(number), answer.text),
                 None => {
                     /* The program is there and is not the tool. Saying so is
-                    more use than saying "not installed" and leaving the
-                    person to wonder why. */
-                    let said = match (
-                        answer
-                            .text
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|text| !text.is_empty()),
-                        answer.error.as_deref(),
-                    ) {
-                        (Some(text), _) => text.to_string(),
-                        (None, Some(error)) => error.to_string(),
-                        (None, None) => "it did not say which version it is".to_string(),
-                    };
+                       more use than saying "not installed" and leaving the
+                       person to wonder why.
+                       *
+                       * The reason the version is unknown is said as well.
+                       * A program that could not be started, and a program
+                       * that would not answer in time, are different facts,
+                       * and "it did not say which version it is" is not
+                       * true of either of them. */
+                    let said = answer
+                        .text
+                        .as_deref()
+                        .map(|text| text.trim())
+                        .filter(|text| !text.is_empty())
+                        .or(answer.error.as_deref())
+                        .unwrap_or("it did not say which version it is");
                     problem = Some(format!(
                         "A program called {} is on this machine, but it is not the {}. It said: {}",
                         info.executables[0], info.label, said

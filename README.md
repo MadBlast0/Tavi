@@ -148,6 +148,30 @@ The **credential store is not redirected**, and deliberately so: a key belongs
 to a user and a provider, not to a checkout of the source, so two copies of the
 app share one key.
 
+## Branches and merging
+
+There are two long-lived lines. **`master`** is the line of work — new work
+is committed there, and the other branches are cut from it. **`main`** is the
+trunk: everything finished is merged into it, and it is the line that is
+provable at any moment.
+
+A merge into `main` is **proved before it is committed**. The lockfile has
+to install, the TypeScript has to compile, the tests have to pass, the app
+has to build, and the Rust side has to compile with warnings as errors. A
+merge that does not pass is aborted, and `main` is left exactly as it was.
+
+A merge on a timer does the part a machine can do, and hands the rest to an
+agent: the script merges and proves, and when a merge conflicts or the gate
+goes red, it wakes an agent with the failing output and the rules to keep.
+
+```powershell
+./scripts/install-merge-timer.ps1   # merge and prove every 30 minutes
+./scripts/merge-main.ps1 -Report    # what is in main, and what is not
+```
+
+[`docs/merging.md`](docs/merging.md) has the whole thing: the gate, the
+timer, the report, and the two merges that needed a judgement call.
+
 ## Provider keys
 
 Tavi talks to **twenty-eight** providers, and to any OpenAI-compatible
@@ -846,6 +870,28 @@ so tool support is intermittent.
   so `service-not-allowed` or `network` is the likely outcome. The app reports
   which of those happened rather than failing silently, but reporting it is not
   the same as working.
+- **A notification only works for an installed app on Windows.** The desktop app
+  raises a toast from the operating system when a reply finishes while the app
+  is in the background, and the operating system decides which applications
+  may raise one: **only an installed one**. A development build shows a toast
+  from powershell, with powershell's name and icon, and an installed build
+  shows the app's. That is the platform's rule about which applications may
+  interrupt, not something the app can work around. The website's
+  notifications are the browser's own, and a browser tab that is **closed**
+  gets none — the tab is not there to raise one, and a notification that
+  outlived it would need a push service and a service worker.
+- **A notification says a reply finished, and nothing more.** The app knows when
+  the provider stopped sending text. It does not know whether the answer's
+  "I'll run the tests and fix what fails" was followed by anything, because the
+  app cannot write files and the model cannot run commands. So the wording is
+  "a reply finished", and it is never "the task is finished" — which would be
+  a claim the app cannot support.
+- **The system's toast cannot open the conversation.** Clicking it brings the app
+  to the front, which is the operating system's doing, and no further: the
+  notification plugin's action API is mobile-only. The card *inside* the app
+  can, and so can the conversation's own mark in the rail — which is the half
+  of the system that works everywhere, including on a machine where the
+  operating system will not raise a toast at all.
 - **Only the local environment exists.** The composer footer carries an
   environment picker because the upstream assistant-ui composer it is modelled on
   has one. `Local` works; `SSH` and `Cloud` are listed above it, greyed out,

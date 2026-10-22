@@ -18,6 +18,10 @@ dist
 dist-ssr
 *.local
 
+# The merge bot's local configuration — which session it wakes. It is
+# about this machine, not about the project.
+.tavi-merge.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

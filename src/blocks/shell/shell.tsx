@@ -187,6 +187,23 @@ function SidebarResizeHandle({
  * browser has to say so explicitly, and a browser that does not understand the
  * property ignores it and draws the circular arc, so this costs nothing where it
  * is unsupported.
+ *
+ * The height is the window's height, and it is stated rather than inherited.
+ * The work area is a flex item beside the rail, and a flex item's height is
+ * only as tall as what is put in it: the shell wrapper says `min-h-svh`, which
+ * is a floor and not a height, so a work area whose content is taller than the
+ * window makes the wrapper taller, and the window then grows a scrollbar for
+ * the whole app. A pane with long content is ordinary — the conversation is
+ * one — and the scroll belongs to the region that has the content, not to the
+ * window. So the height is the window's, and the overflow is clipped: what
+ * does not fit is the content's business to scroll, and the window does not
+ * move.
+ *
+ * The clipping used to be conditional on the rail being open, because that is
+ * when the corner needs cutting. It is not only then that it is needed, and
+ * leaving it out in the other state is how a long pane ends up scrolling the
+ * page: the rail is closed on a first run, so that is the state most people
+ * would have met it in.
  */
 const WORK_AREA_CORNER = "2.5rem"
 
@@ -202,7 +219,7 @@ function WorkArea({ children }: { children: React.ReactNode }) {
           cornerShape: "squircle",
         } as React.CSSProperties
       }
-      className="relative flex min-w-0 flex-1 flex-col data-[sidebar-open]:overflow-hidden data-[sidebar-open]:rounded-l-[var(--work-area-corner)]"
+      className="relative flex h-svh min-w-0 flex-1 flex-col overflow-hidden data-[sidebar-open]:rounded-l-[var(--work-area-corner)]"
     >
       {children}
     </div>
@@ -313,14 +330,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
        The `resizing` flag suspends the vendored sidebar's own width animation.
        Left running, it eases the rail toward the pointer at a quarter of a
-       second per frame and the whole panel trails the cursor. */
+       second per frame and the whole panel trails the cursor.
+
+        The number itself lives on the root rather than here, so that anything
+        portalled to the body can clear the bar as well. */
     <SidebarProvider
       data-resizing={resizing ? "" : undefined}
       open={railOpen}
       onOpenChange={onRailOpenChange}
       style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}
       className={cn(
-        "relative bg-sidebar [--shell-top-bar-h:1.75rem]",
+        "relative bg-sidebar",
         "data-[resizing]:[&_[data-slot=sidebar]]:transition-none",
         "data-[resizing]:[&_[data-slot=sidebar-container]]:transition-none",
       )}

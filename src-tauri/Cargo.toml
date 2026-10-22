@@ -53,6 +53,16 @@ tauri-plugin-dialog = "2.8.3"
 # window request, so a link to the provider's key page has to be handed to
 # the operating system rather than to the app.
 tauri-plugin-opener = "2.7.2"
+# Raising a toast from the operating system, so a reply that finished while
+# the app was in the background is not something the user has to come back
+# and look for.
+#
+# On Windows a toast only works for an installed app — the operating system
+# decides which applications may raise one — and a development build shows
+# powershell's name and icon. That is the platform's rule, not a choice.
+tauri-plugin-notification = "2"
+# The `time` feature is the CLI's: it sleeps between polls of a provider's
+# answer, and `tokio::time::sleep` is how it waits.
 tokio = { version = "1.54.0", features = ["rt", "macros", "time"] }
 
 

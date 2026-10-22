@@ -21,9 +21,12 @@ import type {
   CloneResult,
   KeyStandingReport,
   ModelCatalogue,
+  NotificationPermission,
+  PartialJournal,
   ProjectsListing,
   ProviderKey,
 } from "./api.ts"
+import { forgetStorage, readStorage, storageKeys, writeStorage } from "./storage.ts"
 
 /**
  * The header that makes a request something a browser will not send on its
@@ -262,6 +265,115 @@ export const streamChat = async (
     }
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* The answers in flight                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The name a conversation's journal is stored under.
+ *
+ * The website has no app-data directory, so the journal goes where the
+ * website's conversations go: the browser's storage. It is kept under its own
+ * name so that it can be found again, and so that removing the conversations
+ * can remove it with them.
+ */
+const partialName = (threadId: string) => `partial.${threadId}`
+
+/**
+ * Adds one line to the journal of an answer that is being written.
+ *
+ * A browser's storage is a set of named values rather than a set of files, so
+ * there is nothing to append to: the whole of the journal is read and written
+ * back. It is small — an answer, not a history — and the same thing happens
+ * in the browser as on the desktop, so the two stay in step.
+ */
+export const appendPartial = async (
+  threadId: string,
+  line: string
+): Promise<void> => {
+  const name = partialName(threadId)
+  const existing = readStorage(name) ?? "";
+  writeStorage(name, existing + line + "\n");
+};
+
+/** Every journal that is there. */
+export const readPartials = async (): Promise<PartialJournal[]> => {
+  const journals: PartialJournal[] = [];
+  for (const name of storageKeys("partial.")) {
+    const contents = readStorage(name);
+    if (contents === undefined) continue;
+    journals.push({ id: name.slice("partial.".length), contents });
+  }
+  return journals;
+};
+
+/** Removes one journal. */
+export const clearPartial = async (threadId: string): Promise<void> => {
+  forgetStorage(partialName(threadId));
+};
+
+/** Removes every journal. */
+export const clearPartials = async (): Promise<void> => {
+  for (const name of storageKeys("partial.")) {
+    forgetStorage(name);
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/* Notifications                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the browser will let the app raise a notification.
+ *
+ * The browser's own permission, which it asks for when the reader asks for
+ * one and which it can take away again.
+ */
+export const notificationPermission = async (): Promise<NotificationPermission> => {
+  if (typeof Notification === "undefined") return "denied";
+  return Notification.permission as NotificationPermission;
+};
+
+/** Asks the browser for permission to raise a notification. */
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (typeof Notification === "undefined") return false;
+  try {
+    return (await Notification.requestPermission()) === "granted";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Raises a notification.
+ *
+ * The browser's own, which is a toast from the operating system when the
+ * browser is running as an application and a card in its own centre when it
+ * is a tab. Either way it only exists while the tab does: a closed tab is
+ * not there to raise one, and a notification that outlived the tab would need
+ * a push service and a service worker, which is a different thing entirely.
+ */
+export const showNotification = (title: string, body: string): void => {
+  if (typeof Notification === "undefined") return;
+  try {
+    new Notification(title, { body });
+  } catch {
+    /* A browser that refuses is a browser that has said no. */
+  }
+};
+
+/**
+ * Whether the app is in front of the reader.
+ *
+ * The document's focus and its visibility. A tab in the background is not in
+ * front even when the window it is in has the focus, which is why both are
+ * asked about.
+ */
+export const windowHasFocus = async (): Promise<boolean> => {
+  if (typeof document === "undefined") return false;
+  return document.visibilityState !== "hidden" && document.hasFocus();
+};
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

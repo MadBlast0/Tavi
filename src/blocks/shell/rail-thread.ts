@@ -19,6 +19,16 @@ export type RailThread = {
   folderName?: string
   /** When the thread was pinned, or absent if it is not. */
   pinnedAt?: number
+  /**
+   * When a reply finished in this thread while the reader was elsewhere, or
+   * absent if there is nothing waiting.
+   *
+   * The badge says so, so the reader can see what they missed even where the
+   * operating system declined to raise a toast.
+   */
+  unreadAt?: number
+  /** When the thread was muted, or absent if it is not. */
+  mutedAt?: number
   /** Which side the thread belongs to, and therefore which store holds it. */
   side: Side
 }

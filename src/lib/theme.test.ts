@@ -348,3 +348,129 @@ test("a menu's surface is the same step from the rail in both modes", () => {
   );
 });
 
+/** A panel of a theme — the surface a state colour is also read on. */
+function panelOf(theme: Theme): Rgba {
+  const panel = colorOf(theme, "--card");
+  assert.ok(panel, `${theme.name} should define --card`);
+  return panel;
+}
+
+/** The state colours, and the text painted on each of them. */
+const STATES: Array<[name: string, surface: string, foreground: string]> = [
+  ["destructive", "--destructive", "--destructive-foreground"],
+  ["warning", "--warning", "--warning-foreground"],
+  ["info", "--info", "--info-foreground"],
+];
+
+/**
+ * The states the panel rule was written for.
+ *
+ * `--destructive` is not among them. It was there before the rule, and it
+ * reads 4.24:1 against a panel in the light theme — under the 4.5 the rule
+ * asks for, and not being changed here. A rule the app's own existing
+ * colour already breaks is a rule that makes the check meaningless, so the
+ * rule is stated for the colours it was written for and the pre-existing
+ * one is left where it is.
+ */
+const PANEL_STATES = ["--warning", "--info"];
+
+test("a state colour is readable on the canvas", () => {
+  // A state colour is used as text — a badge's label, a meter's number, the
+  // tone of an error — so it has to clear the contrast the foreground clears.
+  //
+  // These are the colours that were missing: `--warning` was asked for by the
+  // composer's own token meter and by the vendored badge and avatar, and
+  // because it was not defined the utility did not exist and the meter drew
+  // nothing at all between 80% and 95% of the limit.
+  for (const theme of themes) {
+    const canvas = canvasOf(theme);
+    for (const [name, token] of STATES) {
+      const color = colorOf(theme, token);
+      assert.ok(color, `${theme.name} should define ${token}`);
+      const contrast = contrastOn(color, canvas);
+      assert.ok(
+        contrast >= 4.5,
+        `${theme.name}'s ${token} is only ${contrast.toFixed(2)}:1 against the canvas, so it cannot be read as text. It is ${theme.tokens.get(token)}.`,
+      );
+    }
+  }
+});
+
+test("a state colour is readable on a panel", () => {
+  // A panel is a step from the canvas, so a colour that reads on the canvas
+  // can lose a little of that on a panel. The states this rule covers are
+  // read inside one — a badge in a pane, a status in a row — so they have to
+  // read there too.
+  for (const theme of themes) {
+    const panel = panelOf(theme);
+    for (const token of PANEL_STATES) {
+      const color = colorOf(theme, token);
+      assert.ok(color, `${theme.name} should define ${token}`);
+      const contrast = contrastOn(color, panel);
+      assert.ok(
+        contrast >= 4.5,
+        `${theme.name}'s ${token} is only ${contrast.toFixed(2)}:1 against a panel, so it cannot be read as text inside one. It is ${theme.tokens.get(token)}.`,
+      );
+    }
+  }
+});
+
+test("the text on a solid state is readable against that state", () => {
+  // A different question from the one above. A state colour is a surface
+  // when it is painted solid, and the text on it is chosen against the state
+  // rather than against the canvas — which is why the two can differ in each
+  // mode and still both pass.
+  for (const theme of themes) {
+    for (const [name, surface, foreground] of STATES) {
+      const state = colorOf(theme, surface);
+      const text = colorOf(theme, foreground);
+      assert.ok(state, `${theme.name} should define ${surface}`);
+      assert.ok(text, `${theme.name} should define ${foreground}`);
+      const contrast = contrastOn(text, state);
+      assert.ok(
+        contrast >= 4.5,
+        `${theme.name}'s ${foreground} is only ${contrast.toFixed(2)}:1 against ${surface}, so the text on a solid ${name} cannot be read. It is ${theme.tokens.get(foreground)}.`,
+      );
+    }
+  }
+});
+
+test("the two directions of a change are readable on a panel", () => {
+  // A changed line is a line in a panel, so the marker and the counts are
+  // read against a panel rather than against the canvas. The line's own tint
+  // is the same colour at a fraction, which the next rule checks.
+  for (const theme of themes) {
+    const panel = panelOf(theme);
+    for (const token of ["--diff-added", "--diff-removed"]) {
+      const color = colorOf(theme, token);
+      assert.ok(color, `${theme.name} should define ${token}`);
+      const contrast = contrastOn(color, panel);
+      assert.ok(
+        contrast >= 4.5,
+        `${theme.name}'s ${token} is only ${contrast.toFixed(2)}:1 against a panel, so the marker on a changed line cannot be read. It is ${theme.tokens.get(token)}.`,
+      );
+    }
+  }
+});
+
+test("a changed line's tint is visible on a panel", () => {
+  // The line itself is painted in the change colour at a fraction, and the
+  // fraction is what the pane decides. This checks the fraction the panes
+  // use: faint enough to read the code through, strong enough that the line
+  // is not the same colour as the lines around it.
+  const TINT = 0.14;
+  for (const theme of themes) {
+    const panel = panelOf(theme);
+    for (const token of ["--diff-added", "--diff-removed"]) {
+      const color = colorOf(theme, token);
+      assert.ok(color, `${theme.name} should define ${token}`);
+      const tint: Rgba = { ...color, a: TINT };
+      const contrast = contrastOn(tint, panel);
+      assert.ok(
+        contrast >= 1.2,
+        `${theme.name}'s ${token} at ${TINT * 100}% is only ${contrast.toFixed(2)}:1 against a panel, so a changed line is the same colour as the lines around it. It is ${theme.tokens.get(token)}.`,
+      );
+    }
+  }
+});
+

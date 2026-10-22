@@ -1,6 +1,7 @@
 import { PromptBlock } from "@/blocks/prompt-input/prompt-block";
 import { ComposerVariantProvider } from "@/blocks/prompt-input/composer-variant";
 import { ThreadBridgeProvider } from "@/blocks/prompt-input/thread-bridge";
+import { AnnounceBridge } from "@/blocks/shell/announce-bridge";
 import { Shell } from "@/blocks/shell/shell";
 import { TrayBridge } from "@/blocks/shell/tray-bridge";
 
@@ -17,12 +18,17 @@ import { TrayBridge } from "@/blocks/shell/tray-bridge";
  * The tray bridge sits with them for the same reason. It carries the system
  * tray's commands into the app, and both of the things it needs to act on —
  * the variant and the thread — are held above the shell.
+ *
+ * The announcement bridge is the third of them. It carries the app's own
+ * announcements — a reply that finished while the reader was elsewhere — into
+ * the window, and it carries the card they appear in.
  */
 function App() {
   return (
     <ThreadBridgeProvider>
       <ComposerVariantProvider>
         <TrayBridge />
+        <AnnounceBridge />
         <Shell>
           <PromptBlock />
         </Shell>
