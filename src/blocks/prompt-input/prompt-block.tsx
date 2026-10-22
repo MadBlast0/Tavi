@@ -67,6 +67,7 @@ import {
   conversation,
   failConversation,
   forgetConversation,
+  loadConversation,
   markConversationPending,
   setConversationError,
   setConversationReport,
@@ -908,19 +909,33 @@ export function PromptBlock() {
   )
   const shown = shownId ? conversation(shownId) : undefined
   /**
-   * The turn the reader has just sent, waiting for the thread to exist.
+   * The turn the reader has just sent, and the conversation it belongs to.
    *
    * It is shown at once, because the reader pressed send and expects to see
    * their own words; a moment later it is in the conversation, in the
-   * runtime, with the thread it belongs to. It is dropped the moment the
-   * runtime has it, so it is never drawn twice.
+   * runtime, with the thread it belongs to.
+   *
+   * **It belongs to one conversation.** A half-sent message must not follow
+   * the reader into the next conversation, which is what a message that was
+   * only "the last one sent" would do — and it did, until this said which
+   * conversation it was for.
    */
-  const [sent, setSent] = React.useState<Turn | null>(null)
+  const [sent, setSent] = React.useState<{
+    turn: Turn
+    side: Side
+    /** The conversation it belongs to, or null while it is still being made. */
+    id: string | null
+  } | null>(null)
   const turns = React.useMemo(() => {
     const live = shown?.turns ?? []
-    if (!sent || live.some((turn) => turn.id === sent.id)) return live
-    return [...live, sent]
-  }, [shown?.turns, sent])
+    if (!sent) return live
+    /* It is shown in its own conversation and nowhere else. */
+    if (sent.side !== variant) return live
+    if (sent.id !== shownId) return live
+    /* And it is dropped as soon as the runtime has it. */
+    if (live.some((turn) => turn.id === sent.turn.id)) return live
+    return [...live, sent.turn]
+  }, [shown?.turns, sent, variant, shownId])
   const status: PromptStatus =
     !shown || shown.status === "idle" ? "ready" : shown.status
   const usage = shown?.usage ?? null
@@ -1064,8 +1079,10 @@ export function PromptBlock() {
           clearThread(side)
           return
         }
-        setConversationTurns(id, side, fromStoredTurns(chat.turns))
-        setConversationReport(id, chat.usage ?? null, null)
+        loadConversation(id, side, fromStoredTurns(chat.turns), {
+          usage: chat.usage ?? null,
+          servedModel: null,
+        })
         setActiveBySide((current) =>
           current[side] === id ? current : { ...current, [side]: id },
         )
@@ -1074,14 +1091,15 @@ export function PromptBlock() {
         if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
         return
       }
-
       const session = findSession(id)
       if (!session) {
         clearThread(side)
         return
       }
-      setConversationTurns(id, side, fromStoredTurns(session.turns))
-      setConversationReport(id, session.usage ?? null, null)
+      loadConversation(id, side, fromStoredTurns(session.turns), {
+        usage: session.usage ?? null,
+        servedModel: null,
+      })
       setActiveBySide((current) =>
         current[side] === id ? current : { ...current, [side]: id },
       )
@@ -1705,10 +1723,10 @@ export function PromptBlock() {
     const id = `${Date.now()}`
     const userTurn: Turn = { id: `${id}-user`, role: "user", message }
     const next: Turn[] = [...turns, userTurn]
+    const write = captureWrite()
     /* The reader's own words appear at once, before the thread they belong
        to exists. The runtime has them a moment later. */
-    setSent(userTurn)
-    const write = captureWrite()
+    setSent({ turn: userTurn, side: write.side, id: write.id })
     /* The message is saved before the request goes out. A reply is written to
        the thread the message was asked on, and that thread has to exist
        before the reply can arrive. */
@@ -1729,6 +1747,8 @@ export function PromptBlock() {
        is waiting for the request to go out. */
     setConversationTurns(threadId, write.side, next)
     markConversationPending(threadId)
+    /* The turn now belongs to a thread, and the thread is where it is. */
+    setSent({ turn: userTurn, side: write.side, id: threadId })
     void respondReal(`${id}-assistant`, next, write, threadId)
   }
 

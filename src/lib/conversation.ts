@@ -291,6 +291,28 @@ export const markConversationPending = (id: string): void => {
 }
 
 /**
+ * Puts a conversation's stored turns in place, unless a reply is in flight.
+ *
+ * **A conversation that is answering keeps the turns it has.** The answer
+ * being written is not in the store yet, so loading the stored turns over
+ * the top would throw it away — and the conversation would then be written
+ * back without it, and the answer would be lost for good.
+ *
+ * So the stored turns are only loaded when nothing is in flight, and the
+ * live ones are left alone when something is.
+ */
+export const loadConversation = (
+  id: string,
+  side: Side,
+  turns: Turn[],
+  report: { usage: PromptTokenUsage | null; servedModel: string | null },
+): void => {
+  if (isRunning(id)) return
+  setConversationTurns(id, side, turns)
+  setConversationReport(id, report.usage, report.servedModel)
+}
+
+/**
  * Forgets a conversation.
  *
  * Called when the app closes one — a new chat, a deleted conversation. A

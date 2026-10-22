@@ -170,6 +170,13 @@ describe("a conversation that is closed", () => {
 })
 
 describe("a reply that was refused before it started", () => {
+  /** The turn the refusal is in, narrowed to the assistant one it must be. */
+  const theAnswer = (run: Conversation): Turn & { role: "assistant" } => {
+    const turn = run.turns[run.turns.length - 1]
+    assert.equal(turn.role, "assistant", "the last turn should be the answer")
+    return turn as Turn & { role: "assistant" }
+  }
+
   it("is in the conversation, and says why", () => {
     const id = anId()
     setConversationTurns(id, "chat", [aUserTurn("hello")])
@@ -180,8 +187,8 @@ describe("a reply that was refused before it started", () => {
     assert.equal(run.status, "error")
     assert.equal(run.error, "That effort level is not offered by this model.")
     assert.equal(run.turns.length, 2, "the turn being written is in the conversation")
-    assert.equal(run.turns[1].text, "That effort level is not offered by this model.")
-    assert.equal(run.turns[1].streaming, false)
+    assert.equal(theAnswer(run).text, "That effort level is not offered by this model.")
+    assert.equal(theAnswer(run).streaming, false)
   })
 
   it("replaces a turn that is already there", () => {
@@ -195,7 +202,7 @@ describe("a reply that was refused before it started", () => {
 
     const run = conversation(id) as Conversation
     assert.equal(run.turns.length, 2, "the turn is not added twice")
-    assert.equal(run.turns[1].text, "It cannot be done.")
+    assert.equal(theAnswer(run).text, "It cannot be done.")
   })
 })
 
