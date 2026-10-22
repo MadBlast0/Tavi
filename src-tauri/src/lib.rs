@@ -126,6 +126,7 @@ pub fn run() {
         .manage(provider::Cancellations::default())
         .manage(projects::Clones::default())
         .manage(std::sync::Arc::new(cli::CliRegistry::default()))
+        .manage(cli::CliLifecycle::default())
         .invoke_handler(tauri::generate_handler![
             keys::list_provider_keys,
             keys::save_provider_key,
@@ -143,7 +144,9 @@ pub fn run() {
             cli::scan_cli_providers,
             cli::set_cli_provider_state,
             cli::run_cli_lifecycle,
+            cli::cancel_cli_lifecycle,
             cli::list_cli_models,
+            cli::cli_provider_diagnostics,
             cli::run_cli_chat,
             projects::list_projects,
             projects::clone_repository,

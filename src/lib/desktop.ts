@@ -271,6 +271,18 @@ export const runCliLifecycle = async (
   await invoke("run_cli_lifecycle", { id, action, onEvent: channel })
 }
 
+/** Stops an install, an update or a removal that is in flight. */
+export const cancelCliLifecycle = async (): Promise<void> => {
+  requireDesktop()
+  await invoke("cancel_cli_lifecycle")
+}
+
+/** A report about one CLI provider, for a person to paste somewhere. */
+export const cliProviderDiagnostics = async (id: string): Promise<string> => {
+  requireDesktop()
+  return invoke<string>("cli_provider_diagnostics", { id })
+}
+
 /** The models a CLI provider publishes. */
 export const listCliModels = async (id: string): Promise<string[]> => {
   requireDesktop()
@@ -556,6 +568,24 @@ export const pickOpenPath = async (): Promise<string | null> => {
     multiple: false,
     directory: false,
     filters: [{ name: "Tavi conversations", extensions: ["json"] }],
+  })
+  if (!path || Array.isArray(path)) return null
+  return path
+}
+
+/**
+ * Asks the system which program to use.
+ *
+ * A program the app could not find can be pointed at by hand, which is the
+ * remedy when a tool lives somewhere the app does not look.
+ */
+export const chooseCliProgram = async (): Promise<string | null> => {
+  requireDesktop()
+  const { open } = await import("@tauri-apps/plugin-dialog")
+  const path = await open({
+    multiple: false,
+    directory: false,
+    title: "Choose the program",
   })
   if (!path || Array.isArray(path)) return null
   return path

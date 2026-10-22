@@ -852,6 +852,13 @@ pub struct ChatConfig {
     /// The composer sends the provider it showed the model list for, so the
     /// request and the list are about the same provider by construction.
     pub provider_id: Option<String>,
+    /// The program's own session to carry on in, when it has one.
+    ///
+    /// A CLI provider keeps its own memory of a conversation, and this is
+    /// which one. It is the thread's own, so a thread and a program's
+    /// session are the same conversation rather than two copies of it.
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
     /// The reasoning level, already checked against the model.
     ///
     /// The desktop app has no server to check it against, so the check happens
@@ -943,6 +950,13 @@ pub struct EventMetadata {
     pub model_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Value>,
+    /// The program's own session id, when it has one.
+    ///
+    /// A CLI provider is told to carry on in the session it gave the last
+    /// time, so the conversation continues where it left off in the program's
+    /// own memory rather than in a summary of it.
+    #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1818,12 +1832,14 @@ where
         message_metadata: EventMetadata {
             model_id: model_id.clone(),
             usage: None,
+            session_id: None,
         },
     });
     on_event(ChatEvent::Finish {
         message_metadata: EventMetadata {
             model_id: None,
             usage,
+            session_id: None,
         },
     });
 
@@ -2005,6 +2021,7 @@ mod tests {
             config: Some(super::ChatConfig {
                 model_name: Some("vendor/model".to_string()),
                 provider_id: None,
+                session_id: None,
                 reasoning_effort: None,
             }),
             request_id: Some("test".to_string()),
@@ -2144,6 +2161,7 @@ mod tests {
         request.config = Some(super::ChatConfig {
             model_name: None,
             provider_id: None,
+            session_id: None,
             reasoning_effort: None,
         });
 

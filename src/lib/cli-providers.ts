@@ -65,12 +65,43 @@ export type CliProviderState = {
   enabled: boolean
   /** How the app can talk to it. */
   modes: CliMode[]
+  /** The operating systems it is published for. */
+  platforms: string[]
+  /** Whether it is published for the system this app is on. */
+  supportedHere: boolean
+  /** Why it is not, when it is not. */
+  unsupportedReason: string | null
+  /**
+   * Whether it is signed in.
+   *
+   * `ready` and `signed-out` are what the app found out for itself;
+   * `may-need-sign-in` is what a tool that signs in itself gets, because the
+   * app cannot ask without asking the user to do something; and `unknown` is
+   * what nobody has said.
+   */
+  readiness: "ready" | "signed-out" | "may-need-sign-in" | "unknown"
   /** Whether it publishes a list of models. */
   models: boolean
   /** Whether it is still being worked on. */
   maintenance: CliMaintenance
   /** Whether the app can put it on this machine. */
   canInstall: boolean
+  /**
+   * Whether the app can run it.
+   *
+   * A tool can be found, installed, updated and removed without the app
+   * knowing how to talk to it, and saying so is better than offering a
+   * button that would fail.
+   */
+  canRun: boolean
+  /**
+   * Whether the recipe for running it has been checked against the program
+   * itself.
+   *
+   * A recipe written from the documentation is a claim about a program
+   * nobody has run, and the settings pane says which of the two it is.
+   */
+  runVerified: boolean
   /** Whether the app can update it. */
   canUpdate: boolean
   /** Whether the app can remove it. */
@@ -118,6 +149,18 @@ export const isCliProviderId = (id: string): boolean => id.startsWith(CLI_PREFIX
 /** The CLI provider's own id, without the prefix. */
 export const cliIdOf = (id: string): string =>
   isCliProviderId(id) ? id.slice(CLI_PREFIX.length) : id
+
+/**
+ * The CLI providers the app may offer.
+ *
+ * A program that is not here cannot answer, and one the user has turned off
+ * is not to be offered. Both are the same answer for the same reason: the
+ * list is what the app can actually reach.
+ */
+export const offeredCliProviders = (
+  states: CliProviderState[],
+): CliProviderState[] =>
+  states.filter((state) => state.installed && state.enabled)
 
 /**
  * What a provider id names, whichever kind it is.

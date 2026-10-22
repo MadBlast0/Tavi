@@ -4,18 +4,30 @@ import * as React from "react"
 import {
   CircleCheckIcon,
   CircleHelpIcon,
+  ClipboardIcon,
   EllipsisIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
   InfoIcon,
   PackageIcon,
   RefreshCwIcon,
+  SquareIcon,
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react"
 
 import { Badge } from "@/components/badge"
 import { Button } from "@/components/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/alert-dialog"
 import {
   Dialog,
   DialogBody,
@@ -64,6 +76,9 @@ import { Skeleton } from "@/components/skeleton"
 import { Spinner } from "@/components/spinner"
 import { Switch } from "@/components/switch"
 import {
+  cancelCliLifecycle,
+  chooseCliProgram,
+  cliProviderDiagnostics,
   listCliProviders,
   openExternal,
   runCliLifecycle,
@@ -81,6 +96,7 @@ import {
   cliStanding,
   cliUpdateLabel,
   cliVisible,
+  readinessLabel,
   type CliFilter,
   type CliOrder,
 } from "./cli-provider-view"
@@ -139,15 +155,21 @@ export type CliProviderPaneProps = {
   loading: boolean
   /** The provider an operation is running on, if one is. */
   busy: string | null
+  /** Whether any provider may update itself without being asked. */
+  autoUpdateAll: boolean
   /** The person asked to look again. */
   onRescan: () => void
   /** The person turned a provider on or off. */
   onToggle: (state: CliProviderState, enabled: boolean) => void
+  /** The person asked for any provider to update itself. */
+  onAutoUpdateAll: (enabled: boolean) => void
   /** The person asked to install, update or remove a provider. */
   onLifecycle: (
     state: CliProviderState,
     action: CliLifecycleAction,
   ) => void
+  /** The person asked to stop the operation that is running. */
+  onCancel: () => void
   /** The person asked to see a provider's details. */
   onDetails: (state: CliProviderState) => void
 }
@@ -158,9 +180,12 @@ export function CliProviderPane({
   tall,
   loading,
   busy,
+  autoUpdateAll,
   onRescan,
   onToggle,
+  onAutoUpdateAll,
   onLifecycle,
+  onCancel,
   onDetails,
 }: CliProviderPaneProps) {
   const [query, setQuery] = React.useState("")
@@ -235,6 +260,22 @@ export function CliProviderPane({
           the app knows of nineteen. */}
       {!isDesktopApp() ? null : (
         <>
+          {/* Whether any provider may update itself without being asked.
+              It is off until it is turned on, and it only ever applies to a
+              provider the app installed itself. */}
+          <SettingRow
+            label="Update providers automatically"
+            description="Only for a provider Tavi installed. One somebody else installed is left to whoever installed it."
+          >
+            <Switch
+              size="sm"
+              checked={autoUpdateAll}
+              disabled={busy !== null}
+              onCheckedChange={(checked) => onAutoUpdateAll(checked)}
+              aria-label="Let providers update themselves"
+            />
+          </SettingRow>
+
           {/* The search, the filter and the order share a row, because they
               are three ways of looking at the same list and are used
               together. */}
@@ -296,7 +337,6 @@ export function CliProviderPane({
           </p>
         </>
       )}
-
       {loading ? (
         <CliSkeleton />
       ) : !isDesktopApp() ? null : shown.length === 0 ? (
@@ -310,6 +350,7 @@ export function CliProviderPane({
               busy={busy === state.id}
               onToggle={onToggle}
               onLifecycle={onLifecycle}
+              onCancel={onCancel}
               onDetails={onDetails}
             />
           ))}
@@ -328,16 +369,19 @@ function CliProviderRow({
   busy,
   onToggle,
   onLifecycle,
+  onCancel,
   onDetails,
 }: {
   state: CliProviderState
   busy: boolean
   onToggle: (state: CliProviderState, enabled: boolean) => void
   onLifecycle: (state: CliProviderState, action: CliLifecycleAction) => void
+  onCancel: () => void
   onDetails: (state: CliProviderState) => void
 }) {
   const standing = cliStanding(state)
   const update = cliUpdateLabel(state)
+  const readiness = readinessLabel(state)
 
   /* The one visible action. A tool that is not here yet is installed; one
      that is here and can be updated is updated. A tool the app cannot
@@ -391,6 +435,36 @@ function CliProviderRow({
 
         <ItemDescription>{cliDetail(state)}</ItemDescription>
 
+        {/* Where it is, and what the app can do with it. The path is how a
+            person finds the program, and the modes are what the app knows
+            it can do. */}
+        <p className="mt-1 truncate text-xs text-muted-foreground">
+          {state.path ? state.path : state.description}
+        </p>
+
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {state.modes.map((mode) => (
+            <Badge key={mode} appearance="muted" shape="pill" size="sm">
+              {mode}
+            </Badge>
+          ))}
+          {readiness ? (
+            <Badge appearance="muted" shape="pill" size="sm">
+              {readiness}
+            </Badge>
+          ) : null}
+          {state.canRun && !state.runVerified ? (
+            <Badge appearance="muted" shape="pill" size="sm">
+              Not checked here
+            </Badge>
+          ) : null}
+          {state.supportedHere ? null : (
+            <Badge variant="destructive" appearance="outline" size="sm">
+              {state.unsupportedReason ?? "Not for this system"}
+            </Badge>
+          )}
+        </div>
+
         {update ? (
           <p
             className={cn(
@@ -406,7 +480,21 @@ function CliProviderRow({
       </ItemContent>
 
       <ItemActions>
-        {busy ? <Spinner className="size-4" /> : null}
+        {busy ? (
+          <>
+            <Spinner className="size-4" />
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={onCancel}
+              aria-label={`Stop the operation on ${state.label}`}
+            >
+              <SquareIcon className="size-4" />
+              Stop
+            </Button>
+          </>
+        ) : null}
 
         {/* Whether the app offers it. This is the control that is used most,
             so it is on the row rather than in the menu. */}
@@ -491,6 +579,65 @@ function CliProviderRow({
 }
 
 /* -------------------------------------------------------------------------- */
+/* The confirmation                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What is about to happen, said before it happens.
+ *
+ * Installing software and removing it are the two things the app does that
+ * change the machine, so both are asked about first. The question says what
+ * will happen, in words, and what will be left behind — because "are you
+ * sure?" on its own says nothing about what is about to be done.
+ */
+function CliConfirm({
+  state,
+  action,
+  onClose,
+  onConfirm,
+}: {
+  state: CliProviderState
+  action: CliLifecycleAction
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const title =
+    action === "install"
+      ? `Install ${state.label}?`
+      : action === "update"
+        ? `Update ${state.label}?`
+        : `Remove ${state.label}?`
+
+  const description =
+    action === "install"
+      ? `Tavi will install ${state.label} with the package manager it is published on. It will be left switched off until you turn it on.`
+      : action === "update"
+        ? `Tavi will update ${state.label} to the newest version the package manager has.`
+        : `Tavi will remove ${state.label} with the package manager it was installed with. Your projects, your settings and your account are not touched.`
+
+  return (
+    <AlertDialog open onOpenChange={(open) => (open ? null : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>
+            {action === "install"
+              ? "Install"
+              : action === "update"
+                ? "Update"
+                : "Remove"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* The empties                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -561,6 +708,11 @@ export function CliProvidersSettings({
   const [busy, setBusy] = React.useState<string | null>(null)
   const [details, setDetails] = React.useState<CliProviderState | null>(null)
   const [problem, setProblem] = React.useState<string | null>(null)
+  /* The operation that is about to happen, once it has been agreed to. */
+  const [pending, setPending] = React.useState<{
+    state: CliProviderState
+    action: CliLifecycleAction
+  } | null>(null)
 
   const read = React.useCallback(async () => {
     try {
@@ -603,6 +755,16 @@ export function CliProvidersSettings({
     }
   }
 
+  const autoUpdateAll = async (enabled: boolean) => {
+    try {
+      setStates(await setCliProviderState("any", { autoUpdateAll: enabled }))
+    } catch (error) {
+      setProblem(
+        error instanceof Error ? error.message : "That could not be changed.",
+      )
+    }
+  }
+
   const lifecycle = async (
     state: CliProviderState,
     action: CliLifecycleAction,
@@ -621,6 +783,14 @@ export function CliProvidersSettings({
     }
   }
 
+  const stop = async () => {
+    try {
+      await cancelCliLifecycle()
+    } catch {
+      /* The operation is stopping either way. */
+    }
+  }
+
   return (
     <>
       <CliProviderPane
@@ -629,11 +799,27 @@ export function CliProvidersSettings({
         tall={tall}
         loading={loading}
         busy={busy}
+        autoUpdateAll={states.some((state) => state.autoUpdateAll)}
         onRescan={() => void rescan()}
         onToggle={(state, enabled) => void toggle(state, enabled)}
-        onLifecycle={(state, action) => void lifecycle(state, action)}
+        onAutoUpdateAll={(enabled) => void autoUpdateAll(enabled)}
+        onLifecycle={(state, action) => setPending({ state, action })}
+        onCancel={() => void stop()}
         onDetails={setDetails}
       />
+
+      {pending ? (
+        <CliConfirm
+          state={pending.state}
+          action={pending.action}
+          onClose={() => setPending(null)}
+          onConfirm={() => {
+            const { state, action } = pending
+            setPending(null)
+            void lifecycle(state, action)
+          }}
+        />
+      ) : null}
 
       {problem ? (
         <p className="text-sm text-destructive">{problem}</p>
@@ -677,6 +863,7 @@ function CliProviderDetails({
 }) {
   const [busy, setBusy] = React.useState(false)
   const [problem, setProblem] = React.useState<string | null>(null)
+  const [report, setReport] = React.useState<string | null>(null)
 
   const change = async (changes: Parameters<typeof setCliProviderState>[1]) => {
     setBusy(true)
@@ -692,6 +879,38 @@ function CliProviderDetails({
     }
   }
 
+  /* A program the app could not find can be pointed at by hand. */
+  const choose = async () => {
+    const path = await chooseCliProgram()
+    if (!path) return
+    await change({ path })
+  }
+
+  /* The report is fetched when the dialog opens, so that it is there to be
+     read without another round trip. */
+  React.useEffect(() => {
+    let alive = true
+    void cliProviderDiagnostics(state.id)
+      .then((text) => {
+        if (alive) setReport(text)
+      })
+      .catch(() => {
+        if (alive) setReport(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [state.id])
+
+  const copyReport = async () => {
+    if (!report) return
+    try {
+      await navigator.clipboard.writeText(report)
+    } catch {
+      setProblem("The clipboard could not be written to. Select the text instead.")
+    }
+  }
+
   return (
     <Dialog open onOpenChange={(open) => (open ? null : onClose())}>
       <DialogContent>
@@ -701,16 +920,46 @@ function CliProviderDetails({
         </DialogHeader>
         <DialogBody>
           <div className="flex flex-col">
-            <SettingRow label="Where it is">
-              <p className="max-w-64 truncate text-sm text-muted-foreground">
-                {state.path ?? "Not installed"}
-              </p>
+            <SettingRow
+              label="Where it is"
+              description="A program the app could not find can be pointed at by hand."
+            >
+              <div className="flex items-center gap-2">
+                <p className="max-w-48 truncate text-sm text-muted-foreground">
+                  {state.path ?? "Not installed"}
+                </p>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void choose()}
+                >
+                  <FolderOpenIcon className="size-4" />
+                  Choose
+                </Button>
+              </div>
             </SettingRow>
 
             <SettingRow label="Version">
               <p className="text-sm text-muted-foreground">
                 {state.version ?? "Unknown"}
                 {state.latestVersion ? ` · newest is ${state.latestVersion}` : ""}
+              </p>
+            </SettingRow>
+
+            <SettingRow label="Signed in">
+              <p className="text-sm text-muted-foreground">
+                {readinessLabel(state) ?? "Nobody has said"}
+              </p>
+            </SettingRow>
+
+            <SettingRow label="Published for">
+              <p className="text-sm text-muted-foreground">
+                {state.platforms.join(", ")}
+                {state.supportedHere
+                  ? ""
+                  : " · not for this system"}
               </p>
             </SettingRow>
 
@@ -760,6 +1009,15 @@ function CliProviderDetails({
             </SettingRow>
           </div>
 
+          {report ? (
+            <div className="mt-4 flex flex-col gap-2">
+              <p className="text-sm font-medium">Diagnostics</p>
+              <pre className="max-h-48 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">
+                {report}
+              </pre>
+            </div>
+          ) : null}
+
           {problem ? (
             <p className="text-sm text-destructive">{problem}</p>
           ) : null}
@@ -767,6 +1025,15 @@ function CliProviderDetails({
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Close
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => void copyReport()}
+            disabled={!report}
+          >
+            <ClipboardIcon className="size-4" />
+            Copy diagnostics
           </Button>
           <Button
             type="button"

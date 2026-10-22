@@ -17,6 +17,8 @@ export type CliFilter =
   | "disabled"
   | "attention"
   | "legacy"
+  | "updates"
+  | "limited"
 
 /** The order the list is in. */
 export type CliOrder = "name" | "installed" | "updates"
@@ -28,8 +30,10 @@ export const CLI_FILTERS: { value: CliFilter; label: string }[] = [
   { value: "missing", label: "Not installed" },
   { value: "enabled", label: "Enabled" },
   { value: "disabled", label: "Disabled" },
+  { value: "updates", label: "Updates available" },
   { value: "attention", label: "Needs attention" },
   { value: "legacy", label: "Legacy" },
+  { value: "limited", label: "Unsupported or limited" },
 ]
 
 /** The orders, in the order they are offered. */
@@ -50,6 +54,20 @@ export const cliNeedsAttention = (state: CliProviderState): boolean => {
   if (state.problem) return true
   if (state.installed && state.versionError) return true
   if (state.enabled && !state.installed) return true
+  return false
+}
+
+/**
+ * Whether a provider is offered with limited support.
+ *
+ * Three things limit it: it is not published for this system, it is kept
+ * working but not added to, and the app cannot run it. A provider that is
+ * listed and cannot be used is shown as such rather than pretended into.
+ */
+export const cliLimited = (state: CliProviderState): boolean => {
+  if (!state.supportedHere) return true
+  if (state.maintenance === "legacy") return true
+  if (!state.canRun) return true
   return false
 }
 
@@ -96,6 +114,10 @@ export const cliKept = (
       return cliNeedsAttention(state)
     case "legacy":
       return state.maintenance === "legacy"
+    case "updates":
+      return state.updateState === "available"
+    case "limited":
+      return cliLimited(state)
     default:
       return true
   }
@@ -176,6 +198,25 @@ export const cliUpdateLabel = (state: CliProviderState): string | null => {
       return "Up to date"
     case "external":
       return "Updated by whatever installed it"
+    default:
+      return null
+  }
+}
+
+/**
+ * Whether a provider is signed in, in words.
+ *
+ * A tool that signs in itself is reported as "may need sign-in" rather than
+ * as signed out, because the app did not look and cannot say.
+ */
+export const readinessLabel = (state: CliProviderState): string | null => {
+  switch (state.readiness) {
+    case "ready":
+      return "Signed in"
+    case "signed-out":
+      return "Not signed in"
+    case "may-need-sign-in":
+      return "May need sign-in"
     default:
       return null
   }
