@@ -43,6 +43,11 @@ import type {
   WorkspaceEntry,
   WorkspaceFile,
 } from "./api.ts"
+import type {
+  CliLifecycleAction,
+  CliProviderChanges,
+  CliProviderState,
+} from "./cli-providers.ts"
 import type { ProviderKey } from "./secret.ts"
 
 export { isDesktopApp }
@@ -211,6 +216,94 @@ export const streamChat = async (
 
   try {
     await invoke("chat", { request: { ...request, requestId }, onEvent: channel })
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* The CLI providers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Every CLI provider the app knows about, and what state it is in. */
+export const listCliProviders = async (): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("list_cli_providers")
+}
+
+/** Looks again, for a provider that has just been installed or removed. */
+export const scanCliProviders = async (): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("scan_cli_providers")
+}
+
+/** Changes what the app remembers about a CLI provider. */
+export const setCliProviderState = async (
+  id: string,
+  changes: CliProviderChanges,
+): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("set_cli_provider_state", {
+    id,
+    enabled: changes.enabled ?? null,
+    autoUpdate: changes.autoUpdate ?? null,
+    autoUpdateAll: changes.autoUpdateAll ?? null,
+    path: changes.path ?? null,
+  })
+}
+
+/**
+ * Installs, updates or removes a CLI provider.
+ *
+ * The operation is run by the tool's own means, and what it says comes back
+ * as it says it.
+ */
+export const runCliLifecycle = async (
+  id: string,
+  action: CliLifecycleAction,
+  onLog?: (message: string) => void,
+): Promise<void> => {
+  requireDesktop()
+  const channel = new Channel<{ type: string; message?: string }>()
+  channel.onmessage = (event) => {
+    if (event.type === "log" && event.message) onLog?.(event.message)
+  }
+  await invoke("run_cli_lifecycle", { id, action, onEvent: channel })
+}
+
+/** The models a CLI provider publishes. */
+export const listCliModels = async (id: string): Promise<string[]> => {
+  requireDesktop()
+  return invoke<string[]>("list_cli_models", { id })
+}
+
+/**
+ * Sends a message to a CLI provider.
+ *
+ * The program is started in Rust and read there, so nothing about it — not
+ * its path, not its arguments, not the message — is ever in this side's
+ * hands. What comes back is the same events the API path sends.
+ */
+export const streamCliChat = async (
+  request: ChatRequest,
+  onEvent: (event: ChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> => {
+  requireDesktop()
+  const requestId = `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const channel = new Channel<ChatEvent>()
+  channel.onmessage = onEvent
+
+  const cancel = () => {
+    void invoke("cancel_chat", { requestId }).catch(() => {})
+  }
+  signal?.addEventListener("abort", cancel)
+
+  try {
+    await invoke("run_cli_chat", {
+      request: { ...request, requestId },
+      onEvent: channel,
+    })
   } finally {
     signal?.removeEventListener("abort", cancel)
   }

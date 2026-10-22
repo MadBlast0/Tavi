@@ -213,7 +213,7 @@ fn resolve_within(grant: &Path, input: &str) -> Result<PathBuf, String> {
 }
 
 /// The path of a workspace, by its id.
-fn grant_of(app: &AppHandle, id: &str) -> Result<(PathBuf, Workspace), String> {
+pub(crate) fn grant_of(app: &AppHandle, id: &str) -> Result<(PathBuf, Workspace), String> {
     let file = read_grants(app);
     let grant = file
         .grants

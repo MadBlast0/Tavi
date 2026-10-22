@@ -1,6 +1,7 @@
 use tauri::AppHandle;
 
 mod appfile;
+mod cli;
 mod files;
 mod keys;
 mod partials;
@@ -124,6 +125,7 @@ pub fn run() {
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
         .manage(projects::Clones::default())
+        .manage(std::sync::Arc::new(cli::CliRegistry::default()))
         .invoke_handler(tauri::generate_handler![
             keys::list_provider_keys,
             keys::save_provider_key,
@@ -137,6 +139,12 @@ pub fn run() {
             provider::chat,
             provider::cancel_chat,
             provider::model_catalogue,
+            cli::list_cli_providers,
+            cli::scan_cli_providers,
+            cli::set_cli_provider_state,
+            cli::run_cli_lifecycle,
+            cli::list_cli_models,
+            cli::run_cli_chat,
             projects::list_projects,
             projects::clone_repository,
             projects::cancel_clone,

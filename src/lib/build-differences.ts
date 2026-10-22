@@ -132,6 +132,14 @@ export const BUILD_DIFFERENCES: BuildDifference[] = [
       "the website's server keeps it in its own file. Everything else about " +
       "the screen is the same.",
   },
+  {
+    where: "src/blocks/shell/settings-cli-providers.tsx",
+    what: "Whether there are any CLI providers to manage.",
+    why:
+      "A CLI provider is a program on this computer. A browser tab has no " +
+      "programs to offer, so the pane says so rather than listing nineteen " +
+      "tools that are not there.",
+  },
 ];
 
 /** The files on the list. */

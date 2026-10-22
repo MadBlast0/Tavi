@@ -21,6 +21,12 @@
  */
 
 import { providerCatalogue, type SlimModel } from "./catalogue.ts"
+import {
+  isCliProviderId,
+  type CliLifecycleAction,
+  type CliProviderChanges,
+  type CliProviderState,
+} from "./cli-providers.ts"
 import * as desktop from "./desktop.ts"
 import { isDesktopApp } from "./platform.ts"
 import { providerFor } from "./providers.ts"
@@ -29,6 +35,11 @@ import * as web from "./web.ts"
 import type { KeyStandingReport, ProviderKey } from "./secret.ts"
 
 export type { KeyStandingReport, ProviderKey }
+export type {
+  CliLifecycleAction,
+  CliProviderChanges,
+  CliProviderState,
+}
 
 /* -------------------------------------------------------------------------- */
 /* The vocabulary                                                              */
@@ -126,6 +137,14 @@ export type ChatRequest = {
   mode?: string
   /** The folder's name. Code only. */
   folder?: string
+  /**
+   * The folder's id. Code only.
+   *
+   * A name is not enough to say which folder is meant — two folders can have
+   * the same name — and a CLI provider has to be started in the right one, so
+   * the id is sent as well.
+   */
+  folderId?: string
   config?: {
     modelName?: string
     /**
@@ -167,6 +186,26 @@ export type ChatEvent =
     }
   | { type: "finish"; messageMetadata?: { modelId?: string; usage?: ChatUsage } }
   | { type: "error"; errorText: string }
+  | { type: "tool"; tool: ToolActivity }
+
+/**
+ * A tool the agent used.
+ *
+ * Only a CLI provider sends these. An API provider has no tools of its own,
+ * so it sends none, and the thread shows no activity for it.
+ */
+export type ToolActivity = {
+  /** The name the program calls the tool by. */
+  name: string
+  /** What it was doing, in words. */
+  title: string
+  /** How far it got: running, completed or failed. */
+  status: string
+  /** What it was given. */
+  input?: unknown
+  /** What it said. */
+  output?: string
+}
 
 /**
  * The model catalogue, and how old the copy is.
@@ -280,6 +319,80 @@ export const fetchModels = async (providerId: string): Promise<ModelCatalogue> =
 }
 
 /* -------------------------------------------------------------------------- */
+/* The CLI providers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The CLI providers, and what state they are in.
+ *
+ * A CLI provider is a program on this machine, so the website's server has
+ * none — the list is empty there rather than an error, because there is
+ * nothing wrong with a browser: it simply is not the place where the
+ * programs are.
+ */
+export const listCliProviders = (): Promise<CliProviderState[]> =>
+  isDesktopApp() ? desktop.listCliProviders() : Promise.resolve([])
+
+/**
+ * Looks again, for a provider that has just been installed or removed.
+ */
+export const scanCliProviders = (): Promise<CliProviderState[]> =>
+  isDesktopApp() ? desktop.scanCliProviders() : Promise.resolve([])
+
+/**
+ * Changes what the app remembers about a CLI provider.
+ *
+ * Whether it is offered, whether it may update itself and where it lives
+ * are one file, and they are written together.
+ */
+export const setCliProviderState = (
+  id: string,
+  changes: CliProviderChanges,
+): Promise<CliProviderState[]> =>
+  isDesktopApp()
+    ? desktop.setCliProviderState(id, changes)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * Installs, updates or removes a CLI provider.
+ *
+ * The operation runs the tool's own means — a package manager, or the tool's
+ * own command — and never a script fetched from the internet.
+ */
+export const runCliLifecycle = (
+  id: string,
+  action: CliLifecycleAction,
+  onLog?: (message: string) => void,
+): Promise<void> =>
+  isDesktopApp()
+    ? desktop.runCliLifecycle(id, action, onLog)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * The models a CLI provider publishes.
+ *
+ * A CLI is not a model. One that has a list of them is asked for the list;
+ * one that has not is not asked, and the app shows no model picker for it
+ * rather than an empty one.
+ */
+export const listCliModels = (id: string): Promise<string[]> =>
+  isDesktopApp()
+    ? desktop.listCliModels(id)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/* -------------------------------------------------------------------------- */
 /* The conversation                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -288,15 +401,25 @@ export const fetchModels = async (providerId: string): Promise<ModelCatalogue> =
  *
  * The events are the ones the composer already reads off the stream, so the
  * two servers are interchangeable from there on.
+ *
+ * A CLI provider is a different kind of provider, but it is the same kind of
+ * conversation: the request carries the provider's id, and the id says which
+ * one it is. The desktop runs the program; the website's server cannot, and
+ * says so.
  */
 export const streamChat = (
   request: ChatRequest,
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
-): Promise<void> =>
-  isDesktopApp()
+): Promise<void> => {
+  const providerId = request.config?.providerId ?? ""
+  if (isDesktopApp() && isCliProviderId(providerId)) {
+    return desktop.streamCliChat(request, onEvent, signal)
+  }
+  return isDesktopApp()
     ? desktop.streamChat(request, onEvent, signal)
     : web.streamChat(request, onEvent, signal)
+}
 
 /* -------------------------------------------------------------------------- */
 /* The answers in flight                                                       */

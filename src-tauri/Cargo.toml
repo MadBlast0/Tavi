@@ -61,7 +61,9 @@ tauri-plugin-opener = "2.7.2"
 # decides which applications may raise one — and a development build shows
 # powershell's name and icon. That is the platform's rule, not a choice.
 tauri-plugin-notification = "2"
-tokio = { version = "1.54.0", features = ["rt", "macros"] }
+# The `time` feature is the CLI's: it sleeps between polls of a provider's
+# answer, and `tokio::time::sleep` is how it waits.
+tokio = { version = "1.54.0", features = ["rt", "macros", "time"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

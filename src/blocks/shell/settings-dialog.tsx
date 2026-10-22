@@ -29,6 +29,7 @@ import {
 } from "./settings-sections"
 import { GeneralSettings } from "./settings-general"
 import { KeySettings } from "./settings-keys"
+import { CliProvidersSettings } from "./settings-cli-providers"
 import { PrivacySettings } from "./settings-privacy"
 import { cn } from "@/lib/utils"
 
@@ -665,6 +666,10 @@ export function SettingsDialog({
                    know whether the strip of tabs has already named the
                    section. */
                 <KeySettings label={current.label} tall={tall} />
+              ) : current?.id === "cli-providers" ? (
+                /* The CLI providers are programs on this computer, so the
+                   pane fetches them itself and says what it finds. */
+                <CliProvidersSettings label={current.label} tall={tall} />
               ) : current ? (
                 <>
                   <PaneHeading label={current.label} hidden={tall} />
