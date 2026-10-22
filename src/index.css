@@ -437,3 +437,14 @@ html {
 [data-slot="aui_composer-shell"][data-dragging="true"] {
   border-style: dashed;
 }
+
+/* A provider's mark fills the box it is given.
+ *
+ * The button's own rule sizes any icon inside it to 12 pixels, which is right
+ * for an icon and wrong for a mark that is meant to be a picture of the
+ * provider. This is more specific, so it wins, and the mark takes the size of
+ * the box it was put in rather than the size of an icon. */
+.provider-mark > svg {
+  width: 100%;
+  height: 100%;
+}
