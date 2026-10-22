@@ -60,6 +60,7 @@ import { PROVIDERS, providerFor } from "@/lib/providers"
 import {
   cliProviderId,
   isCliProviderId,
+  offeredCliProviders,
   providerChoice,
   type CliProviderState,
 } from "@/lib/cli-providers"
@@ -795,9 +796,7 @@ function PromptInputProvider({
   /* The ones the app can reach: installed, and turned on. A program that is
      not here cannot answer, and one the user has turned off is not to be
      offered. */
-  const offeredCli = cliProviders.filter(
-    (entry) => entry.installed && entry.enabled,
-  )
+  const offeredCli = offeredCliProviders(cliProviders)
 
   const current = providerChoice(provider, cliProviders)
 

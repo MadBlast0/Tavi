@@ -91,7 +91,16 @@ program is started with a fixed argument list and the message is written to
 its input, so nothing the user typed is ever part of a command line. On
 Windows the program npm installed is a `.cmd` beside the real `.exe`, and the
 name of the program is read out of the shim, so the app runs the program
-rather than a script a command interpreter has to interpret.
+rather than a script a command interpreter has to interpret. The two tools
+whose own documentation takes the message as an argument get it as one
+argument — the program is started directly, with no command interpreter in
+between, so a message full of punctuation is still data and not a command.
+
+**A conversation carries on in the program's own session.** A CLI provider
+that keeps a session of its own is told to carry on in it, and the session
+id is kept with the thread. The thread and the program's session are the
+same conversation rather than two copies of it, so the program remembers
+what it was told rather than being told again.
 
 ---
 
@@ -146,6 +155,8 @@ proposals or from what the code already does.
 | B11 | **A CLI provider is a program, and only the desktop app can run one.** The catalogue, the detection and the process all live in Rust. | A browser tab has no programs to start, and the website's server must not become a command-execution service for a page. |
 | B12 | **The provider is pinned once a thread has been talked to.** The model may still change; the provider may not, until a new thread is started. | The models in a thread came from one provider, and the answer still coming is that provider's. A thread may be carried from one model of a provider to another, but not from one provider to another. |
 | B13 | **The app only installs what it has been told how to install.** Each tool declares the package manager or the command its own documentation names, and a tool with no declaration is not installed by the app — the pane shows where to read about it instead. | Running a script fetched from the internet, or guessing at a package name, is how the wrong thing gets installed. The npm package called `@cline/cli` installs a different program, and the one called `crush` is a media tool. |
+| B14 | **Installing and removing are asked about first.** The question says what will happen, and a removal says what is left behind. | Installing software and removing it are the two things the app does that change the machine. A question on its own says nothing about what is about to be done. |
+| B15 | **A program's own answer is the only authority on what it is.** A program that will not say which version it is is reported as something else, not as the tool. | VS Code puts a `copilot` on the machine that is not the Copilot CLI, and it says so when it is asked. |
 
 ---
 

@@ -15,19 +15,23 @@ place. The rest is not.
 
 **What is built.** `src-tauri/src/cli.rs` knows nineteen tools and can find
 them, ask them their version, say whether they are the tool the app was
-looking for, and install, update or remove the ones whose own documentation
-says how. The settings pane lists all nineteen with their real state. The
-composer offers the ones that are installed and turned on. OpenCode answers a
-message, through the whole path: found, run, read, shown.
+looking for, ask whether they are signed in, and install, update or remove
+the ones whose own documentation says how. The settings pane lists all
+nineteen with their real state. The composer offers the ones that are
+installed and turned on. OpenCode answers a message, through the whole path:
+found, run, read, shown — and a second message carries on in the program's
+own session, so the conversation continues where it left off rather than in a
+summary of it.
 
 **What is not built.**
 
-- **A recipe for the other eighteen.** A tool can be found, enabled,
+- **A recipe for fifteen of the nineteen.** A tool can be found, enabled,
   installed, updated and removed, and the pane says plainly that the app
-  cannot run it yet. A recipe is written when the tool's own documentation
-  and its actual output have been read — the flag, the input, the event
-  shape — and not before. Claude Code's print mode, Gemini's headless mode
-  and Codex's app-server are the three to read first.
+  cannot run it yet. Claude Code and Gemini CLI have recipes written from
+  their own documentation and are marked as not having been checked against
+  the program; a recipe is finished when the program has been run, and the
+  other fifteen have not been. Codex's documented interface exists and its
+  event shape has not been confirmed, so it has no recipe yet.
 - **A terminal pane.** The mode is in the model: the app knows a tool can
   want a real terminal, and the catalogue says so. There is no terminal to
   put it in. A pane needs a terminal emulator on the front end, a real PTY
@@ -36,9 +40,11 @@ message, through the whole path: found, run, read, shown.
 - **The agent protocol.** OpenCode speaks one, and the mode is declared for
   it, but nothing reads it yet. The structured mode is what the app uses
   today.
-- **A conversation that carries on.** OpenCode gives every run a session id,
-  and the app throws it away. Keeping it would let a thread continue where
-  it left off in the program's own session rather than in a summary of it.
+- **A sign-in the app can drive.** The app can ask OpenCode whether it has
+  an account saved, because the tool documents a way to ask. The other
+  eighteen sign in themselves and there is no way to ask without asking the
+  person to do something, so the app says *may need sign-in* and leaves it
+  there.
 
 **Why it is waiting.** A recipe written from the documentation alone would be
 a claim about a program nobody has run. The one that is written was written

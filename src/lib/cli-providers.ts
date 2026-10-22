@@ -151,6 +151,18 @@ export const cliIdOf = (id: string): string =>
   isCliProviderId(id) ? id.slice(CLI_PREFIX.length) : id
 
 /**
+ * The CLI providers the app may offer.
+ *
+ * A program that is not here cannot answer, and one the user has turned off
+ * is not to be offered. Both are the same answer for the same reason: the
+ * list is what the app can actually reach.
+ */
+export const offeredCliProviders = (
+  states: CliProviderState[],
+): CliProviderState[] =>
+  states.filter((state) => state.installed && state.enabled)
+
+/**
  * What a provider id names, whichever kind it is.
  *
  * The two kinds are told apart by the id, so one lookup answers for both, and

@@ -1448,33 +1448,23 @@ pub enum CliEvent {
     Done { ok: bool, message: String },
 }
 
-/// Installs, updates or removes a CLI provider.
+/// The command that carries out a lifecycle operation.
 ///
 /// The operation is run by the tool's own means — a package manager, or the
 /// tool's own command — and never by a script fetched from the internet. A
 /// tool whose installation the app has not been told about is not installed
 /// by the app; the settings pane shows where to read about it instead.
-#[tauri::command]
-pub async fn run_cli_lifecycle(
-    app: AppHandle,
-    registry: State<'_, Arc<CliRegistry>>,
-    lifecycle: State<'_, CliLifecycle>,
-    id: String,
+///
+/// The arguments are an array, and the tool's own name is never part of a
+/// command line a shell has to interpret.
+///
+/// Nothing means the app will not do it: a tool that installs itself is
+/// installed by the tool, and the pane says where to read about it.
+fn lifecycle_command(
     action: LifecycleAction,
-    on_event: Channel<CliEvent>,
-) -> Result<(), String> {
-    let Some(info) = provider_for(id.trim()) else {
-        return Err(format!(
-            "\"{id}\" is not a CLI provider this app knows about."
-        ));
-    };
-    let Some(install) = info.install else {
-        return Err(format!(
-            "Tavi does not install {}. Read how to install it: {}",
-            info.label, info.docs_url
-        ));
-    };
-
+    install: CliInstall,
+    info: &CliProviderInfo,
+) -> Option<(&'static str, Vec<String>)> {
     let (program, args): (&str, Vec<String>) = match (action, install) {
         (LifecycleAction::Install, CliInstall::Npm { package }) => (
             "npm",
@@ -1487,12 +1477,7 @@ pub async fn run_cli_lifecycle(
         (LifecycleAction::Install, CliInstall::Pip { package }) => {
             ("pipx", vec!["install".to_string(), package.to_string()])
         }
-        (LifecycleAction::Install, CliInstall::Builtin { .. }) => {
-            return Err(format!(
-                "{} installs itself. Follow its own instructions: {}",
-                info.label, info.docs_url
-            ));
-        }
+        (LifecycleAction::Install, CliInstall::Builtin { .. }) => return None,
         (LifecycleAction::Update, CliInstall::Npm { package }) => (
             "npm",
             vec![
@@ -1523,6 +1508,42 @@ pub async fn run_cli_lifecycle(
             info.executables[0],
             uninstall.iter().take(1).map(|a| a.to_string()).collect(),
         ),
+    };
+    Some((program, args))
+}
+
+/// Installs, updates or removes a CLI provider.
+///
+/// The operation is run by the tool's own means — a package manager, or the
+/// tool's own command — and never by a script fetched from the internet. A
+/// tool whose installation the app has not been told about is not installed
+/// by the app; the settings pane shows where to read about it instead.
+#[tauri::command]
+pub async fn run_cli_lifecycle(
+    app: AppHandle,
+    registry: State<'_, Arc<CliRegistry>>,
+    lifecycle: State<'_, CliLifecycle>,
+    id: String,
+    action: LifecycleAction,
+    on_event: Channel<CliEvent>,
+) -> Result<(), String> {
+    let Some(info) = provider_for(id.trim()) else {
+        return Err(format!(
+            "\"{id}\" is not a CLI provider this app knows about."
+        ));
+    };
+    let Some(install) = info.install else {
+        return Err(format!(
+            "Tavi does not install {}. Read how to install it: {}",
+            info.label, info.docs_url
+        ));
+    };
+
+    let Some((program, args)) = lifecycle_command(action, install, info) else {
+        return Err(format!(
+            "{} installs itself. Follow its own instructions: {}",
+            info.label, info.docs_url
+        ));
     };
 
     let program = find_program(program).ok_or_else(|| {
@@ -2653,6 +2674,106 @@ mod tests {
     }
 
     #[test]
+    fn an_install_goes_through_the_package_manager_it_is_published_on() {
+        let claude = provider_for("claude-code").expect("Claude Code should be known");
+        let (program, args) = lifecycle_command(
+            LifecycleAction::Install,
+            claude.install.expect("Claude Code should have an install source"),
+            claude,
+        )
+        .expect("the app should install it");
+        assert_eq!(program, "npm");
+        assert_eq!(args, vec!["install", "--global", "@anthropic-ai/claude-code"]);
+    }
+
+    #[test]
+    fn an_update_asks_for_the_newest_version() {
+        let claude = provider_for("claude-code").expect("Claude Code should be known");
+        let (program, args) = lifecycle_command(
+            LifecycleAction::Update,
+            claude.install.expect("Claude Code should have an install source"),
+            claude,
+        )
+        .expect("the app should update it");
+        assert_eq!(program, "npm");
+        assert_eq!(
+            args,
+            vec!["install", "--global", "@anthropic-ai/claude-code@latest"]
+        );
+    }
+
+    #[test]
+    fn a_removal_goes_through_the_package_manager_too() {
+        let aider = provider_for("aider").expect("Aider should be known");
+        let (program, args) = lifecycle_command(
+            LifecycleAction::Uninstall,
+            aider.install.expect("Aider should have an install source"),
+            aider,
+        )
+        .expect("the app should remove it");
+        assert_eq!(program, "pipx");
+        assert_eq!(args, vec!["uninstall", "aider-chat"]);
+    }
+
+    #[test]
+    fn a_tool_that_installs_itself_is_left_to_itself() {
+        let opencode = provider_for("opencode").expect("OpenCode should be known");
+        let outcome = lifecycle_command(
+            LifecycleAction::Install,
+            opencode.install.expect("OpenCode should have an install source"),
+            opencode,
+        );
+        assert!(
+            outcome.is_none(),
+            "the app should not install a tool that installs itself"
+        );
+    }
+
+    #[test]
+    fn a_tool_the_app_cannot_install_has_no_command() {
+        /* The four whose names belong to something else. */
+        for id in ["cline", "goose", "kiro-cli", "crush"] {
+            let info = provider_for(id).expect("the tool should be known");
+            assert!(
+                info.install.is_none(),
+                "{id} should have no install source, and so no command"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tool_that_updates_itself_uses_its_own_command() {
+        let opencode = provider_for("opencode").expect("OpenCode should be known");
+        let (program, args) = lifecycle_command(
+            LifecycleAction::Update,
+            opencode.install.expect("OpenCode should have an install source"),
+            opencode,
+        )
+        .expect("the app should update it");
+        assert_eq!(program, "opencode");
+        assert_eq!(args, vec!["upgrade"]);
+    }
+
+    #[test]
+    fn the_arguments_are_an_array_and_never_a_command_line() {
+        /* Nothing the user typed is ever part of a command line, and the tool's
+           own name is an argument rather than part of a string a shell reads. */
+        for provider in CLI_PROVIDERS {
+            let Some(run) = provider.run else { continue };
+            for argument in run.args_before.iter().chain(run.args_after.iter()) {
+                assert!(
+                    !argument.contains(';')
+                        && !argument.contains('|')
+                        && !argument.contains('&')
+                        && !argument.contains('`'),
+                    "{} has a shell character in its arguments: {argument}",
+                    provider.id
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_version_is_read_out_of_a_sentence() {
         assert_eq!(
             version_number("opencode v2.0.26"),
@@ -2792,8 +2913,34 @@ mod tests {
         let program = real_program(&path);
         println!("  runs:  {}", program.display());
 
-        let mut child = Command::new(&program)
-            .args(["run", "--format", "json"])
+        let (said, session) = ask(&program, &["run", "--format", "json"], "reply with the single word: ok");
+        println!("  said:  {said}");
+        assert!(!said.is_empty(), "the program should have said something");
+
+        /* The second run carries on in the same session, so the program keeps
+           its own memory of the conversation. */
+        assert!(session.is_some(), "the program should have named its session");
+        let session = session.unwrap();
+        println!("  session: {session}");
+        let (said, again) = ask(
+            &program,
+            &["run", "--format", "json", "--session", &session],
+            "and now reply with the single word: still-here",
+        );
+        println!("  said:  {said}");
+        assert!(!said.is_empty(), "the program should have said something");
+        assert_eq!(again.as_deref(), Some(session.as_str()), "the session should be the same one");
+    }
+
+    /// Asks a program something, and says what it said and which session it
+    /// said it in.
+    fn ask(
+        program: &Path,
+        args: &[&str],
+        prompt: &str,
+    ) -> (String, Option<String>) {
+        let mut child = Command::new(program)
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -2803,12 +2950,19 @@ mod tests {
         {
             use std::io::Write;
             let mut input = child.stdin.take().expect("the program should take input");
-            let _ = input.write_all(b"reply with the single word: ok");
+            let _ = input.write_all(prompt.as_bytes());
         }
 
         let output = child.wait_with_output().expect("the program should finish");
         let mut said = String::new();
+        let mut session = None;
         for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if session.is_none()
+                && let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
+                && let Some(id) = value.get("sessionID").and_then(|v| v.as_str())
+            {
+                session = Some(id.to_string());
+            }
             match parse_opencode_event(line) {
                 ParsedEvent::Text(text) => said.push_str(&text),
                 ParsedEvent::Tool { name, status, .. } => {
@@ -2819,8 +2973,7 @@ mod tests {
                 ParsedEvent::Nothing => {}
             }
         }
-        println!("  said:  {said}");
-        assert!(!said.is_empty(), "the program should have said something");
+        (said, session)
     }
 
     /// Looks at this machine and says what is on it.
