@@ -78,8 +78,9 @@ if (-not $Session) {
   Write-Host "The bot will wake session $Session when a merge needs judgement."
 }
 
-# The command the task runs.
-$arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Script`""
+# The command the task runs. It pushes, because a merge that stays on this
+# machine is a merge nobody else has.
+$arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Script`" -Push"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments -WorkingDirectory $Worktree
 
 # Every thirty minutes, starting now.

@@ -403,11 +403,20 @@ if ($remoteMain) {
   $local = (git -C $Worktree rev-parse $MainBranch).Trim()
   $remote = $remoteMain.Trim()
   if ($remote -ne $local) {
-    if (git -C $Worktree merge-base --is-ancestor $local $remote) {
+    git -C $Worktree merge-base --is-ancestor $local $remote 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      # The remote is ahead: take its commits and carry on.
       git -C $Worktree merge --ff-only "origin/$MainBranch" 2>&1 | Out-Null
       Write-Log "main fast-forwarded to origin/$MainBranch"
     } else {
-      Write-Log "origin/$MainBranch has commits main does not, and main has commits it does not. A human has to reconcile this." "WARN"
+      git -C $Worktree merge-base --is-ancestor $remote $local 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        # This machine is ahead of the remote. There is nothing to pull, and
+        # the push below will send it.
+        Write-Log "main is ahead of origin/$MainBranch. It will be pushed."
+      } else {
+        Write-Log "origin/$MainBranch has commits main does not, and main has commits it does not. A human has to reconcile this." "WARN"
+      }
     }
   }
 }
