@@ -25,6 +25,11 @@ import {
   type ThinkingModeCapability,
 } from "../src/lib/reasoning.ts";
 import { openRouterCapabilities } from "../src/lib/catalogue.ts";
+import {
+  serializeReasoning,
+  type ReasoningPreferences,
+  type SerializedReasoning,
+} from "../src/lib/provider-reasoning.ts";
 
 export type ProviderModel = {
   /** Model id exactly as the provider names it. Never rewritten. */
@@ -43,22 +48,13 @@ export type ProviderConnection = {
   credentialRef?: string;
 };
 
-export type ReasoningPreferences = {
-  effort: { mode: "provider_default" } | { mode: "explicit"; value: string };
-  thinkingMode: { mode: "provider_default" } | { mode: "explicit"; value: string };
-};
-
-/**
- * What a validated preference becomes on the wire, or why it cannot.
- *
- * `omit` is the success case for a provider default: the field is simply not
- * sent. `reject` must never be resolved by picking a different value.
- */
-/** The provider-shaped options, or a refusal. Never both, never neither. */
-export type SerializedReasoning =
-  | { kind: "omit" }
-  | { kind: "payload"; fields: Record<string, unknown> }
-  | { kind: "reject"; message: string };
+/* The rule that turns a preference into a provider's own field, and the
+   * refusal when it cannot be verified, live in the shared module: the
+   * desktop app asks the same question and must get the same answer. */
+export type {
+  ReasoningPreferences,
+  SerializedReasoning,
+} from "../src/lib/provider-reasoning.ts";
 
 export interface ModelProviderAdapter {
   id: string;
@@ -155,50 +151,11 @@ export const openRouterAdapter: ModelProviderAdapter = {
     });
   },
 
-  serializeReasoning(capabilities, preferences) {
-    if (preferences.effort.mode === "provider_default") {
-      // Provider default means omit the field. Not `medium`.
-      return { kind: "omit" };
-    }
-
-    const value = preferences.effort.value;
-    const accepted = availableEffort(capabilities.effort).map((entry) => entry.value);
-
-    if (accepted.length === 0) {
-      // Distinguish "supported but we do not know which values" from "not
-      // supported". Collapsing these told a user their setting was rejected by
-      // a model that in fact accepts the parameter.
-      if (capabilities.effort.status === "supported") {
-        return {
-          kind: "reject",
-          message:
-            "This model's effort levels are not published, so that setting cannot be verified. Use the provider default instead.",
-        };
-      }
-      if (capabilities.effort.status === "unknown") {
-        return {
-          kind: "reject",
-          message:
-            "This model's reasoning-effort support is not published, so that setting cannot be verified. Use the provider default instead.",
-        };
-      }
-      return {
-        kind: "reject",
-        message: "This model does not support a reasoning-effort setting.",
-      };
-    }
-
-    if (!accepted.includes(value)) {
-      return {
-        kind: "reject",
-        message: `This model does not accept effort "${value}". It accepts: ${accepted.join(", ")}.`,
-      };
-    }
-
-    return {
-      kind: "payload",
-      fields: { reasoning: { effort: value } },
-    };
+  serializeReasoning(
+    capabilities: ModelReasoningCapabilities,
+    preferences: ReasoningPreferences,
+  ): SerializedReasoning {
+    return serializeReasoning("openrouter", capabilities, preferences);
   },
 };
 

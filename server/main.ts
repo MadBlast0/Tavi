@@ -3,7 +3,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { frontendTools } from "@assistant-ui/ai-sdk";
 import type { FrontendTools } from "@assistant-ui/ai-sdk";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   convertToModelMessages,
   createUIMessageStreamResponse,
@@ -25,15 +24,24 @@ import {
   serverCredential,
   storeKey,
 } from "./key-store.ts";
-import { providerFor } from "../src/lib/providers.ts";
+import {
+  DEFAULT_PROVIDER_ID,
+  PROVIDERS,
+  providerFor,
+} from "../src/lib/providers.ts";
 import { redact } from "../src/lib/redact.ts";
-import { defaultConnection, getCatalog, modelCapabilities } from "./models.ts";
+import {
+  connectionFor,
+  getCatalog,
+  modelCapabilities,
+} from "./models.ts";
 import {
   cloneRepository,
   listProjects,
   projectsRoot,
 } from "./projects.ts";
-import { adapterFor, type OpenRouterProviderOptions } from "./providers.ts";
+import { clientFor, type ProviderOptions } from "./provider-client.ts";
+import { adapterFor } from "./providers.ts";
 import { buildSystemPrompt, type Variant } from "./system.ts";
 
 /**
@@ -96,6 +104,15 @@ const REQUEST_HEADER = "x-tavi-request";
 
 type ChatConfig = {
   modelName?: string;
+  /**
+   * Which provider to ask.
+   *
+   * The composer sends the provider it showed the model list for, so the
+   * request and the list are about the same provider by construction. Without
+   * it the default provider is used, which is what the app used before the
+   * choice existed.
+   */
+  providerId?: string;
   /**
    * How hard to reason, on one scale that includes `none` for "do not reason".
    * There is no separate on/off: providers express turning reasoning off as the
@@ -204,27 +221,43 @@ async function handleChat(request: Request): Promise<Response> {
      The key lives in the server's own store or in the environment, and the
      store is what the settings pane writes to. A client built at startup
      would only ever see the environment, so a key set in the app would pass
-     the check below and then never reach the provider. */
-  const apiKey = serverCredential("OPENROUTER_API_KEY");
-  if (!apiKey) {
-    console.log("[server] rejected: no provider key");
+     the check below and then never reach the provider.
+
+     The provider is the one the request names, which is the one the composer
+     showed the model list for. The two are the same by construction: the
+     client picked the provider, and it sent the same id back. */
+  const providerId = body.config?.providerId?.trim() || DEFAULT_PROVIDER_ID;
+  const provider = providerFor(providerId);
+  if (!provider) {
+    console.log("[server] rejected: unknown provider");
     return Response.json(
-      { error: "No provider key is set. Add one in the settings." },
+      { error: `"${providerId}" is not a provider this app knows about.` },
       { status: 400 },
     );
   }
-  const openrouter = createOpenRouter({ apiKey });
+
+  const apiKey = serverCredential(provider.envVar);
+  if (!apiKey) {
+    console.log(`[server] rejected: no ${provider.label} key`);
+    return Response.json(
+      { error: `No ${provider.label} key is set. Add one in the settings.` },
+      { status: 400 },
+    );
+  }
+  const client = clientFor(providerId, apiKey);
 
   /* The provider adapter owns validation and serialisation for this connection.
      It refuses an explicit value the model cannot honour instead of substituting
      another one: a silently-downgraded effort is indistinguishable from the
      model simply running at a lower setting. A provider default serialises to an
      omitted field, never to a guessed `medium`. */
-  const connection = defaultConnection();
+  const connection = connectionFor(providerId);
   const adapter = adapterFor(connection.providerId);
   const capabilities = await modelCapabilities(connection, modelName);
 
-  let reasoningFields: OpenRouterProviderOptions | Record<string, never> = {};
+  /* The provider's own options, or none at all.
+     A provider default is an omitted field, never an empty object. */
+  let reasoningFields: ProviderOptions | Record<string, never> = {};
   if (adapter && capabilities) {
     const requestedEffort =
       body.config?.reasoningEffort ?? body.reasoningEffort;
@@ -242,12 +275,10 @@ async function handleChat(request: Request): Promise<Response> {
       return Response.json({ error: serialized.message }, { status: 400 });
     }
     if (serialized.kind === "payload") {
-      // The adapter returns provider-native fields; they are namespaced here for
-      // whichever provider client is in use.
-      reasoningFields =
-        connection.providerId === "openrouter"
-          ? { openrouter: serialized.fields as OpenRouterProviderOptions["openrouter"] }
-          : (serialized.fields as Record<string, never>);
+      /* The adapter returns provider-native fields; they are namespaced here for
+         whichever provider client is in use. The namespace is the provider's
+         own name, which is what the AI SDK files its options under. */
+      reasoningFields = client.options(serialized.fields);
     }
   }
 
@@ -266,7 +297,7 @@ async function handleChat(request: Request): Promise<Response> {
 
   const result = streamText({
     abortSignal: request.signal,
-    model: openrouter(modelName),
+    model: client.model(modelName),
     system,
     messages: await convertToModelMessages(messages, { tools: aiSDKTools }),
     tools: aiSDKTools,
@@ -475,17 +506,31 @@ const server = createServer(async (req, res) => {
     /* The catalogue comes from the provider, and a provider is only reachable
        with a key. Without one there is nothing to list: the list would be of
        models that cannot be called. The rule is here rather than in the
-       composer because a rule the client can ignore is not a rule. */
-    if (!serverCredential("OPENROUTER_API_KEY")) {
+       composer because a rule the client can ignore is not a rule.
+
+       The provider is the one the composer is using, so the list it gets back
+       is the list of models that provider offers — and the same id names the
+       provider in the chat request that follows. */
+    const providerId = url.searchParams.get("provider") ?? DEFAULT_PROVIDER_ID;
+    const provider = providerFor(providerId);
+    if (!provider) {
+      sendJson(res, 400, {
+        error: `"${providerId}" is not a provider this app knows about.`,
+      });
+      return;
+    }
+    if (!serverCredential(provider.envVar)) {
       sendJson(res, 403, {
-        error: "No provider key is set. Add one in the settings.",
+        error: `No ${provider.label} key is set. Add one in the settings.`,
         code: "no-provider-key",
       });
       return;
     }
     try {
-      const { models, fetchedAt, degraded } = await getCatalog();
-      sendJson(res, 200, { models, fetchedAt, degraded });
+      const { models, fetchedAt, degraded } = await getCatalog(
+        connectionFor(providerId),
+      );
+      sendJson(res, 200, { models, fetchedAt, degraded, provider: providerId });
     } catch (error) {
       // Say so plainly rather than returning an empty picker.
       sendJson(res, 503, {
@@ -527,7 +572,12 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "POST") {
-      let body: { provider?: unknown; key?: unknown; name?: unknown };
+      let body: {
+        provider?: unknown;
+        key?: unknown;
+        name?: unknown;
+        baseUrl?: unknown;
+      };
       try {
         body = JSON.parse((await readBody(req)).toString("utf8"));
       } catch {
@@ -538,6 +588,11 @@ const server = createServer(async (req, res) => {
       const provider = typeof body.provider === "string" ? body.provider : "";
       const key = typeof body.key === "string" ? body.key.trim() : "";
       const name = typeof body.name === "string" ? body.name : undefined;
+      /* The address the key belongs to, when it is not the provider's
+         default. Some providers do not live at one address: an Azure
+         resource, a Databricks workspace, a model on this machine. */
+      const baseUrl =
+        typeof body.baseUrl === "string" ? body.baseUrl.trim() : undefined;
       if (!providerFor(provider)) {
         sendJson(res, 400, {
           error: "That provider is not one the app knows about.",
@@ -565,7 +620,7 @@ const server = createServer(async (req, res) => {
       }
 
       try {
-        const stored = storeKey(provider, key, name);
+        const stored = storeKey(provider, key, name, baseUrl);
         sendJson(res, 200, { ok: true, id: stored.id });
       } catch (error) {
         sendJson(res, 500, {
@@ -740,8 +795,33 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (!serverCredential("OPENROUTER_API_KEY")) {
-    sendJson(res, 500, { error: "No provider key is set. Add one in the settings." });
+  const raw = new Uint8Array(await readBody(req));
+
+  /* The provider the request names, so that the key this server holds for it
+     can be checked before anything is spent. A body that is not JSON is
+     refused by the handler that owns the request, which says more about it
+     than this can. */
+  let providerId = DEFAULT_PROVIDER_ID;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(raw)) as {
+      config?: { providerId?: string };
+    };
+    providerId = parsed.config?.providerId?.trim() || DEFAULT_PROVIDER_ID;
+  } catch {
+    providerId = DEFAULT_PROVIDER_ID;
+  }
+  const provider = providerFor(providerId);
+  if (!provider) {
+    sendJson(res, 400, {
+      error: `"${providerId}" is not a provider this app knows about.`,
+    });
+    return;
+  }
+
+  if (!serverCredential(provider.envVar)) {
+    sendJson(res, 500, {
+      error: `No ${provider.label} key is set. Add one in the settings.`,
+    });
     return;
   }
 
@@ -753,7 +833,7 @@ const server = createServer(async (req, res) => {
   const request = new Request(`http://localhost:${PORT}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: new Uint8Array(await readBody(req)),
+    body: raw,
     signal: controller.signal,
   });
 
@@ -786,9 +866,14 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, BIND_HOST, () => {
   console.log(`[server] streaming route on http://${BIND_HOST}:${PORT}/api/chat`);
-  console.log(
-    `[server] no default model; key ${
-      serverCredential("OPENROUTER_API_KEY") ? "found" : "MISSING"
-    }`,
-  );
+  /* Every provider the server could be asked for, and whether it holds a key
+     for it. A provider with no key is one the app cannot use, and the
+     composer will say so rather than showing an empty list. */
+  for (const provider of PROVIDERS) {
+    console.log(
+      `[server] ${provider.label}: ${
+        serverCredential(provider.envVar) ? "key found" : "no key"
+      }`,
+    );
+  }
 });

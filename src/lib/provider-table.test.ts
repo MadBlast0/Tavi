@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { PROVIDERS } from "./providers.ts";
+import { DEFAULT_PROVIDER_ID, PROVIDERS } from "./providers.ts";
 
 /**
  * The provider table, checked against the other copy of it.
@@ -17,6 +17,10 @@ import { PROVIDERS } from "./providers.ts";
  * Rust cannot import TypeScript, so the table is written out twice and this
  * test reads both. It is the same technique `src/lib/commands.test.ts` uses
  * for the command list.
+ *
+ * The Rust table holds what Rust needs, so the two are compared on the
+ * fields they both have. The addresses and the documentation links are the
+ * pane's business, and the pane reads them from the TypeScript table.
  */
 
 const RUST = join(
@@ -25,20 +29,23 @@ const RUST = join(
   "..",
   "src-tauri",
   "src",
-  "keys.rs",
+  "provider.rs",
 );
 
 /** One provider, as the Rust table writes it. */
 type RustProvider = {
   id: string;
   label: string;
-  keys_url: string;
   env_var: string;
   auth: string;
-  identity_url: string;
-  inference_url: string;
+  base_url: string;
+  wire: string;
+  query: [string, string] | null;
+  extra_headers: [string, string] | null;
   reports_usage: boolean;
   validation: string;
+  identity_reports_account: boolean;
+  keyless: boolean;
 };
 
 /**
@@ -50,41 +57,65 @@ type RustProvider = {
  */
 const rustProviders = (): RustProvider[] => {
   const source = readFileSync(RUST, "utf8");
-  const table = source.match(/const PROVIDERS: &\[Provider\] = &\[([\s\S]*?)\n\];/);
-  assert.ok(table, "the provider table should be in keys.rs");
+  const table = source.match(
+    /const PROVIDERS: &\[ProviderInfo\] = &\[([\s\S]*?)\n\];/,
+  );
+  assert.ok(table, "the provider table should be in provider.rs");
 
   const providers: RustProvider[] = [];
-  for (const entry of table[1].matchAll(/Provider \{([\s\S]*?)\n    \}/g)) {
+  for (const entry of table[1].matchAll(/ProviderInfo \{([\s\S]*?)\n    \},/g)) {
     const body = entry[1];
     const read = (name: string): string => {
       const match = body.match(new RegExp(`${name}:\\s*"([^"]*)"`));
       assert.ok(match, `the Rust provider should name its ${name}`);
       return match[1];
     };
+    const pair = (name: string): [string, string] | null => {
+      const match = body.match(
+        new RegExp(`${name}: Some\\(\\("([^"]*)", "([^"]*)"\\)\\)`),
+      );
+      return match ? [match[1], match[2]] : null;
+    };
     providers.push({
       id: read("id"),
       label: read("label"),
-      keys_url: read("keys_url"),
       env_var: read("env_var"),
       auth: body.match(/auth:\s*Auth::(\w+)/)![1],
-      identity_url: read("identity_url"),
-      inference_url: read("inference_url"),
+      base_url: read("base_url"),
+      wire: body.match(/wire:\s*Wire::(\w+)/)![1],
+      query: pair("query"),
+      extra_headers: pair("extra_headers"),
       reports_usage: body.match(/reports_usage:\s*(true|false)/)![1] === "true",
       validation: body.match(/validation:\s*Validation::(\w+)/)![1],
+      identity_reports_account:
+        body.match(/identity_reports_account:\s*(true|false)/)![1] === "true",
+      keyless: body.match(/keyless:\s*(true|false)/)![1] === "true",
     });
   }
   return providers;
 };
 
-/** The Rust spellings of the two enums. */
+/** The Rust spellings of the three enums. */
 const AUTH: Record<string, string> = {
   Bearer: "bearer",
-  ApiKeyHeader: "x-api-key",
+  Header: "header",
+  AwsBearer: "aws-bearer",
+  GoogleOAuth: "google-oauth",
+  None: "none",
 };
 
 const VALIDATION: Record<string, string> = {
   IdentityEndpoint: "identity-endpoint",
   InferenceProbe: "inference-probe",
+};
+
+const WIRE: Record<string, string> = {
+  OpenAiChatCompletions: "openai-chat-completions",
+  AnthropicMessages: "anthropic-messages",
+  GoogleGenerativeAi: "google-generative-ai",
+  CohereChat: "cohere-chat",
+  AwsBedrock: "aws-bedrock",
+  GoogleVertex: "google-vertex",
 };
 
 test("the two provider tables hold the same providers", () => {
@@ -105,29 +136,19 @@ test("the two provider tables agree about every provider", () => {
 
     assert.equal(other.label, provider.label, `${provider.id}: the labels differ`);
     assert.equal(
-      other.keys_url,
-      provider.keysUrl,
-      `${provider.id}: the key pages differ`,
-    );
-    assert.equal(
       other.env_var,
       provider.envVar,
       `${provider.id}: the environment variables differ`,
     );
     assert.equal(
-      AUTH[other.auth],
-      provider.auth,
-      `${provider.id}: the ways of sending a key differ`,
+      other.base_url,
+      provider.baseUrl,
+      `${provider.id}: the addresses differ`,
     );
     assert.equal(
-      other.identity_url,
-      provider.identityUrl,
-      `${provider.id}: the identity addresses differ`,
-    );
-    assert.equal(
-      other.inference_url,
-      provider.inferenceUrl,
-      `${provider.id}: the inference addresses differ`,
+      WIRE[other.wire],
+      provider.wire,
+      `${provider.id}: the request shapes differ`,
     );
     assert.equal(
       other.reports_usage,
@@ -138,6 +159,16 @@ test("the two provider tables agree about every provider", () => {
       VALIDATION[other.validation],
       provider.validation,
       `${provider.id}: the ways of checking a key differ`,
+    );
+    assert.equal(
+      other.identity_reports_account,
+      provider.identityReportsAccount,
+      `${provider.id}: the identity endpoints differ`,
+    );
+    assert.equal(
+      other.keyless,
+      Boolean(provider.keyless),
+      `${provider.id}: the ones that need no key differ`,
     );
   }
 });
@@ -150,7 +181,29 @@ test("a provider that is checked for free and one that costs a request are both 
   assert.ok(kinds.has("inference-probe"));
 });
 
-test("the provider the app talks to is one the app can hold a key for", () => {
-  const active = PROVIDERS.find((provider) => provider.id === "openrouter");
-  assert.ok(active, "the app's own provider should be on the list");
+test("the provider the app falls back to is one the app can hold a key for", () => {
+  const fallback = PROVIDERS.find(
+    (provider) => provider.id === DEFAULT_PROVIDER_ID,
+  );
+  assert.ok(fallback, "the app's fallback provider should be on the list");
+});
+
+test("a provider that needs no key names no variable for one", () => {
+  for (const provider of PROVIDERS) {
+    if (!provider.keyless) continue;
+    assert.equal(
+      provider.envVar,
+      "",
+      `${provider.id} needs no key, so it should name no variable for one`,
+    );
+  }
+});
+
+test("no two providers share an id", () => {
+  const ids = PROVIDERS.map((provider) => provider.id);
+  assert.equal(
+    new Set(ids).size,
+    ids.length,
+    "two providers with the same id would fight over one key",
+  );
 });

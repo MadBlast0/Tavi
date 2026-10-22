@@ -41,6 +41,9 @@ import {
 import { Kbd, KbdGroup } from "@/components/kbd"
 import { NumberFlow } from "@/components/number-flow"
 import { openSettings } from "@/lib/open-settings"
+import { ProviderLogo } from "@/components/provider-logo"
+import { PROVIDERS, providerFor } from "@/lib/providers"
+import type { ProviderKey } from "@/lib/secret"
 
 import {
   Tooltip,
@@ -703,17 +706,96 @@ function PromptInputEffort(props: EffortProps) {
 }
 
 /**
+ * The providers the app can talk to, and the one in use.
+ *
+ * The strip is the first thing in the picker because everything else in it
+ * belongs to the provider that is chosen: the models listed, the effort
+ * levels offered, and the key the request goes out with. A provider with no
+ * key is dimmed rather than hidden — it is one the user may have a key for
+ * elsewhere, and the picker says what is missing rather than pretending the
+ * provider is not there.
+ */
+function ProviderStrip({
+  provider,
+  onProviderChange,
+  keys,
+}: {
+  provider: string
+  onProviderChange: (value: string) => void
+  keys: ProviderKey[]
+}) {
+  const reachable = (id: string) =>
+    keys.some((key) => key.active && key.provider === id)
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Provider"
+      className="flex items-center gap-1 overflow-x-auto overscroll-contain pb-2"
+    >
+      {PROVIDERS.map((entry) => {
+        const selected = entry.id === provider
+        const hasKey = reachable(entry.id)
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={entry.label}
+            title={
+              hasKey
+                ? entry.label
+                : "No " + entry.label + " key is set. Add one in Settings."
+            }
+            onClick={() => {
+              if (!selected) haptic("tick")
+              onProviderChange(entry.id)
+            }}
+            className={cn(
+              "flex min-h-8 shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-sm outline-none select-none",
+              "focus-visible:ring-ring focus-visible:ring-2",
+              selected
+                ? "border-border bg-accent text-accent-foreground"
+                : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              !hasKey && !selected && "opacity-50",
+            )}
+          >
+            <ProviderLogo
+              provider={entry.id}
+              providerLabel={entry.label}
+              className="size-4"
+            />
+            {selected ? <span className="truncate">{entry.label}</span> : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * There is no provider key, so there is nothing to choose.
  *
  * The list is not fetched without one — it comes from the provider, and a list
  * of models that cannot be called is a list of things that will fail. So this
  * says what is missing, and offers the way to put it right.
  */
-function NoKeyState({ onAddKey }: { onAddKey: () => void }) {
+function NoKeyState({
+  onAddKey,
+  providerLabel,
+}: {
+  onAddKey: () => void
+  providerLabel?: string
+}) {
   return (
     <div className="flex flex-col items-start gap-2 px-2 py-3">
       <p className="text-sm">
-        Tavi needs a provider key before it can reach any model.
+        {providerLabel
+          ? "Tavi needs a " +
+            providerLabel +
+            " key before it can reach any of its models."
+          : "Tavi needs a provider key before it can reach any model."}
       </p>
       <Button type="button" size="xs" variant="outline" onClick={onAddKey}>
         <KeyRoundIcon className="size-4" />
@@ -729,6 +811,9 @@ function PromptInputModel({
   onModelChange,
   effort,
   onEffortChange,
+  provider,
+  onProviderChange,
+  providerKeys,
   noKey,
   error,
   catalogue,
@@ -739,6 +824,17 @@ function PromptInputModel({
   onModelChange: (value: string) => void
   effort: string
   onEffortChange: (value: string) => void
+  /**
+   * The provider in use, and the way to change it.
+   *
+   * Everything else in this picker belongs to that provider: the models that
+   * are listed, the effort levels that are offered, and the key the request
+   * goes out with.
+   */
+  provider: string
+  onProviderChange: (value: string) => void
+  /** The keys the app holds, so a provider with none can be said so. */
+  providerKeys: ProviderKey[]
   /**
    * Whether there is no provider key at all.
    *
@@ -860,6 +956,12 @@ function PromptInputModel({
         {/* The search field is hidden when there is nothing to search: a search
             box over an empty list is noise, and the list is empty because
             there is no key. */}
+        <ProviderStrip
+          provider={provider}
+          onProviderChange={onProviderChange}
+          keys={providerKeys}
+        />
+
         {noKey ? null : (
           <div className="flex items-center gap-2 pb-2">
             <SearchIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
@@ -928,6 +1030,7 @@ function PromptInputModel({
             })
           ) : noKey ? (
             <NoKeyState
+              providerLabel={providerFor(provider)?.label}
               onAddKey={() => {
                 setOpen(false)
                 openSettings("api-keys")

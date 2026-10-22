@@ -13,6 +13,7 @@
 
 import {
   readSupport,
+  unknownCapabilities,
   type CapabilitySource,
   type EffortCapability,
   type EffortValue,
@@ -21,6 +22,7 @@ import {
   type SupportStatus,
   type ThinkingModeCapability,
 } from "./reasoning.ts"
+import { capabilitiesFor } from "./provider-capabilities.ts"
 
 /**
  * What the browser receives.
@@ -36,14 +38,33 @@ export type SlimModel = {
   name: string;
   provider: string;
   contextLength: number | null;
+  /**
+   * Whether the model costs nothing.
+   *
+   * False for a provider that publishes no prices at all: a price the app does
+   * not have is not a price of zero, and saying a model is free when nothing
+   * was looked up would be a claim nobody can check.
+   */
   free: boolean;
-  supportsTools: boolean;
+  /**
+   * Whether the model takes tools.
+   *
+   * Null when the provider's catalogue does not say. Only OpenRouter publishes
+   * it, and "not published" is not "no".
+   */
+  supportsTools: boolean | null;
   supportsReasoning: boolean;
   capabilities: ModelReasoningCapabilities;
   inputModalities: string[];
   outputModalities: string[];
-  promptPrice: number;
-  completionPrice: number;
+  /**
+   * What a token costs.
+   *
+   * Null when the provider publishes no price. A number is a number somebody
+   * can check; a null is the absence of one.
+   */
+  promptPrice: number | null;
+  completionPrice: number | null;
   /**
    * The price of a token the provider has already cached.
    *
@@ -293,6 +314,45 @@ export const projectModel = (
   };
 };
 
+/**
+ * Projects a model from a provider that publishes a list and little else.
+ *
+ * OpenRouter's catalogue carries prices, a context window, the modalities and
+ * which parameters a model takes. The other providers publish a list of ids
+ * and, at most, what a model can do. Everything this projection cannot read
+ * is left null rather than filled in with a zero: a price nobody published is
+ * not a price of nothing, and a context window nobody published is not a
+ * small one.
+ */
+export const projectPlainModel = (
+  model: CatalogueModel,
+  capabilities: ModelReasoningCapabilities,
+  providerId: string,
+): SlimModel => {
+  const raw = (model.raw ?? {}) as {
+    context_length?: number;
+    max_input_tokens?: number;
+  };
+
+  return {
+    id: model.id,
+    name: model.displayName,
+    provider: providerId,
+    contextLength: raw.context_length ?? raw.max_input_tokens ?? null,
+    /* No price was published, so the model is not known to be free. */
+    free: false,
+    /* The catalogue does not say. */
+    supportsTools: null,
+    supportsReasoning: capabilities.reasoningCapability !== "unsupported",
+    capabilities,
+    inputModalities: ["text"],
+    outputModalities: ["text"],
+    promptPrice: null,
+    completionPrice: null,
+    cachedInputPrice: null,
+  };
+};
+
 /** The target a model is reached through. */
 const openRouterTarget = (
   source: CatalogueSource,
@@ -332,3 +392,43 @@ export const openRouterCatalogue = (
     );
   });
 };
+
+/**
+ * The catalogue, as any provider publishes it.
+ *
+ * OpenRouter publishes prices, a context window, the modalities and the
+ * parameters a model takes, so it is read by its own reader. The other
+ * providers publish a list of ids and, at most, what a model can do, so they
+ * are read by the shared capability reader and projected without the extras.
+ *
+ * The result is the same shape either way, and the shape says `null` where the
+ * provider said nothing.
+ */
+export const providerCatalogue = (
+  providerId: string,
+  raw: unknown,
+  source: CatalogueSource,
+): SlimModel[] => {
+  if (providerId === "openrouter") {
+    return openRouterCatalogue(raw, source)
+  }
+
+  const data = (raw as { data?: unknown[] } | null)?.data ?? []
+  return data.map((entry) => {
+    const model = (entry ?? {}) as {
+      id?: string
+      name?: string
+      display_name?: string
+    }
+    const catalogueModel: CatalogueModel = {
+      id: model.id ?? "",
+      displayName: model.display_name ?? model.name ?? model.id ?? "",
+      raw: entry,
+    }
+    const target = openRouterTarget(source, catalogueModel.id)
+    const capabilities =
+      capabilitiesFor(providerId, catalogueModel.id, target, entry) ??
+      unknownCapabilities(target)
+    return projectPlainModel(catalogueModel, capabilities, providerId)
+  })
+}

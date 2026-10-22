@@ -18,122 +18,28 @@
  * support from a model name, the few documented cases below are recorded from the
  * official reasoning guide with a review date. Every other model stays `unknown`,
  * which keeps the UI on provider default instead of guessing.
+ *
+ * The reading itself lives in `src/lib/provider-capabilities.ts`, because the
+ * desktop app reads the same catalogue and must come to the same answer.
  */
 
 import { serverCredential } from "./key-store.ts";
+import { type ModelTarget, type ModelReasoningCapabilities } from "../src/lib/reasoning.ts";
 import {
-  availableEffort,
-  type CapabilitySource,
-  type EffortCapability,
-  type EffortValue,
-  type ModelTarget,
-} from "../src/lib/reasoning.ts";
+  openaiCapabilities,
+  openaiCurated,
+  openaiDocumentedValues,
+} from "../src/lib/provider-capabilities.ts";
+import {
+  serializeReasoning,
+  type ReasoningPreferences,
+  type SerializedReasoning,
+} from "../src/lib/provider-reasoning.ts";
 import type {
   ModelProviderAdapter,
   ProviderConnection,
   ProviderModel,
 } from "./providers.ts";
-
-const REASONING_GUIDE = "https://platform.openai.com/docs/guides/reasoning";
-
-/**
- * Values documented for OpenAI's reasoning effort.
- *
- * `max` is at the top: OpenAI's Chat Completions reference documents
- * `none, minimal, low, medium, high, xhigh, max`. It is not borrowed from
- * `verbosity`, which is a different control.
- */
-const DOCUMENTED_EFFORT_VALUES = [
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-] as const;
-
-const EFFORT_INTENSITY: Record<string, EffortValue["intensity"]> = {
-  none: "minimal",
-  minimal: "minimal",
-  low: "low",
-  medium: "medium",
-  high: "high",
-  xhigh: "maximum",
-  max: "maximum",
-};
-
-const EFFORT_LABELS: Record<string, string> = {
-  none: "None",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-};
-
-/** When the curated table below was last checked against the guide. */
-const REVIEWED_AT = "2026-10-18";
-
-type Curated = {
-  /** Exact accepted values, in the guide's order. */
-  levels: readonly string[];
-  /** Only where the guide documents a default. */
-  default?: string;
-  notes: string;
-};
-
-/**
- * Documented cases only. Keyed by exact model id so a near-miss cannot silently
- * inherit another model's capability — matching on a family name is exactly what
- * the specification forbids.
- */
-const CURATED: Record<string, Curated> = {
-  "gpt-5.1": {
-    levels: ["none", "low", "medium", "high"],
-    default: "none",
-    notes: "gpt-5.1 defaults to none; supports none/low/medium/high.",
-  },
-  "gpt-5-pro": {
-    levels: ["high"],
-    default: "high",
-    notes: "gpt-5-pro defaults to and only supports high.",
-  },
-};
-
-const curatedFor = (modelId: string): Curated | undefined => CURATED[modelId];
-
-const openaiEffort = (
-  modelId: string,
-  source: CapabilitySource,
-): EffortCapability => {
-  const curated = curatedFor(modelId);
-  if (!curated) {
-    // Not curated: not "unsupported", simply not established.
-    return {
-      status: "unknown",
-      parameterName: "reasoning.effort",
-      defaultKnown: false,
-      source,
-    };
-  }
-  const values: EffortValue[] = curated.levels.map((level, order) => ({
-    value: level,
-    label: EFFORT_LABELS[level] ?? level,
-    order,
-    intensity: EFFORT_INTENSITY[level],
-  }));
-  return {
-    status: "supported",
-    parameterName: "reasoning.effort",
-    values,
-    defaultValue: curated.default,
-    defaultKnown: curated.default !== undefined,
-    semantics: curated.notes,
-    source,
-  };
-};
 
 export const openaiAdapter: ModelProviderAdapter = {
   id: "openai",
@@ -147,8 +53,8 @@ export const openaiAdapter: ModelProviderAdapter = {
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY is not set");
     }
-    const base = connection.baseUrl ?? "https://api.openai.com";
-    const response = await fetch(`${base}/v1/models`, {
+    const base = connection.baseUrl ?? "https://api.openai.com/v1";
+    const response = await fetch(`${base}/models`, {
       headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
     });
     if (!response.ok) {
@@ -165,14 +71,6 @@ export const openaiAdapter: ModelProviderAdapter = {
   },
 
   async getModelCapabilities(connection, model) {
-    const source: CapabilitySource = {
-      kind: "official_docs",
-      url: REASONING_GUIDE,
-      reviewedAt: REVIEWED_AT,
-      confidence: "medium",
-      notes: curatedFor(model.id)?.notes ?? "No curated capability record for this model",
-    };
-
     const target: ModelTarget = {
       connectionId: connection.id,
       providerId: connection.providerId,
@@ -180,60 +78,16 @@ export const openaiAdapter: ModelProviderAdapter = {
       modelId: model.id,
     };
 
-    return {
-      target,
-      reasoningCapability: curatedFor(model.id) ? "supported" : "unknown",
-      effort: openaiEffort(model.id, source),
-      /* OpenAI has no `thinking.type` equivalent in this surface. */
-      thinkingMode: { status: "unsupported", defaultKnown: false, canDisable: "unknown", source },
-      /* No numeric reasoning budget in this surface either. */
-      thinkingBudget: { status: "unsupported", source },
-      /* Reasoning summaries are a separate output control from effort, and are
-         not switched on or off by it. */
-      display: { summary: "supported", thinkingContent: "unknown", source },
-      /* `reasoning.mode` (standard/pro) exists on newer models only; left
-         unknown rather than assumed. */
-      executionMode: { status: "unknown", defaultKnown: false, source },
-      rawMetadata: model.raw,
-      schemaVersion: 2,
-      sources: [source],
-    };
+    return openaiCapabilities(model.id, target, model.raw);
   },
 
-  serializeReasoning(capabilities, preferences) {
-    // Provider default: omit the field entirely. Not `medium`.
-    if (preferences.effort.mode === "provider_default") return { kind: "omit" };
-
-    const value = preferences.effort.value;
-    const levels = availableEffort(capabilities.effort);
-
-    if (levels.length === 0) {
-      return {
-        kind: "reject",
-        message:
-          capabilities.effort.status === "unsupported"
-            ? "This model does not support a reasoning-effort setting."
-            : "This model's reasoning-effort levels are not established for it, so that setting cannot be verified. Use the provider default instead.",
-      };
-    }
-    if (!levels.some((level) => level.value === value)) {
-      return {
-        kind: "reject",
-        message: `This model does not accept effort "${value}". It accepts: ${levels
-          .map((level) => level.value)
-          .join(", ")}.`,
-      };
-    }
-
-    // Exact wire value, unmodified. Never translated or renamed.
-    //
-    // The Chat Completions surface takes `reasoning_effort` at the top level.
-    // The nested `reasoning: { effort }` shape belongs to the Responses
-    // surface, and sending it here is a request the provider refuses.
-    return { kind: "payload", fields: { reasoning_effort: value } };
+  serializeReasoning(
+    capabilities: ModelReasoningCapabilities,
+    preferences: ReasoningPreferences,
+  ): SerializedReasoning {
+    return serializeReasoning("openai", capabilities, preferences);
   },
 };
 
 /** Exposed for tests: the documented enum, and the curated table. */
-export const openaiDocumentedValues = DOCUMENTED_EFFORT_VALUES;
-export const openaiCurated = CURATED;
+export { openaiDocumentedValues, openaiCurated };

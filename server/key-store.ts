@@ -74,6 +74,14 @@ export type StoredKey = {
   name: string;
   /** True until the user renames it. */
   nameIsDefault: boolean;
+  /**
+   * The address this key belongs to, when it is not the provider's default.
+   *
+   * Some providers do not live at one address: an Azure resource, a
+   * Databricks workspace, a model running on this machine. The key says
+   * which, and the key's address wins.
+   */
+  baseUrl: string | null;
   /** When it was stored, in unix seconds. */
   createdAt: number;
   /** When it was last changed, in unix seconds. */
@@ -158,6 +166,7 @@ const fromLegacy = (legacy: Record<string, string>): Store => {
           provider: provider.id,
           name: provider.label,
           nameIsDefault: true,
+          baseUrl: null,
           createdAt: now,
           updatedAt: now,
           lastUsedAt: null,
@@ -367,6 +376,7 @@ export const storeKey = (
   providerId: string,
   secret: string,
   name?: string,
+  baseUrl?: string,
 ): StoredKey => {
   const current = store();
   const provider = PROVIDERS.find((candidate) => candidate.id === providerId);
@@ -380,6 +390,7 @@ export const storeKey = (
     provider: providerId,
     name: chosen,
     nameIsDefault: chosen === (provider?.label ?? providerId),
+    baseUrl: baseUrl?.trim().replace(/\/+$/, "") || null,
     createdAt: now,
     updatedAt: now,
     lastUsedAt: null,
