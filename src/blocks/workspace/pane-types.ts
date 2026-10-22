@@ -84,7 +84,9 @@ export const PANE_TYPES: readonly PaneType[] = [
   {
     id: "browser",
     label: "Browser",
-    /* A globe is the web, and this pane is the web. */
+    /* A globe is the web, and this pane is the web. The app also draws a
+       globe for "Language" in the account menu; that is a different idea in a
+       different place, and the two are never on screen together. */
     icon: GlobeIcon,
     description: "A page, with an address bar.",
   },
