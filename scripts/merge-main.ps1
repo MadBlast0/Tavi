@@ -370,6 +370,74 @@ function Reset-Main {
 Write-Log "--- merge run starting ---"
 Write-Log "worktree: $Worktree"
 
+# Which branches to consider.
+if ($Branches.Count -eq 0) {
+  $Branches = @(git -C $Worktree for-each-ref --format="%(refname:short)" refs/heads |
+    Where-Object { $_ -ne $MainBranch })
+}
+Write-Log "considering: $($Branches -join ', ')"
+
+# The report is a question, and a question does not need the lock. It is
+# answered before the lock is taken, so it can be asked while a merge is
+# running.
+$scratch = Join-Path $env:TEMP "tavi-merge-scratch"
+
+# ---------------------------------------------------------------------------
+# The report
+# ---------------------------------------------------------------------------
+
+# The check to run before a branch is deleted. A branch is only safe to
+# delete when every one of its commits is reachable from main *and* it is
+# holding nothing uncommitted — because a deleted branch takes its
+# uncommitted work with it, and that work is gone.
+if ($Report) {
+  Write-Log "--- branch report ---"
+  foreach ($branch in $Branches) {
+    $ahead = Get-BranchCommits -Branch $branch -Into $MainBranch
+    $behind = Get-BranchCommits -Branch $MainBranch -Into $branch
+    $tip = (git -C $Worktree rev-parse --short $branch 2>$null)
+    $uncommitted = Get-Uncommitted -Branch $branch
+
+    $reachable = $false
+    git -C $Worktree merge-base --is-ancestor $branch $MainBranch 2>$null
+    if ($LASTEXITCODE -eq 0) { $reachable = $true }
+
+    $verdict = if ($reachable -and $uncommitted.Files -eq 0) {
+      "fully in $MainBranch — safe to delete"
+    } elseif ($reachable) {
+      "in $MainBranch, but holding $($uncommitted.Files) uncommitted file(s) — commit them before deleting"
+    } else {
+      "$ahead commit(s) not in $MainBranch yet — do not delete"
+    }
+
+    Write-Log ""
+    Write-Log "$branch  ($tip)"
+    Write-Log "  commits not in $MainBranch : $ahead"
+    Write-Log "  commits in $MainBranch not in it : $behind"
+    Write-Log "  every commit reachable from $MainBranch : $reachable"
+    if ($uncommitted.Path) {
+      Write-Log "  uncommitted files : $($uncommitted.Files)  ($($uncommitted.Path))"
+      foreach ($f in @(git -C $uncommitted.Path status --porcelain 2>$null)) {
+        Write-Log "      $f"
+      }
+    } else {
+      Write-Log "  uncommitted files : 0  (not checked out anywhere)"
+    }
+    Write-Log "  verdict : $verdict"
+
+    if (-not $reachable) {
+      $diff = @(git -C $Worktree diff --stat "$MainBranch...$branch" 2>$null)
+      if ($diff.Count) {
+        Write-Log "  what it has that $MainBranch does not :"
+        foreach ($line in $diff) { Write-Log "      $line" }
+      }
+    }
+  }
+  Write-Log ""
+  Write-Log "--- report finished ---"
+  exit 0
+}
+
 # One merge at a time. The scheduled task and a hand-run can otherwise
 # arrive together, and two merges into the same worktree is a mess neither
 # of them can undo.
@@ -437,69 +505,6 @@ if ($remoteMain) {
       }
     }
   }
-}
-
-# Which branches to consider.
-if ($Branches.Count -eq 0) {
-  $Branches = @(git -C $Worktree for-each-ref --format="%(refname:short)" refs/heads |
-    Where-Object { $_ -ne $MainBranch })
-}
-Write-Log "considering: $($Branches -join ', ')"
-
-# ---------------------------------------------------------------------------
-# The report
-# ---------------------------------------------------------------------------
-
-# The check to run before a branch is deleted. A branch is only safe to
-# delete when every one of its commits is reachable from main *and* it is
-# holding nothing uncommitted — because a deleted branch takes its
-# uncommitted work with it, and that work is gone.
-if ($Report) {
-  Write-Log "--- branch report ---"
-  foreach ($branch in $Branches) {
-    $ahead = Get-BranchCommits -Branch $branch -Into $MainBranch
-    $behind = Get-BranchCommits -Branch $MainBranch -Into $branch
-    $tip = (git -C $Worktree rev-parse --short $branch 2>$null)
-    $uncommitted = Get-Uncommitted -Branch $branch
-
-    $reachable = $false
-    git -C $Worktree merge-base --is-ancestor $branch $MainBranch 2>$null
-    if ($LASTEXITCODE -eq 0) { $reachable = $true }
-
-    $verdict = if ($reachable -and $uncommitted.Files -eq 0) {
-      "fully in $MainBranch — safe to delete"
-    } elseif ($reachable) {
-      "in $MainBranch, but holding $($uncommitted.Files) uncommitted file(s) — commit them before deleting"
-    } else {
-      "$ahead commit(s) not in $MainBranch yet — do not delete"
-    }
-
-    Write-Log ""
-    Write-Log "$branch  ($tip)"
-    Write-Log "  commits not in $MainBranch : $ahead"
-    Write-Log "  commits in $MainBranch not in it : $behind"
-    Write-Log "  every commit reachable from $MainBranch : $reachable"
-    if ($uncommitted.Path) {
-      Write-Log "  uncommitted files : $($uncommitted.Files)  ($($uncommitted.Path))"
-      foreach ($f in @(git -C $uncommitted.Path status --porcelain 2>$null)) {
-        Write-Log "      $f"
-      }
-    } else {
-      Write-Log "  uncommitted files : 0  (not checked out anywhere)"
-    }
-    Write-Log "  verdict : $verdict"
-
-    if (-not $reachable) {
-      $diff = @(git -C $Worktree diff --stat "$MainBranch...$branch" 2>$null)
-      if ($diff.Count) {
-        Write-Log "  what it has that $MainBranch does not :"
-        foreach ($line in $diff) { Write-Log "      $line" }
-      }
-    }
-  }
-  Write-Log ""
-  Write-Log "--- report finished ---"
-  exit 0
 }
 
 $scratch = Join-Path $env:TEMP "tavi-merge-scratch"
