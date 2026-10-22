@@ -71,8 +71,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 | 4.1 | ✅ done | The frame every pane is drawn in |
 | 4.2 | ✅ done | The header: icon, title, actions, and the drag region |
 | 4.3 | ✅ done | The overflow menu, and the close, focus, maximize and pop-out controls |
-| 4.4 | ▶ next | The registry of pane types, and the model of an instance |
-| 4.5 | ⬜ not started | The shared empty, loading, error and unavailable slots |
+| 4.4 | ✅ done | The registry of pane types, and the model of an instance |
+| 4.5 | ▶ next | The shared empty, loading, error and unavailable slots |
 
 **Phase 5 — Every pane's content, one pane at a time**
 
@@ -1626,6 +1626,31 @@ drawn as though it could.
 
 **Reference:** The pane registry and instance model. A session is not a pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The registry | `src/blocks/workspace/pane-registry.tsx` — the registry, built from `pane-types.ts`, with renderers, actions and the duplicate rule |
+| The check | `src/lib/pane-registry.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md), [`docs/components.md`](../../components.md) |
+
+**What this task found.** The naming half already existed in
+`pane-types.ts` — the key, the name, the mark and the description — and
+the doing half did not. The registry is built from `PANE_TYPES`, so the
+two cannot drift apart: a type added to `pane-types.ts` is in the
+registry with a placeholder renderer, and a type removed from one is
+removed from the other. The registry adds the renderer, the actions and
+the duplicate rule; the pane types add the name and the mark.
+
+The renderers are placeholders — "coming soon" — until Phase 5 builds each
+pane's content. The registry is the only place that knows which renderer a
+type takes, so adding a pane's real content means changing one entry here.
+The shared actions are defined once, and a chat and a code session cannot
+be duplicated, because they are one thing at a time.
+
+The layout engine does not know what a pane type is. It asks the registry.
 ## Task 4.5 — Create reusable pane empty/loading/error state slots
 
 **Prompt to the coding AI:**
