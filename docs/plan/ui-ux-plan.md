@@ -792,6 +792,17 @@ primitive family, not two.** The project has Base UI through shadcn's
 Nothing was redesigned and no UI was changed. Every number in the document was
 measured in the running app or read out of the source.
 
+**Measured at the floor.** The window cannot be made smaller than 600 × 338,
+and that is where the app has to work. Driven through the real interface at
+that size — the rail opened as a sheet, Code selected, Workspace pressed:
+
+| | |
+|---|---|
+| The page | 338 tall and 338 tall — **it does not scroll** |
+| The work area | 600 × 338, 28px of top padding for the title bar |
+| The empty state | "Nothing open yet", its title between 157 and 179 |
+| The action | "Add view", its bottom at 258 and its right at 350 |
+
 ## Task 0.3 — Audit shadcn/ui and Lucide usage
 
 **Prompt to the coding AI:**
