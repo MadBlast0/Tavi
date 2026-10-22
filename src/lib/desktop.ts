@@ -30,6 +30,7 @@ import type {
   CloneProgress,
   CloneResult,
   KeyStandingReport,
+  PartialJournal,
   ProjectsListing,
   RawCatalogue,
   Workspace,
@@ -290,6 +291,50 @@ export const writeThreads = async (
 
 export const clearThreads = async (kind: string): Promise<void> => {
   await invoke("clear_threads", { kind })
+}
+
+/* -------------------------------------------------------------------------- */
+/* The answers in flight                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Adds one line to the journal of an answer that is being written.
+ *
+ * The journal is a file of the app's own, and Rust appends to it. The file
+ * only ever grows, so this is cheap enough to call as the answer arrives.
+ */
+export const appendPartial = async (
+  threadId: string,
+  line: string
+): Promise<void> => {
+  await invoke("append_partial", { threadId, line })
+}
+
+/**
+ * Every journal that is there.
+ *
+ * The lines are given as they are on disk. A journal whose last line was cut
+ * short by a crash comes back whole, and reading it is the frontend's job —
+ * it is the one that knows what a line means.
+ */
+export const readPartials = async (): Promise<PartialJournal[]> => {
+  const raw = await invoke<string>("read_partials")
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as PartialJournal[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** Removes one journal. */
+export const clearPartial = async (threadId: string): Promise<void> => {
+  await invoke("clear_partial", { threadId })
+}
+
+/** Removes every journal. */
+export const clearPartials = async (): Promise<void> => {
+  await invoke("clear_partials")
 }
 
 /* -------------------------------------------------------------------------- */

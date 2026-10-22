@@ -3,6 +3,7 @@ use tauri::AppHandle;
 mod appfile;
 mod files;
 mod keys;
+mod partials;
 mod projects;
 mod provider;
 mod threads;
@@ -141,6 +142,10 @@ pub fn run() {
             threads::read_threads,
             threads::write_threads,
             threads::clear_threads,
+            partials::append_partial,
+            partials::read_partials,
+            partials::clear_partial,
+            partials::clear_partials,
             workspace::list_workspaces,
             workspace::grant_workspace,
             workspace::relink_workspace,

@@ -448,12 +448,42 @@ same and two copies of the app share one key. The same is true of the
 website's server's own key file (`TAVI_KEYS_DIR`): one key for one user, and
 the app's whole design says a key lives in one place.
 
+#### The journals — app data
+
+`src-tauri/src/partials.rs` writes `partials/<conversation-id>.jsonl` into the
+app data directory: one file per conversation, holding the answer that is
+being written right now.
+
+An answer exists in memory until it ends. Without a journal, a crash in the
+middle of writing one loses all of it. With one, the answer so far is on disk
+while it is still arriving, and it is found again on the next launch.
+
+The file is **appended to** and never rewritten: a line is added as the answer
+grows, and a crash can lose only the last line rather than the whole answer.
+The directory is `0700` and the files `0600` on the platforms that have such a
+bit; on Windows they inherit the app data folder's ACL, which is the user's
+alone. The conversation id is checked before it becomes a path, so a name that
+was not made by this app cannot point the write somewhere else.
+
+A journal holds the same text a conversation holds, so it goes when the
+conversation goes: **Settings → Privacy** removes the journals of the side
+being cleared, and removes the rest when everything is removed.
+
+The journal is temporary. The answer is written to `threads.json` when it
+ends, and the journal is removed then — but only once that write has
+succeeded. A journal left behind is an answer that was cut off, and the next
+launch puts it back into its conversation, marked as one that did not finish.
+
+On the website there is no app data directory, so the journal goes in the
+browser's storage under `tavi.partial.<conversation-id>`, and the same
+recovery happens. The website's conversations are already evictable, so a
+journal there is a kindness rather than a guarantee.
+
 #### Window state — app data
 
 `src-tauri/src/window_state.rs` writes `window-state.json` into the app data
 directory: the window's size and whether it was maximized, so the app opens as
 large as it was left rather than at the size it was configured with.
-
 It is app data and not a preference because it belongs to the installed
 program rather than to the webview's profile: a window that forgets how big it
 was is a window that opens at the wrong size every morning, and the state

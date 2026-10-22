@@ -24,6 +24,7 @@ import { providerCatalogue, type SlimModel } from "./catalogue.ts"
 import * as desktop from "./desktop.ts"
 import { isDesktopApp } from "./platform.ts"
 import { providerFor } from "./providers.ts"
+import type { Side } from "./sides.ts"
 import * as web from "./web.ts"
 import type { KeyStandingReport, ProviderKey } from "./secret.ts"
 
@@ -296,6 +297,68 @@ export const streamChat = (
   isDesktopApp()
     ? desktop.streamChat(request, onEvent, signal)
     : web.streamChat(request, onEvent, signal)
+
+/* -------------------------------------------------------------------------- */
+/* The answers in flight                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One line of a journal.
+ *
+ * An answer that is being written is written down as it grows, and every line
+ * carries the whole of it so far. The lines of one answer share an `id`, and
+ * the last of them says the answer ended.
+ *
+ * A journal whose last line does not say so is an answer that was cut off —
+ * by a crash, or by the app being closed. That is the whole point of the
+ * journal: an answer that was interrupted is still an answer, and it is
+ * marked as one that did not finish rather than as one that never began.
+ */
+export type PartialLine = {
+  /** The turn this line belongs to. Every line of one answer shares it. */
+  id: string
+  role: "assistant"
+  /** Which side the answer was asked on. */
+  side: Side
+  /** The model it was asked with, when there was one. */
+  model?: string
+  /** The whole of the answer as it has arrived so far. */
+  text: string
+  /** Set on the last line of an answer that finished. */
+  stopReason: "end_turn" | "stopped" | null
+  /** When the line was written. */
+  timestamp: string
+}
+
+/** A journal, as it is read back: the conversation it belongs to, and its lines. */
+export type PartialJournal = {
+  /** The conversation the journal belongs to. */
+  id: string
+  /** The lines, as they were written. */
+  contents: string
+}
+
+/**
+ * Adds one line to the journal of an answer that is being written.
+ *
+ * The journal only ever grows, so this is cheap enough to call often.
+ */
+export const appendPartial = (threadId: string, line: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.appendPartial(threadId, line)
+    : web.appendPartial(threadId, line)
+
+/** Every journal that is there. */
+export const readPartials = (): Promise<PartialJournal[]> =>
+  isDesktopApp() ? desktop.readPartials() : web.readPartials()
+
+/** Removes one journal. */
+export const clearPartial = (threadId: string): Promise<void> =>
+  isDesktopApp() ? desktop.clearPartial(threadId) : web.clearPartial(threadId)
+
+/** Removes every journal. */
+export const clearPartials = (): Promise<void> =>
+  isDesktopApp() ? desktop.clearPartials() : web.clearPartials()
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

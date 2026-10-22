@@ -31,7 +31,15 @@ export type StoredMention = {
 
 export type StoredTurn =
   | { id: string; role: "user"; text: string; files: StoredFile[]; mentions: StoredMention[] }
-  | { id: string; role: "assistant"; text: string; stopped?: boolean }
+  | {
+      id: string
+      role: "assistant"
+      text: string
+      /** The user stopped it. */
+      stopped?: boolean
+      /** It did not finish — the app died, or was closed, while it was being written. */
+      incomplete?: boolean
+    }
   /** Carries the summary it stands for, so it can be sent with later turns. */
   | { id: string; role: "summary"; text: string }
 

@@ -29,5 +29,7 @@ and what it does and does not do.
 | Document | What it covers |
 |---|---|
 | [`plan/later-on.md`](plan/later-on.md) | What is deferred, and why: the features that were deliberately left out, the things noticed while building, and the three that need a machine to check |
+| [`plan/build-plan.md`](plan/build-plan.md) | What to build next, bottom-up: the stack from the storage layer to the features, with the front-end and back-end work for each layer, and the conversation runtime that comes first |
+| [`plan/in-flight-answers.md`](plan/in-flight-answers.md) | The design for writing an answer down while it is still being written, so a crash mid-stream does not lose it |
 | [`plan/Plan_master.md`](plan/Plan_master.md) | The master plan the app was built from |
 | [`plan/api-keys-and-parity.md`](plan/api-keys-and-parity.md) | The API keys screen, and the audit of every place the desktop app and the website are not the same: twelve defects (three of them found by probing the live providers and the live code), the five deliberate differences and the eleven capability differences, the research behind each decision, the fifty-item plan — forty-nine of them done and one deferred — and the guardrails that would stop the two drifting apart again |
