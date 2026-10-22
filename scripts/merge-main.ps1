@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Merge every branch into main, and prove the result before main moves.
 
@@ -350,10 +350,12 @@ function Get-Uncommitted {
     $b = (git -C $p rev-parse --abbrev-ref HEAD 2>$null)
     if ($b -and $b.Trim() -eq $Branch) {
       $files = @(git -C $p status --porcelain 2>$null)
-      return [pscustomobject]@{ Path = $p; Count = $files.Count }
+      # `Files`, not `Count` — a count is a number and it is asked for as
+      # one, rather than through a property that shadows PowerShell's own.
+      return [pscustomobject]@{ Path = $p; Files = $files.Count }
     }
   }
-  return [pscustomobject]@{ Path = $null; Count = 0 }
+  return [pscustomobject]@{ Path = $null; Files = 0 }
 }
 
 function Reset-Main {
@@ -437,10 +439,10 @@ if ($Report) {
     git -C $Worktree merge-base --is-ancestor $branch $MainBranch 2>$null
     if ($LASTEXITCODE -eq 0) { $reachable = $true }
 
-    $verdict = if ($reachable -and $uncommitted.Count -eq 0) {
+    $verdict = if ($reachable -and $uncommitted.Files -eq 0) {
       "fully in $MainBranch — safe to delete"
     } elseif ($reachable) {
-      "in $MainBranch, but holding $($uncommitted.Count) uncommitted file(s) — commit them before deleting"
+      "in $MainBranch, but holding $($uncommitted.Files) uncommitted file(s) — commit them before deleting"
     } else {
       "$ahead commit(s) not in $MainBranch yet — do not delete"
     }
@@ -451,7 +453,7 @@ if ($Report) {
     Write-Log "  commits in $MainBranch not in it : $behind"
     Write-Log "  every commit reachable from $MainBranch : $reachable"
     if ($uncommitted.Path) {
-      Write-Log "  uncommitted files : $($uncommitted.Count)  ($($uncommitted.Path))"
+      Write-Log "  uncommitted files : $($uncommitted.Files)  ($($uncommitted.Path))"
       foreach ($f in @(git -C $uncommitted.Path status --porcelain 2>$null)) {
         Write-Log "      $f"
       }
@@ -479,17 +481,19 @@ New-Item -ItemType Directory -Path $scratch -Force | Out-Null
 
 $merged = @()
 $problems = @()
+$status = @()
 
 foreach ($branch in $Branches) {
   $ahead = Get-BranchCommits -Branch $branch -Into $MainBranch
   if ($ahead -eq 0) {
     Write-Log "$branch is already in $MainBranch. Nothing to do."
+    $status += [pscustomobject]@{ Branch = $branch; State = "already in $MainBranch"; Detail = "" }
     continue
   }
 
   $uncommitted = Get-Uncommitted -Branch $branch
-  if ($uncommitted.Count -gt 0) {
-    Write-Log "$branch has $uncommitted.Count uncommitted file(s) in $($uncommitted.Path). Only its committed work can be merged." "WARN"
+  if ($uncommitted.Files -gt 0) {
+    Write-Log "$branch has $($uncommitted.Files) uncommitted file(s) in $($uncommitted.Path). Only its committed work can be merged." "WARN"
   }
 
   Write-Log "merging $branch ($ahead commit(s)) into $MainBranch"
@@ -502,6 +506,7 @@ foreach ($branch in $Branches) {
     $detail = if ($conflicts.Count) { "conflicts in: $($conflicts -join ', ')" } else { "the merge did not apply" }
     Write-Log "$branch did not merge. $detail" "ERROR"
     $problems += "Branch $branch would not merge into $MainBranch. $detail. The merge output is in $mergeOut."
+    $status += [pscustomobject]@{ Branch = $branch; State = "would not merge"; Detail = $detail }
     continue
   }
 
@@ -515,12 +520,14 @@ foreach ($branch in $Branches) {
     Reset-Main
     Write-Log "$branch merged cleanly but did not pass the gate at '$($failed.Name)'. main was not moved." "ERROR"
     $problems += "Branch $branch merged into $MainBranch without conflicts, but the gate failed at step '$($failed.Name)'. The output is in $($failed.Out). main was left exactly as it was."
+    $status += [pscustomobject]@{ Branch = $branch; State = "gate failed"; Detail = "$($failed.Name)" }
     continue
   }
 
   git -C $Worktree commit --no-edit -m "Merge branch '$branch' into $MainBranch" 2>&1 | Out-Null
   Write-Log "merged $branch into $MainBranch and proved it"
   $merged += $branch
+  $status += [pscustomobject]@{ Branch = $branch; State = "merged and proved"; Detail = "" }
 }
 
 # Push, if there is anything to push.
@@ -545,6 +552,18 @@ if ($problems.Count -gt 0) {
   Invoke-Agent -SessionId (Resolve-Session) -Problems $problems -Merged $merged
 } else {
   Write-Log "everything merged and everything passed. main is green."
+}
+
+# What happened to each branch, in one place. This is the answer to "is
+# everything in main yet", and it is what the report gives in more detail.
+if ($status.Count -gt 0) {
+  Write-Log ""
+  Write-Log "where each branch stands:"
+  foreach ($s in $status) {
+    $line = "  {0,-18} {1}" -f $s.Branch, $s.State
+    if ($s.Detail) { $line += " ($($s.Detail))" }
+    Write-Log $line
+  }
 }
 
 Write-Log "--- merge run finished ---"

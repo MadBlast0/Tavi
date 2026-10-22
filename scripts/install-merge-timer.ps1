@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Put the merge bot on a timer, so main is kept up to date without
     anybody having to remember to do it.
