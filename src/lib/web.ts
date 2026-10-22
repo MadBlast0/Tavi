@@ -21,9 +21,11 @@ import type {
   CloneResult,
   KeyStandingReport,
   ModelCatalogue,
+  PartialJournal,
   ProjectsListing,
   ProviderKey,
 } from "./api.ts"
+import { forgetStorage, readStorage, storageKeys, writeStorage } from "./storage.ts"
 
 /**
  * The header that makes a request something a browser will not send on its
@@ -261,6 +263,60 @@ export const streamChat = async (
     }
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* The answers in flight                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The name a conversation's journal is stored under.
+ *
+ * The website has no app-data directory, so the journal goes where the
+ * website's conversations go: the browser's storage. It is kept under its own
+ * name so that it can be found again, and so that removing the conversations
+ * can remove it with them.
+ */
+const partialName = (threadId: string) => `partial.${threadId}`
+
+/**
+ * Adds one line to the journal of an answer that is being written.
+ *
+ * A browser's storage is a set of named values rather than a set of files, so
+ * there is nothing to append to: the whole of the journal is read and written
+ * back. It is small — an answer, not a history — and the same thing happens
+ * in the browser as on the desktop, so the two stay in step.
+ */
+export const appendPartial = async (
+  threadId: string,
+  line: string
+): Promise<void> => {
+  const name = partialName(threadId)
+  const existing = readStorage(name) ?? "";
+  writeStorage(name, existing + line + "\n");
+};
+
+/** Every journal that is there. */
+export const readPartials = async (): Promise<PartialJournal[]> => {
+  const journals: PartialJournal[] = [];
+  for (const name of storageKeys("partial.")) {
+    const contents = readStorage(name);
+    if (contents === undefined) continue;
+    journals.push({ id: name.slice("partial.".length), contents });
+  }
+  return journals;
+};
+
+/** Removes one journal. */
+export const clearPartial = async (threadId: string): Promise<void> => {
+  forgetStorage(partialName(threadId));
+};
+
+/** Removes every journal. */
+export const clearPartials = async (): Promise<void> => {
+  for (const name of storageKeys("partial.")) {
+    forgetStorage(name);
+  }
+};
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

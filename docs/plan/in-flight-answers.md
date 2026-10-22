@@ -21,37 +21,58 @@ and found again on the next launch.
 
 ## 2. Doing it the same way
 
-The behaviour to match, and what each part means here:
+### What the reference actually does
+
+Researched from the reference app's own documentation and the format its
+transcripts are written in. These are facts, not guesses:
+
+| | What it does |
+|---|---|
+| **Where** | `~/.claude/projects/<project>/<session-id>.jsonl` — one file per session, named with the session's id. The project directory is the working directory's path with every non-alphanumeric character replaced by `-`. |
+| **The format** | JSON Lines: one JSON object per line, not pretty-printed. Each line is a self-contained event. |
+| **Append-only** | *"Claude Code writes new lines as the session progresses; nothing is rewritten or deleted."* |
+| **The index** | There is **no central index**. A session is found by its file name; the list is the directory. |
+| **During a stream** | *"A single assistant message may be split across multiple JSONL lines sharing the same `requestId` and `message.id`. This happens during streaming — early lines may have `stop_reason: null` and partial content, while the final line has the complete content and `stop_reason` set."* |
+| **Reading a group** | The **last** line of the group is the complete one. The early ones are partial. |
+| **An interrupted thing** | *"A tool that was still running when the previous process ended, for example in a crash… Claude sees the call marked as cut off before its result was recorded, and is told to check whether it took effect before running it again."* |
+| **Interrupted background work** | *"shows up in the resumed transcript as a note that it didn't finish."* |
+| **Crash detection** | A separate directory holds *"one small file per running session, used to detect concurrent sessions and crashes"*, cleared on the next launch. |
+| **Writing** | Continuous. Suppressible entirely with an environment variable, and suppressible for one run with a flag. |
+| **Retention** | Age-based. Transcripts started in the desktop app have their own age limit, separate from the rest. |
+| **Plaintext** | Not encrypted at rest. *"OS file permissions are the only protection."* |
+
+### What that means here
 
 | Behaviour | What it means in this app |
 |---|---|
-| **A conversation has its own file** | Each answer in flight gets its own file, so two conversations answering at once cannot touch each other's |
+| **A conversation has its own file** | Each answer in flight gets its own file, so two conversations answering at once cannot touch each other |
 | **Append-only** | New text is added to the end of the file; what is already there is never rewritten |
-| **Durable as it arrives** | The text so far is on disk while the answer is still being written |
-| **A truncated answer reads back as truncated** | It is visibly unfinished, and is not mistaken for a complete answer |
-| **An index beside it** | The list of conversations stays where it is — the file of conversations — and the journal beside it holds only what is in flight |
+| **A group of lines sharing an id** | The lines of one answer share its turn id, exactly as the reference's share a request id |
+| **The last line is the complete one** | Every line carries the whole of the answer as it has arrived, and the last one says the answer ended |
+| **Marked as cut off** | An answer that was interrupted is stored marked as one that did not finish, and the model is told so on the next turn |
+| **The directory is the index** | There is no list of journals to keep in step: the folder of them *is* the list |
 
-### What is sourced, and what is inferred
+### What is not copied, and why
 
-Stated plainly, because the distinction matters when the design is wrong:
+- **Their field names.** The line format is theirs and is *"internal"* and
+  *"changes between versions"*. We use our own content shape and copy the
+  mechanism, not the spelling.
+- **Their conversation tree.** Their lines carry a `parentUuid` chain, because
+  a branch is a copy of a transcript and a subagent is a sidechain. Ours are
+  linear, so a turn id is enough to match on.
+- **Their per-session transcripts.** Their durable conversations are *also*
+  one file per session, appended to. Ours are one file for both collections,
+  written as a whole — a settled decision in `docs/architecture.md`. B6 is
+  about the answer in flight, and the journal is a separate thing with a
+  separate lifetime, so the decision stands.
 
-- **Sourced.** The research file cites, in passing, that a session's events live
-  in their own file under a per-project directory, with a separate
-  `sessions-index.json` beside it listing them for the sidebar — that is the
-  `#51617` report, and it is a *warning* about that shared index being
-  corrupted between concurrent sessions, not a design document.
-- **Inferred.** That those files are JSON Lines, written by appending one event
-  per line as it happens; that an assistant message accumulates in place while
-  it streams; and that a message cut off mid-write reads back as what it was.
-  This is widely known behaviour of that app, but the research file does not
-  state it.
-- **Not covered at all.** The research file is about docking, panes,
-  notifications and worktrees. **It says nothing about mid-stream
-  persistence**, so this design cannot be sourced from it, and nothing here
-  should be read as a quotation of it.
-
-So the *observable* behaviour to match is the table above. The *mechanism* is
-ours.
+  It is worth naming, though, because it is the thing that has to change next:
+  a whole-collection rewrite from the frontend's memory loses turns when two
+  conversations answer at once, and the next layer of the build plan —
+  several conversations at once — is exactly when that starts to bite.
+- **Their crash-detection directory.** They keep a small file per running
+  session, to tell a crash from a clean exit. Ours does not need one: a
+  journal with no last line saying the answer ended *is* the marker.
 
 ---
 
@@ -305,3 +326,59 @@ moments later.
 | A path built from an id | The id is checked against a plain pattern before it becomes a path. |
 | A journal that grows without end | One file per conversation, deleted when the answer ends. |
 | The journal outliving the app's own crash | That is the point of it. |
+
+---
+
+## 13. What was built
+
+| | Where |
+|---|---|
+| The journal on disk | `src-tauri/src/partials.rs` — `append_partial`, `read_partials`, `clear_partial`, `clear_partials` |
+| A private directory of the app's own | `src-tauri/src/appfile.rs` — `private_dir`, `keep_private` |
+| The operations, whichever build this is | `src/lib/api.ts` |
+| The desktop adapter | `src/lib/desktop.ts` |
+| The browser adapter | `src/lib/web.ts`, and `storageKeys` in `src/lib/storage.ts` |
+| The format, the buffering and the recovery | `src/lib/partials.ts` |
+| Writing the answer down as it arrives | `src/blocks/prompt-input/prompt-block.tsx` — `respondReal` |
+| Telling the model an answer was cut off | the same file — `CUT_OFF` |
+| Putting the answers back on launch | `src/main.tsx` — `recoverAnswers` |
+| Removing the journals with the conversations | `src/blocks/shell/settings-privacy.tsx` |
+| Where they live | `docs/storage.md` |
+
+### The choices that were made along the way
+
+- **The journal is removed only once the conversation write has succeeded.**
+  A conversation write can fail — a full disk — and a journal left behind is
+  the answer, recovered on the next launch. So `persist` now reports whether
+  the write happened, and the journal is removed only when it did.
+- **The answer is written whole, not by what is new.** Every line carries the
+  whole of the answer so far, because a line the crash cut in half is then
+  discarded and the line before it still has the answer. The cost is that the
+  journal holds the answer several times over, and the flush rule is what
+  keeps that to about eight times rather than its square: the answer is
+  written again once it has grown by a kilobyte, or by an eighth of what has
+  been written so far, whichever is more.
+- **A slow answer is written anyway, every two seconds.** So a crash costs
+  seconds rather than the whole turn.
+- **The model is told.** An answer that was cut off is in the conversation as
+  a partial one, and a model reading it would take it for the whole answer
+  and carry on as though it had finished. So the request carries a note that
+  it was cut off — which is what the reference does for an interrupted tool
+  call, and for background work that did not finish.
+- **The two copies are settled by length, not by time.** The journal is
+  written first and the conversation second, so the journal is never behind,
+  except when the answer finished and the journal was not removed before the
+  app died. Comparing the lengths settles both cases without a timestamp that
+  could be wrong.
+
+### The one thing that was left for later
+
+The journal is written by the composer, which is the only thing that holds
+the stream today. When the conversation runtime arrives — the next layer of
+the build plan — the runtime becomes the writer, and the composer becomes a
+reader. The journal's own API does not change, so that is a change of one
+call site.
+
+Until then there is no case in which the composer is not mounted while an
+answer is being written, because switching threads aborts the reply. So the
+journal is complete for the app as it is, and carries forward unchanged.

@@ -80,6 +80,39 @@ export const writeStorage = (name: string, value: string | undefined): boolean =
 };
 
 /**
+ * Every name under the app's namespace that starts with the given prefix.
+ *
+ * `localStorage` can be listed but not searched, so a thing that is stored
+ * under a name derived from something else — a conversation's own journal, say
+ * — can only be found by looking at every name. The names are returned
+ * without the namespace, so they can be handed straight back to `readStorage`.
+ *
+ * Both namespaces are looked at, because a value that has not been read yet
+ * is still in the old one, and it is still a value.
+ */
+export const storageKeys = (prefix: string): string[] => {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (const namespace of [NAMESPACE, LEGACY_NAMESPACE]) {
+      const head = `${namespace}.`;
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key || !key.startsWith(head)) continue;
+        const name = key.slice(head.length);
+        if (!name.startsWith(prefix) || seen.has(name)) continue;
+        seen.add(name);
+        names.push(name);
+      }
+    }
+    return names;
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Removes a value from both namespaces.
  *
  * `writeStorage(name, undefined)` removes only the current spelling, and the

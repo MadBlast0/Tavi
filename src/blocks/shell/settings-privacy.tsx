@@ -17,6 +17,7 @@ import {
   importConversations,
 } from "@/lib/backup"
 import { clearChats } from "@/lib/chats"
+import { forgetAnswers, forgetAnswersOnSide } from "@/lib/partials"
 import { clearSessions } from "@/lib/sessions"
 import { forgetAllWorkspaces } from "@/lib/workspace"
 import { cn } from "@/lib/utils"
@@ -135,10 +136,15 @@ export function PrivacySettings() {
       const removed: string[] = []
       if (what === "chats" || what === "everything") {
         await clearChats()
+        /* The journals of the answers that were being written when the
+           conversations went. A journal holds the same text a conversation
+           holds, so it must not outlive the removal of it. */
+        await forgetAnswersOnSide("chat")
         removed.push("every chat")
       }
       if (what === "sessions" || what === "everything") {
         await clearSessions()
+        await forgetAnswersOnSide("code")
         removed.push("every code session")
       }
       if (what === "folders" || what === "everything") {
@@ -148,6 +154,10 @@ export function PrivacySettings() {
             ? "no folder grants"
             : `${folders} folder grant${folders === 1 ? "" : "s"}`,
         )
+      }
+      if (what === "everything") {
+        /* Whatever is left: a journal whose conversation was already gone. */
+        await forgetAnswers()
       }
       setRemoving(null)
       const said = removed.join(", ")

@@ -57,6 +57,38 @@ pub fn data_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
     Some(data_dir(app)?.join(name))
 }
 
+/// Creates a directory of the app's own, kept to its owner.
+///
+/// The mode is set explicitly, because the default is `0755` and a umask can
+/// only ever take bits away. A directory the world can read is a directory
+/// whose contents the world can find, and what goes in this one is a model's
+/// answers.
+pub fn private_dir(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|e| format!("Could not create {}: {e}", path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o700));
+    }
+
+    Ok(())
+}
+
+/// Keeps a file of the app's own to its owner.
+///
+/// On Windows the mode is a no-op — the platform has no such bit — and the
+/// file inherits the directory's ACL, which is the user's alone.
+pub fn keep_private(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 /// Reads a file, if it is there.
 pub fn read_string(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
