@@ -64,6 +64,7 @@ import {
   flushAnswers,
   writePartial,
 } from "@/lib/partials"
+import { announceReply } from "@/lib/notifications"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
 import {
   cancelClone,
@@ -1789,6 +1790,22 @@ export function PromptBlock() {
       void persist(settled, { ...write, usage: reported }).then((saved) => {
         if (saved) void discardPartial(threadId)
       })
+
+      /* The reply is on screen, so it needs no announcement — unless the app
+         is in the background, which is the whole case. The rule is written
+         once, in `notifications.ts`, and it is answered here by what this
+         component knows: the reply finished, and this is the conversation it
+         belongs to.
+
+         The title is the conversation's name rather than the app's, because a
+         toast that says only "a reply finished" tells the reader nothing
+         when there is more than one conversation, and the whole point is
+         knowing which one to come back to. */
+      const title =
+        write.side === "chat"
+          ? findChat(threadId)?.title
+          : findSession(threadId)?.title
+      void announceReply({ title: title || "Tavi", text: shown })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "unknown error"

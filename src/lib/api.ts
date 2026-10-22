@@ -361,6 +361,46 @@ export const clearPartials = (): Promise<void> =>
   isDesktopApp() ? desktop.clearPartials() : web.clearPartials()
 
 /* -------------------------------------------------------------------------- */
+/* Notifications                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** What the operating system says about permission to raise a toast. */
+export type NotificationPermission = "granted" | "denied" | "default"
+
+/**
+ * Whether the operating system will let the app raise a toast.
+ *
+ * On Windows it does not ask: a toast is a toast. On macOS and in a browser
+ * it does.
+ */
+export const notificationPermission = (): Promise<NotificationPermission> =>
+  isDesktopApp()
+    ? desktop.notificationPermission()
+    : web.notificationPermission()
+
+/** Asks the operating system for permission to raise a toast. */
+export const requestNotificationPermission = (): Promise<boolean> =>
+  isDesktopApp()
+    ? desktop.requestNotificationPermission()
+    : web.requestNotificationPermission()
+
+/** Raises a toast. */
+export const showSystemNotification = (title: string, body: string): void =>
+  isDesktopApp()
+    ? desktop.showNotification(title, body)
+    : web.showNotification(title, body)
+
+/**
+ * Whether the app is in front of the reader.
+ *
+ * On the desktop it is the window's own focus. In a browser it is the
+ * document's focus and its visibility — a tab in the background is not in
+ * front even when the window is.
+ */
+export const systemHasFocus = (): Promise<boolean> =>
+  isDesktopApp() ? desktop.windowHasFocus() : web.windowHasFocus()
+
+/* -------------------------------------------------------------------------- */
 /* The projects                                                                */
 /* -------------------------------------------------------------------------- */
 

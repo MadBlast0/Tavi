@@ -21,6 +21,7 @@ import type {
   CloneResult,
   KeyStandingReport,
   ModelCatalogue,
+  NotificationPermission,
   PartialJournal,
   ProjectsListing,
   ProviderKey,
@@ -317,6 +318,61 @@ export const clearPartials = async (): Promise<void> => {
   for (const name of storageKeys("partial.")) {
     forgetStorage(name);
   }
+};
+
+/* -------------------------------------------------------------------------- */
+/* Notifications                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the browser will let the app raise a notification.
+ *
+ * The browser's own permission, which it asks for when the reader asks for
+ * one and which it can take away again.
+ */
+export const notificationPermission = async (): Promise<NotificationPermission> => {
+  if (typeof Notification === "undefined") return "denied";
+  return Notification.permission as NotificationPermission;
+};
+
+/** Asks the browser for permission to raise a notification. */
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (typeof Notification === "undefined") return false;
+  try {
+    return (await Notification.requestPermission()) === "granted";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Raises a notification.
+ *
+ * The browser's own, which is a toast from the operating system when the
+ * browser is running as an application and a card in its own centre when it
+ * is a tab. Either way it only exists while the tab does: a closed tab is
+ * not there to raise one, and a notification that outlived the tab would need
+ * a push service and a service worker, which is a different thing entirely.
+ */
+export const showNotification = (title: string, body: string): void => {
+  if (typeof Notification === "undefined") return;
+  try {
+    new Notification(title, { body });
+  } catch {
+    /* A browser that refuses is a browser that has said no. */
+  }
+};
+
+/**
+ * Whether the app is in front of the reader.
+ *
+ * The document's focus and its visibility. A tab in the background is not in
+ * front even when the window it is in has the focus, which is why both are
+ * asked about.
+ */
+export const windowHasFocus = async (): Promise<boolean> => {
+  if (typeof document === "undefined") return false;
+  return document.visibilityState !== "hidden" && document.hasFocus();
 };
 
 /* -------------------------------------------------------------------------- */

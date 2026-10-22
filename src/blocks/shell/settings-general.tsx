@@ -7,6 +7,13 @@ import { IconSwitch, type IconSwitchOption } from "@/components/icon-switch"
 import { SettingRow } from "@/components/setting-row"
 import { Switch } from "@/components/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
+import {
+  askForNotifications,
+  notificationPreferences,
+  setCompletionNotifications,
+  setInFrontNotifications,
+  setNotificationPreview,
+} from "@/lib/notifications"
 import { useThemePreference, type ThemePreference } from "@/lib/theme"
 import { FontPicker } from "./settings-font"
 import { PalettePicker } from "./settings-palette"
@@ -141,13 +148,121 @@ function PaletteRow() {
 }
 
 /**
+ * The notification rows, which work.
+ *
+ * Three switches, because there are two questions and they are different
+ * ones: *whether* to be told, and *how much* to be told. Somebody who wants
+ * a preview in the background and none in the foreground cannot say so in a
+ * single switch.
+ *
+ * The second and the third are disabled while the first is off, because the
+ * two would otherwise contradict each other — a switch that reads "on" and
+ * does nothing is the one thing worse than a switch that reads "off".
+ *
+ * **The permission is asked for here, and not at launch.** A permission asked
+ * for before the reader knows what it is for is a permission asked for
+ * before the question, and the answer they give is the answer to a question
+ * they were not asked. If it is refused, the setting goes back off and says
+ * so.
+ */
+function NotificationRows() {
+  const [preferences, setPreferences] = React.useState(notificationPreferences)
+  const [refused, setRefused] = React.useState(false)
+
+  const onCompletions = async (on: boolean) => {
+    if (!on) {
+      setCompletionNotifications(false)
+      setRefused(false)
+      setPreferences(notificationPreferences())
+      return
+    }
+    const granted = await askForNotifications()
+    if (!granted) {
+      setRefused(true)
+      setPreferences(notificationPreferences())
+      return
+    }
+    setRefused(false)
+    setCompletionNotifications(true)
+    setPreferences(notificationPreferences())
+  }
+
+  return (
+    <>
+      <SettingRow
+        label="Response completions"
+        description="Tell me when a reply finishes while the app is in the background."
+      >
+        <Switch
+          checked={preferences.completions}
+          onCheckedChange={(on) => void onCompletions(on)}
+          aria-label="Response completions"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Also when the app is in front"
+        description="Tell me even when the answer is on screen."
+      >
+        <Switch
+          checked={preferences.inFront}
+          disabled={!preferences.completions}
+          onCheckedChange={(on) => {
+            setInFrontNotifications(on)
+            setPreferences(notificationPreferences())
+          }}
+          aria-label="Also when the app is in front"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Show a preview"
+        description="Put the first line of the answer in the notification."
+      >
+        <Switch
+          checked={preferences.preview}
+          disabled={!preferences.completions}
+          onCheckedChange={(on) => {
+            setNotificationPreview(on)
+            setPreferences(notificationPreferences())
+          }}
+          aria-label="Show a preview"
+        />
+      </SettingRow>
+
+      {refused ? (
+        <p className="text-xs text-muted-foreground">
+          The system did not allow notifications, so there is nothing to show.
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * The rows that are about a service this app does not have.
+ *
+ * Mentions, comments on a thing you own and things shared with you all need
+ * an account, a place where things are shared and a mail server to tell you
+ * about it. This app has none of the three, and it is not going to grow an
+ * account system because a settings card has a row for one.
+ *
+ * So they stay off, and they say **what is missing** rather than the generic
+ * *"not built yet"*, which is true of everything and so says nothing about
+ * any of them in particular.
+ */
+const NO_SERVICE =
+  "There is no account and nothing to share, so there is nothing to be mentioned in."
+
+/**
  * The General section.
  *
- * Everything in it except Theme, Colour palette and App font is a row with
- * the shape of a control and nothing behind it. They are here as a layout
- * rather than as settings: the card's proportions, the two-pane split and the
- * scroll of the pane are all decided by what fits, and there is no way to know
- * what fits from one line of placeholder text.
+ * Everything in it except Theme, Colour palette, App font and the three
+ * notification rows is a row with the shape of a control and nothing behind
+ * it. They are here as a layout rather than as settings: the card's
+ * proportions, the two-pane split and the scroll of the pane are all decided
+ * by what fits, and there is no way to know what fits from one line of
+ * placeholder text.
  *
  * Each inert row says why in its own tooltip rather than being silently dead,
  * and none of them is enabled. A row that looked live and was not would be the
@@ -206,17 +321,11 @@ export function GeneralSettings() {
       </Group>
 
       <Group title="Notifications">
-        <SettingRow
-          label="Response completions"
-          why={NOT_BUILT}
-          description="Get notified when a response has finished. Useful for long-running tasks."
-        >
-          <PlaceholderSwitch label="Response completions" />
-        </SettingRow>
+        <NotificationRows />
 
         <SettingRow
           label="Mentions and replies"
-          why={NOT_BUILT}
+          why={NO_SERVICE}
           description="Get an email when someone @mentions you on an artifact, or replies in a comment thread you're part of."
         >
           <PlaceholderSwitch label="Mentions and replies" />
@@ -224,7 +333,7 @@ export function GeneralSettings() {
 
         <SettingRow
           label="Comments on your artifacts"
-          why={NOT_BUILT}
+          why={NO_SERVICE}
           description="Get an email when someone comments on an artifact you own, even when you're not mentioned."
         >
           <PlaceholderSwitch label="Comments on your artifacts" />
@@ -232,7 +341,7 @@ export function GeneralSettings() {
 
         <SettingRow
           label="Artifacts shared with you"
-          why={NOT_BUILT}
+          why={NO_SERVICE}
           description="Get an email when someone shares an artifact with you."
         >
           <PlaceholderSwitch label="Artifacts shared with you" />
