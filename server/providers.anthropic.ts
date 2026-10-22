@@ -27,7 +27,8 @@ import {
   type AnthropicModel,
 } from "../src/lib/provider-capabilities.ts";
 import {
-  serializeReasoning,
+  checkReasoning,
+  sdkOptionsFor,
   type ReasoningPreferences,
   type SerializedReasoning,
 } from "../src/lib/provider-reasoning.ts";
@@ -48,13 +49,16 @@ export const anthropicAdapter: ModelProviderAdapter = {
       throw new Error("ANTHROPIC_API_KEY is not set");
     }
     const base = connection.baseUrl ?? "https://api.anthropic.com/v1";
-    const response = await fetch(`${base}/models?limit=1000`, {
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-        accept: "application/json",
+    const response = await fetch(
+      `${base}${connection.modelsPath ?? "/models"}?limit=1000`,
+      {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          accept: "application/json",
+        },
       },
-    });
+    );
     if (!response.ok) {
       throw new Error(`Anthropic models request failed: HTTP ${response.status}`);
     }
@@ -81,6 +85,52 @@ export const anthropicAdapter: ModelProviderAdapter = {
     capabilities: ModelReasoningCapabilities,
     preferences: ReasoningPreferences,
   ): SerializedReasoning {
-    return serializeReasoning("anthropic", capabilities, preferences);
+    const verdict = checkReasoning(capabilities, preferences);
+    if (!verdict.ok) return { kind: "reject", message: verdict.message };
+
+    /* Anthropic's thinking mode is its own control, and it is chosen apart
+       from the effort: a thinking mode never sets an effort, and an effort
+       never sets a thinking mode. */
+    const fields: Record<string, unknown> = {};
+    const thinking: Record<string, unknown> = {};
+
+    if (preferences.thinkingMode.mode === "explicit") {
+      const requested = preferences.thinkingMode.value;
+      const options = capabilities.thinkingMode.options ?? [];
+      if (capabilities.thinkingMode.status !== "supported") {
+        return {
+          kind: "reject",
+          message:
+            "This model's thinking modes are not published, so that setting cannot be verified. Use the provider default instead.",
+        };
+      }
+      const match = options.find((option) => option.value === requested);
+      if (!match) {
+        return {
+          kind: "reject",
+          message: `This model does not accept thinking mode "${requested}". It accepts: ${options
+            .map((option) => option.value)
+            .join(", ")}.`,
+        };
+      }
+      thinking.type = match.value;
+      /* `enabled` is manual thinking, which is meaningless without a budget, so
+         it is never sent on its own. */
+      if (match.behavior === "manual_enabled") {
+        return {
+          kind: "reject",
+          message:
+            'Extended thinking needs a token budget, which this app does not set yet. Choose "Adaptive" or use the provider default.',
+        };
+      }
+    }
+
+    const effort = sdkOptionsFor("anthropic", verdict.level);
+    if (effort) Object.assign(fields, effort);
+    if (Object.keys(thinking).length) fields.thinking = thinking;
+
+    return Object.keys(fields).length
+      ? { kind: "payload", fields }
+      : { kind: "omit" };
   },
 };

@@ -74,7 +74,7 @@ import {
   type AgentMode,
 } from "@/lib/modes"
 import type { Side } from "@/lib/sides"
-import { serializeReasoning } from "@/lib/provider-reasoning"
+import { checkReasoning } from "@/lib/provider-reasoning"
 import { unknownCapabilities } from "@/lib/reasoning"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
@@ -1597,24 +1597,29 @@ export function PromptBlock() {
       setStatus("streaming")
       setTurns((list) => [...list, { id, role: "assistant", text: "", streaming: true }])
 
-      /* The reasoning preference, written the provider's way.
+      /* The reasoning preference, checked against the model.
        *
        * A level the model does not publish is refused, and the refusal says
        * why. It is the shared rule, so the desktop app and the website's
-       * server answer the same question the same way. */
-      const reasoning =
+       * server answer the same question the same way. The level itself goes
+       * out as it is, and the app that makes the request writes it in the
+       * field its provider takes it in. */
+      const verdict =
         effort && model
-          ? serializeReasoning(provider, realCapabilities[model] ?? unknownFor(model), {
-              effort: { mode: "explicit", value: effort },
-              thinkingMode: { mode: "provider_default" },
-            })
+          ? checkReasoning(
+              realCapabilities[model] ?? unknownFor(model),
+              {
+                effort: { mode: "explicit", value: effort },
+                thinkingMode: { mode: "provider_default" },
+              },
+            )
           : null;
-      if (reasoning && reasoning.kind === "reject") {
+      if (verdict && !verdict.ok) {
         setStatus("error")
         setTurns((list) =>
           list.map((turn) =>
             turn.id === id
-              ? { ...turn, text: reasoning.message, streaming: false }
+              ? { ...turn, text: verdict.message, streaming: false }
               : turn,
           ),
         )
@@ -1641,9 +1646,6 @@ export function PromptBlock() {
                provider's own fields travel with the request, because the
                desktop app makes the provider request itself. */
             ...(effort ? { reasoningEffort: effort } : {}),
-            ...(reasoning && reasoning.kind === "payload"
-              ? { reasoning: reasoning.fields }
-              : {}),
           },
         },
         (event) => {

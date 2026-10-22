@@ -965,7 +965,9 @@ function KeyDialog({
    * one: the placeholder is not an address. The others have one, and the
    * field would only ever repeat it.
    */
-  const needsAddress = Boolean(provider?.baseUrl.includes("YOUR-"))
+  const needsAddress = Boolean(
+    provider && (!provider.baseUrl || provider.baseUrl.includes("YOUR-")),
+  )
 
   const store = async () => {
     const key = value.trim()
@@ -979,7 +981,7 @@ function KeyDialog({
         provider.id,
         key,
         name.trim() || undefined,
-        address.trim() || undefined,
+        needsAddress ? address.trim() || undefined : undefined,
       )
       setValue("")
       onOpenChange(false)
@@ -1115,7 +1117,7 @@ function KeyDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                {provider ? (
+                {provider && provider.keysUrl ? (
                   <Button
                     type="button"
                     variant="ghost"

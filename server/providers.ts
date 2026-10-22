@@ -26,7 +26,8 @@ import {
 } from "../src/lib/reasoning.ts";
 import { openRouterCapabilities } from "../src/lib/catalogue.ts";
 import {
-  serializeReasoning,
+  checkReasoning,
+  sdkOptionsFor,
   type ReasoningPreferences,
   type SerializedReasoning,
 } from "../src/lib/provider-reasoning.ts";
@@ -44,6 +45,8 @@ export type ProviderConnection = {
   providerId: string;
   apiProtocol: string;
   baseUrl?: string;
+  /** The path of the model listing, when it is not `/models`. */
+  modelsPath?: string;
   /** Reference to a credential. Secrets are never stored with model metadata. */
   credentialRef?: string;
 };
@@ -155,7 +158,10 @@ export const openRouterAdapter: ModelProviderAdapter = {
     capabilities: ModelReasoningCapabilities,
     preferences: ReasoningPreferences,
   ): SerializedReasoning {
-    return serializeReasoning("openrouter", capabilities, preferences);
+    const verdict = checkReasoning(capabilities, preferences);
+    if (!verdict.ok) return { kind: "reject", message: verdict.message };
+    const fields = sdkOptionsFor("openrouter", verdict.level);
+    return fields ? { kind: "payload", fields } : { kind: "omit" };
   },
 };
 

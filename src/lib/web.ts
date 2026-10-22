@@ -149,11 +149,12 @@ export const checkProviderKey = async (
   provider: string,
   key: string,
   spend: boolean,
+  baseUrl?: string,
 ): Promise<KeyStandingReport> => {
   const response = await fetch("/api/keys/check", {
     method: "POST",
     headers: MUTATING,
-    body: JSON.stringify({ provider, key, spend }),
+    body: JSON.stringify({ provider, key, spend, baseUrl: baseUrl ?? null }),
   })
   if (!response.ok) {
     throw new Error(

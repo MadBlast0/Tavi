@@ -150,11 +150,12 @@ app share one key.
 
 ## Provider keys
 
-Tavi talks to **thirty** providers. The list is in
+Tavi talks to **twenty-eight** providers, and to any OpenAI-compatible
+endpoint of your own. The list is in
 [`src/lib/providers.ts`](src/lib/providers.ts), one row each: where the API
-lives, how the key is sent, and the shape of a request. Most of them speak
-the OpenAI chat-completions shape and differ only in their address; Anthropic,
-Google and Cohere each have a shape of their own.
+lives, how the key is sent, the shape of a request, and the field a reasoning
+level goes in. The desktop app and the website's server read the same table,
+and a test says the two agree.
 
 | | Which |
 |---|---|
@@ -163,7 +164,13 @@ Google and Cohere each have a shape of their own.
 | Anthropic · MiniMax | Anthropic's Messages shape |
 | Google Gemini | Google's generate-content shape |
 | Cohere | Cohere's chat shape |
-| Amazon Bedrock · Google Vertex AI | **not yet** — see Known limitations |
+| **Custom endpoint** | the OpenAI chat-completions shape, at an address you give |
+
+A **custom endpoint** is for a gateway, a proxy, or a model running on this
+machine: the key carries the address, and the address wins over any default.
+A few of the providers above need one too — an Azure resource and a
+Databricks workspace are not at somebody else's address — and the settings
+pane asks for it when it is needed.
 
 The composer has a **provider** control of its own, beside the model one. The
 model picker waits for it, because the models belong to one; the control opens
@@ -181,6 +188,11 @@ own console has to answer for. The providers are listed in
 `src/lib/providers.ts`, which the desktop app and the website's server both
 read, so the two call the same providers by the same names: OpenRouter,
 Anthropic, OpenAI and NVIDIA NIM.
+
+**Every address in that table was checked against the provider itself.** A
+provider that answers 401 to a request it understands and 404 to one it does
+not is how the addresses were settled: a wrong address is a 404, and a right
+one with no key is a 401.
 
 **Settings → Platform → API keys** is where a key is set, and it is the same
 screen in the app and in the browser: the same list, the same buttons, the same
@@ -716,11 +728,6 @@ so tool support is intermittent.
 
 ## Known limitations
 
-- **Two of the thirty providers are not reachable yet.** Amazon Bedrock and
-  Google Vertex AI are signed with AWS credentials and with Google's own rather
-  than with a key, and the app has no client for either. Their keys can be
-  added and the pane says plainly that the app cannot use them yet, rather
-  than taking a credential it has no way to spend.
 - **A provider's own catalogue is the only source of what a model can do.** A
   provider that publishes no capability metadata — which is most of them —
   leaves the effort control off for its models, because the app will not

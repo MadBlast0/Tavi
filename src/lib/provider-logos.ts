@@ -11,8 +11,8 @@
  * works offline, a missing network cannot leave a blank square in the list,
  * and a file in the repository can be read and checked.
  *
- * **They are drawn in the page rather than loaded as images.** A mark loaded
- * as a file cannot take the colour of the text beside it: `currentColor`
+ * **They are drawn in the page rather than loaded as images.** A mark loaded as
+ * a file cannot take the colour of the text beside it: `currentColor`
  * inside a file is resolved against that file's own document, which has no
  * colour of its own, so it comes out black — a black mark on a dark
  * background, which is a mark nobody can see. A mark drawn in the page is
@@ -29,69 +29,65 @@
  * Where the marks came from is written down in the folder beside them.
  */
 
-import alibabaMark from "@/assets/providers/alibaba.svg?raw";
-import amazon_bedrockMark from "@/assets/providers/amazon-bedrock.svg?raw";
-import anthropicMark from "@/assets/providers/anthropic.svg?raw";
-import azureMark from "@/assets/providers/azure.svg?raw";
-import cerebrasMark from "@/assets/providers/cerebras.svg?raw";
-import cloudflareMark from "@/assets/providers/cloudflare.svg?raw";
-import cohereMark from "@/assets/providers/cohere.svg?raw";
-import databricksMark from "@/assets/providers/databricks.svg?raw";
-import deepinfraMark from "@/assets/providers/deepinfra.svg?raw";
-import deepseekMark from "@/assets/providers/deepseek.svg?raw";
-import fireworksMark from "@/assets/providers/fireworks.svg?raw";
-import google_vertexMark from "@/assets/providers/google-vertex.svg?raw";
-import googleMark from "@/assets/providers/google.svg?raw";
-import groqMark from "@/assets/providers/groq.svg?raw";
-import huggingfaceMark from "@/assets/providers/huggingface.svg?raw";
-import minimaxMark from "@/assets/providers/minimax.svg?raw";
-import mistralMark from "@/assets/providers/mistral.svg?raw";
-import moonshotMark from "@/assets/providers/moonshot.svg?raw";
-import nvidia_nimMark from "@/assets/providers/nvidia-nim.svg?raw";
-import ollamaMark from "@/assets/providers/ollama.svg?raw";
 import openaiMark from "@/assets/providers/openai.svg?raw";
+import anthropicMark from "@/assets/providers/anthropic.svg?raw";
+import googleMark from "@/assets/providers/google.svg?raw";
 import openrouterMark from "@/assets/providers/openrouter.svg?raw";
+import deepseekMark from "@/assets/providers/deepseek.svg?raw";
+import xaiMark from "@/assets/providers/xai.svg?raw";
+import mistralMark from "@/assets/providers/mistral.svg?raw";
+import groqMark from "@/assets/providers/groq.svg?raw";
+import togetherMark from "@/assets/providers/together.svg?raw";
+import fireworksMark from "@/assets/providers/fireworks.svg?raw";
+import cerebrasMark from "@/assets/providers/cerebras.svg?raw";
+import nvidia_nimMark from "@/assets/providers/nvidia-nim.svg?raw";
+import huggingfaceMark from "@/assets/providers/huggingface.svg?raw";
+import deepinfraMark from "@/assets/providers/deepinfra.svg?raw";
+import azureMark from "@/assets/providers/azure.svg?raw";
+import moonshotMark from "@/assets/providers/moonshot.svg?raw";
+import zaiMark from "@/assets/providers/zai.svg?raw";
+import alibabaMark from "@/assets/providers/alibaba.svg?raw";
+import minimaxMark from "@/assets/providers/minimax.svg?raw";
 import perplexityMark from "@/assets/providers/perplexity.svg?raw";
+import ollamaMark from "@/assets/providers/ollama.svg?raw";
+import vllmMark from "@/assets/providers/vllm.svg?raw";
 import replicateMark from "@/assets/providers/replicate.svg?raw";
 import sambanovaMark from "@/assets/providers/sambanova.svg?raw";
-import togetherMark from "@/assets/providers/together.svg?raw";
-import vllmMark from "@/assets/providers/vllm.svg?raw";
+import cohereMark from "@/assets/providers/cohere.svg?raw";
+import cloudflareMark from "@/assets/providers/cloudflare.svg?raw";
 import watsonxMark from "@/assets/providers/watsonx.svg?raw";
-import xaiMark from "@/assets/providers/xai.svg?raw";
-import zaiMark from "@/assets/providers/zai.svg?raw";
+import databricksMark from "@/assets/providers/databricks.svg?raw";
 
 /** The mark for a provider, by its id. */
 const PROVIDER_MARKS: Record<string, string> = {
-  "alibaba": alibabaMark,
-  "amazon-bedrock": amazon_bedrockMark,
-  "anthropic": anthropicMark,
-  "azure": azureMark,
-  "cerebras": cerebrasMark,
-  "cloudflare": cloudflareMark,
-  "cohere": cohereMark,
-  "databricks": databricksMark,
-  "deepinfra": deepinfraMark,
-  "deepseek": deepseekMark,
-  "fireworks": fireworksMark,
-  "google-vertex": google_vertexMark,
-  "google": googleMark,
-  "groq": groqMark,
-  "huggingface": huggingfaceMark,
-  "minimax": minimaxMark,
-  "mistral": mistralMark,
-  "moonshot": moonshotMark,
-  "nvidia-nim": nvidia_nimMark,
-  "ollama": ollamaMark,
   "openai": openaiMark,
+  "anthropic": anthropicMark,
+  "google": googleMark,
   "openrouter": openrouterMark,
+  "deepseek": deepseekMark,
+  "xai": xaiMark,
+  "mistral": mistralMark,
+  "groq": groqMark,
+  "together": togetherMark,
+  "fireworks": fireworksMark,
+  "cerebras": cerebrasMark,
+  "nvidia-nim": nvidia_nimMark,
+  "huggingface": huggingfaceMark,
+  "deepinfra": deepinfraMark,
+  "azure": azureMark,
+  "moonshot": moonshotMark,
+  "zai": zaiMark,
+  "alibaba": alibabaMark,
+  "minimax": minimaxMark,
   "perplexity": perplexityMark,
+  "ollama": ollamaMark,
+  "vllm": vllmMark,
   "replicate": replicateMark,
   "sambanova": sambanovaMark,
-  "together": togetherMark,
-  "vllm": vllmMark,
+  "cohere": cohereMark,
+  "cloudflare": cloudflareMark,
   "watsonx": watsonxMark,
-  "xai": xaiMark,
-  "zai": zaiMark,
+  "databricks": databricksMark,
 };
 
 /** The mark for a provider, if there is one. */

@@ -19,10 +19,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createCohere } from "@ai-sdk/cohere";
 import { createGoogle } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 
-import { providerFor } from "../src/lib/providers.ts";
+import {
+  OPENAI_COMPATIBLE_PROVIDERS,
+  providerFor,
+} from "../src/lib/providers.ts";
 import type { OpenRouterProviderOptions } from "./providers.ts";
 
 /**
@@ -35,6 +39,7 @@ import type { OpenRouterProviderOptions } from "./providers.ts";
 export type ProviderOptions =
   | { openrouter: OpenRouterProviderOptions["openrouter"] }
   | { openai: Record<string, never> }
+  | { "openai-compatible": Record<string, never> }
   | { anthropic: Record<string, never> }
   | { google: Record<string, never> }
   | { cohere: Record<string, never> };
@@ -105,9 +110,7 @@ export const clientFor = (
       };
     }
     case "openai-chat-completions": {
-      /* OpenRouter has its own client, which knows its own request shape; the
-         other two speak the OpenAI shape, and NIM is OpenAI-compatible rather
-         than OpenAI, which is why the base address is the provider's. */
+      /* OpenRouter has its own client, which knows its own request shape. */
       if (providerId === "openrouter") {
         const openrouter = createOpenRouter({
           apiKey,
@@ -121,6 +124,27 @@ export const clientFor = (
           }),
         };
       }
+
+      /* The rest speak the OpenAI chat-completions shape, and they are not
+         OpenAI: the OpenAI package's default is the Responses API, which only
+         OpenAI has. So they go through the compatible package, which speaks
+         chat completions and nothing else. */
+      if (OPENAI_COMPATIBLE_PROVIDERS.includes(providerId)) {
+        const compatible = createOpenAICompatible({
+          apiKey,
+          baseURL: provider.baseUrl,
+          name: providerId,
+        });
+        return {
+          namespace: "openai-compatible",
+          model: (modelId) => compatible(modelId),
+          options: (fields) => ({
+            "openai-compatible": fields as Record<string, never>,
+          }),
+        };
+      }
+
+      /* OpenAI itself, on the API it has. */
       const openai = createOpenAI({ apiKey, baseURL: provider.baseUrl });
       return {
         namespace: "openai",
@@ -128,13 +152,5 @@ export const clientFor = (
         options: (fields) => ({ openai: fields as Record<string, never> }),
       };
     }
-    /* Two providers are signed with credentials the app does not hold, and
-       the app says so rather than pretending otherwise. */
-    case "aws-bedrock":
-    case "google-vertex":
-      throw new Error(
-        provider.label +
-          " is signed with credentials rather than with a key, and this app does not hold those yet.",
-      );
   }
 };

@@ -105,9 +105,10 @@ const timestamp = (value: unknown): number | null => {
  */
 const firstPublishedModel = async (
   provider: Provider,
+  baseUrl?: string,
 ): Promise<string | undefined> => {
   try {
-    const response = await fetch(identityUrlFor(provider), {
+    const response = await fetch(identityUrlFor(provider, baseUrl), {
       headers: { accept: "application/json" },
     });
     if (!response.ok) return undefined;
@@ -136,8 +137,9 @@ const checkByInference = async (
   provider: Provider,
   key: string,
   checkedAt: number,
+  baseUrl?: string,
 ): Promise<KeyStanding> => {
-  const model = await firstPublishedModel(provider);
+  const model = await firstPublishedModel(provider, baseUrl);
   if (!model) {
     return { ...unknown(), checkReason: "unreachable", checkedAt };
   }
@@ -176,12 +178,13 @@ export const fetchProviderStatus = async (
   provider: Provider,
   key: string,
   spend = false,
+  baseUrl?: string,
 ): Promise<KeyStanding> => {
   const checkedAt = Math.floor(Date.now() / 1000);
 
   if (provider.validation === "inference-probe") {
     if (!spend) return { ...unknown(), checkReason: "not-checked", checkedAt };
-    return checkByInference(provider, key, checkedAt);
+    return checkByInference(provider, key, checkedAt, baseUrl);
   }
 
   const headers: Record<string, string> = { accept: "application/json" };
