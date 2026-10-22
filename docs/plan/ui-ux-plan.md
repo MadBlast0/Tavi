@@ -60,8 +60,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 **Phase 3 — Reusable controls and overlay behaviour**
 
-| 3.1 | ▶ next | One icon-button pattern, used by every pane |
-| 3.2 | ⬜ not started | The menu and context-menu conventions |
+| 3.1 | ✅ done | One icon-button pattern, used by every pane |
+| 3.2 | ▶ next | The menu and context-menu conventions |
 | 3.3 | ⬜ not started | The popover, select and command patterns |
 | 3.4 | ⬜ not started | One dialog and confirmation convention |
 | 3.5 | ⬜ not started | The shared patterns for a pane's unhappy states |
@@ -1333,6 +1333,36 @@ when the workspace is open and holds nothing. That is settled in Task 2.1.
 
 **Acceptance criteria:** New icon controls can use one consistent pattern; keyboard users can identify and focus them.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pattern | `src/components/tooltip-icon-button.tsx` — the app's shared icon button, already the standard |
+| The check | `src/lib/icon-button.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) |
+
+**What this task found.** The pattern already existed: a `Button
+variant="ghost" size="icon"` inside a tooltip trigger, with the tooltip's
+text as the visually hidden name, so the visible name and the accessible
+name are the same string and cannot disagree. The `tooltip` prop is
+required, so a caller cannot have the button without the name. The
+component's whole purpose is to make that impossible.
+
+What was missing was the audit and the check. `docs/icons.md` §7 already
+says a new pane uses it, and `docs/components.md` already says to use
+it and not a bare `Button` with `size="icon"`. The raw `size="icon"`
+usages that remain are inside shadcn primitives — dialog close, sheet
+close, sidebar trigger and the like — which are self-contained and are not
+app-level controls. Task 3.1 says not to replace existing buttons
+globally, so they stay.
+
+`src/lib/icon-button.test.ts` is the check: the shared button exists, it
+is built on the app's button with the ghost variant and the icon size, its
+tooltip is required, it names itself for assistive technology, it shows a
+tooltip, it sizes its padding from the presence of an icon, and it
+defaults the tooltip to the bottom.
 ## Task 3.2 — Standardize tooltip, dropdown and context-menu usage
 
 **Prompt to the coding AI:**
