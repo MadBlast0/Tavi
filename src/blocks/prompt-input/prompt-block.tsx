@@ -61,6 +61,7 @@ import {
   beginPartial,
   discardPartial,
   finishPartial,
+  flushAnswers,
   writePartial,
 } from "@/lib/partials"
 import { PREF, folderPref, readPref, sidePref, writePref } from "@/lib/prefs"
@@ -537,7 +538,7 @@ const starterPool = (
 
 type Turn =
   | { id: string; role: "user"; message: PromptMessage }
-  | { id: string; role: "assistant"; text: string; streaming: boolean; stopped?: boolean }
+  | { id: string; role: "assistant"; text: string; streaming: boolean; stopped?: boolean; incomplete?: boolean }
   /** A model-written summary of everything above it; sent with later requests. */
   | { id: string; role: "summary"; text: string }
 
@@ -659,12 +660,12 @@ const expandUserTurn = async (
 }
 
 /**
- * What the model is told about an answer that was cut off.
+ * What the model is told about an answer that did not finish.
  *
- * An answer that was interrupted — by a crash, or by the app being closed —
- * is in the conversation as a partial one. A model reading it would take it
- * for the whole answer and carry on as though it had been finished, so it is
- * told that it was not.
+ * An answer that was cut off — by a crash, or by the app being closed — is in
+ * the conversation as a partial one. A model reading it would take it for the
+ * whole answer and carry on as though it had been finished, so it is told
+ * that it was not.
  *
  * It is said in brackets because it is not something the model wrote, and
  * because a bracket is something a model reads as an aside rather than as
@@ -672,6 +673,17 @@ const expandUserTurn = async (
  */
 const CUT_OFF =
   "\n\n[This answer was cut off before it finished, so it is incomplete. Carry on from where it stopped, and do not assume that anything after this point was written.]"
+
+/**
+ * What the model is told about an answer the user stopped.
+ *
+ * The same thing, said for the same reason: the answer is partial, and the
+ * model should not carry on as though it had been finished. The difference is
+ * only in why, and the model is told that too, because the two call for
+ * different things — an answer that was stopped was stopped on purpose.
+ */
+const STOPPED =
+  "\n\n[This answer was stopped before it finished, so it is incomplete. Carry on from where it stopped, and do not assume that anything after this point was written.]"
 
 /** Captures attachment text so a restored thread still carries its context. */
 const toStoredTurns = async (list: Turn[], known: WorkspaceFile[]): Promise<StoredTurn[]> =>
@@ -684,6 +696,7 @@ const toStoredTurns = async (list: Turn[], known: WorkspaceFile[]): Promise<Stor
           role: "assistant",
           text: turn.text,
           ...(turn.stopped ? { stopped: true } : {}),
+          ...(turn.incomplete ? { incomplete: true } : {}),
         }
       }
       const files = await Promise.all(
@@ -721,6 +734,7 @@ const fromStoredTurns = (list: StoredTurn[]): Turn[] =>
         text: turn.text,
         streaming: false,
         ...(turn.stopped ? { stopped: true } : {}),
+        ...(turn.incomplete ? { incomplete: true } : {}),
       }
     }
     return {
@@ -1032,6 +1046,23 @@ export function PromptBlock() {
   const [compacting, setCompacting] = React.useState(false)
   const abortRef = React.useRef<AbortController | null>(null)
   const dockRef = React.useRef<HTMLDivElement>(null)
+
+  /**
+   * The journal is written when the app goes away.
+   *
+   * An answer is written down as it grows, but the writing is buffered: the
+   * text since the last write would be lost with the window if the app were
+   * closed in the middle of an answer. So it is written on the way out.
+   *
+   * It is best-effort — the webview is on its way off, and a write that does
+   * not land is a write the two-second cadence would have made anyway.
+   */
+  React.useEffect(
+    () => () => {
+      void flushAnswers()
+    },
+    []
+  )
   /**
    * The thread being written, and the side it belongs to.
    *
@@ -1593,19 +1624,20 @@ export function PromptBlock() {
           continue
         }
         if (turn.role === "assistant") {
+          /* An answer that did not finish is in the conversation as a partial
+             one, and a model reading it would take it for the whole answer.
+             So it is told — and told why, because the two call for different
+             things. */
+          const note = turn.incomplete
+            ? CUT_OFF
+            : turn.stopped
+              ? STOPPED
+              : "";
           outbound.push({
             id: turn.id,
             role: "assistant",
-            /* An answer that was cut off is in the conversation as a partial
-               one, and a model reading it would take it for the whole answer.
-               So it is told, in the same way a stopped answer is told. */
-            parts: [
-              {
-                type: "text",
-                text: turn.text + (turn.stopped ? CUT_OFF : ""),
-              },
-            ],
-          })
+            parts: [{ type: "text", text: turn.text + note }],
+          });
           continue
         }
         outbound.push({
@@ -2253,6 +2285,14 @@ export function PromptBlock() {
                             />
                             {turn.stopped ? (
                               <p className="text-xs text-muted-foreground">Stopped</p>
+                            ) : turn.incomplete ? (
+                              /* Not "Stopped": the user did not stop it. The
+                                 app died, or was closed, while it was being
+                                 written — and saying otherwise would be a
+                                 small lie about what happened. */
+                              <p className="text-xs text-muted-foreground">
+                                Cut off — this answer did not finish
+                              </p>
                             ) : null}
                           </div>
                         )}

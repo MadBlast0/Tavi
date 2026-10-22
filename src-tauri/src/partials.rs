@@ -27,7 +27,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 
@@ -86,6 +86,102 @@ fn valid_id(id: &str) -> bool {
     !RESERVED.contains(&stem.as_str())
 }
 
+/// Adds one line to a file.
+///
+/// The line is written as it is given, with a newline after it. It is not
+/// parsed, and not checked: the format belongs to the frontend, and a line
+/// that cannot be parsed is the frontend's to notice.
+///
+/// The file is opened for appending, so nothing already in it is rewritten and
+/// a write can only ever add.
+fn append_to(path: &Path, line: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        appfile::private_dir(parent)?;
+    }
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("Could not write the answer in flight: {e}"))?;
+    appfile::keep_private(path);
+
+    file.write_all(line.as_bytes())
+        .and_then(|_| file.write_all(b"\n"))
+        .and_then(|_| file.flush())
+        .map_err(|e| format!("Could not write the answer in flight: {e}"))?;
+
+    Ok(())
+}
+
+/// Every journal in a directory, with the lines it holds.
+///
+/// The lines are given as they are on disk. A journal whose last line was cut
+/// short by a crash is given whole, and the frontend is the one that knows
+/// what a line means — so it is the one that can tell a half-written line from
+/// a complete one.
+///
+/// A journal that cannot be read is left out rather than reported. It is a
+/// copy of an answer that is also in memory, and a journal that cannot be
+/// read is not worth stopping the app for.
+fn read_all(dir: &Path) -> Vec<(String, String)> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        // Nothing has ever been written. That is not an error.
+        Err(_) => return Vec::new(),
+    };
+
+    let mut found: Vec<(String, String)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
+            continue;
+        }
+        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !valid_id(id) {
+            continue;
+        }
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue;
+        };
+        found.push((id.to_string(), contents));
+    }
+
+    found
+}
+
+/// Removes a file.
+///
+/// Removing one that is not there is not a failure: a journal is removed when
+/// the answer ends, and the answer may never have got as far as writing one.
+fn remove(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Could not remove the answer in flight: {error}")),
+    }
+}
+
+/// Removes every journal in a directory.
+///
+/// The directory is left, empty, so that the next answer has somewhere to go
+/// and does not have to create it.
+fn remove_all(dir: &Path) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
+            continue;
+        }
+        let _ = fs::remove_file(&path);
+    }
+}
+
 /// Appends one line to a conversation's journal.
 ///
 /// The line is written as it is given, with a newline after it. It is not
@@ -98,24 +194,7 @@ pub async fn append_partial(
     line: String,
 ) -> Result<(), String> {
     let path = file_for(&app, &thread_id)?;
-
-    if let Some(parent) = path.parent() {
-        appfile::private_dir(parent)?;
-    }
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| format!("Could not write the answer in flight: {e}"))?;
-    appfile::keep_private(&path);
-
-    file.write_all(line.as_bytes())
-        .and_then(|_| file.write_all(b"\n"))
-        .and_then(|_| file.flush())
-        .map_err(|e| format!("Could not write the answer in flight: {e}"))?;
-
-    Ok(())
+    append_to(&path, &line)
 }
 
 /// Every journal that is there, with the lines it holds.
@@ -131,31 +210,10 @@ pub async fn append_partial(
 #[tauri::command]
 pub async fn read_partials(app: AppHandle) -> Result<String, String> {
     let dir = dir(&app).ok_or("The app data folder is unavailable.")?;
-
-    let entries = match fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        // Nothing has ever been written. That is not an error.
-        Err(_) => return Ok("[]".to_string()),
-    };
-
-    let mut found: Vec<serde_json::Value> = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
-            continue;
-        }
-        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if !valid_id(id) {
-            continue;
-        }
-        let Ok(contents) = fs::read_to_string(&path) else {
-            continue;
-        };
-        found.push(serde_json::json!({ "id": id, "contents": contents }));
-    }
-
+    let found: Vec<serde_json::Value> = read_all(&dir)
+        .into_iter()
+        .map(|(id, contents)| serde_json::json!({ "id": id, "contents": contents }))
+        .collect();
     serde_json::to_string(&found).map_err(|e| format!("The answers in flight could not be read: {e}"))
 }
 
@@ -167,11 +225,7 @@ pub async fn read_partials(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub async fn clear_partial(app: AppHandle, thread_id: String) -> Result<(), String> {
     let path = file_for(&app, &thread_id)?;
-    match fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Could not remove the answer in flight: {error}")),
-    }
+    remove(&path)
 }
 
 /// Removes every journal.
@@ -181,27 +235,27 @@ pub async fn clear_partial(app: AppHandle, thread_id: String) -> Result<(), Stri
 #[tauri::command]
 pub async fn clear_partials(app: AppHandle) -> Result<(), String> {
     let dir = dir(&app).ok_or("The app data folder is unavailable.")?;
-
-    let entries = match fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(()),
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
-            continue;
-        }
-        let _ = fs::remove_file(&path);
-    }
-
+    remove_all(&dir);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EXTENSION, RESERVED, valid_id};
-    use std::path::PathBuf;
+    use super::{EXTENSION, RESERVED, append_to, read_all, remove, remove_all, valid_id};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    /// A scratch directory of the app's own, emptied first.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tavi-partials-{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("the scratch directory should be creatable");
+        dir
+    }
+
+    fn journal(dir: &Path, id: &str) -> PathBuf {
+        dir.join(format!("{id}.{EXTENSION}"))
+    }
 
     #[test]
     fn an_id_is_only_letters_digits_dashes_and_underscores() {
@@ -232,5 +286,109 @@ mod tests {
         assert_eq!(EXTENSION, "jsonl");
         let path = PathBuf::from("c-mfz3k-8a2b1c.jsonl");
         assert_eq!(path.extension().and_then(|e| e.to_str()), Some("jsonl"));
+    }
+
+    /// The journal holds what was written to it, and nothing else is added.
+    #[test]
+    fn a_journal_holds_the_lines_written_to_it() {
+        let dir = scratch("round-trip");
+        let path = journal(&dir, "c-one");
+        append_to(&path, "first").expect("the write should work");
+        append_to(&path, "second").expect("the second write should work");
+        let found = read_all(&dir);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, "c-one");
+        assert_eq!(found[0].1, "first\nsecond\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A journal is only ever added to. Nothing already in it is rewritten, so
+    /// a write can lose at most the line that was in flight.
+    #[test]
+    fn a_journal_only_ever_grows() {
+        let dir = scratch("grows");
+        let path = journal(&dir, "c-one");
+        append_to(&path, "first").expect("the write should work");
+        let after_first = fs::read_to_string(&path).expect("the journal should be readable");
+        append_to(&path, "second").expect("the second write should work");
+        let after_second = fs::read_to_string(&path).expect("the journal should be readable");
+        assert!(
+            after_second.starts_with(&after_first),
+            "the earlier lines should still be there"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Two conversations being written at once must not be able to overwrite
+    /// each other. That is the whole reason there is a file per conversation.
+    #[test]
+    fn two_journals_do_not_interfere() {
+        let dir = scratch("two");
+        append_to(&journal(&dir, "c-one"), "the first answer").expect("the write should work");
+        append_to(&journal(&dir, "c-two"), "the second answer").expect("the write should work");
+        let found = read_all(&dir);
+        assert_eq!(found.len(), 2);
+        let one = found.iter().find(|(id, _)| id == "c-one").expect("the first should be there");
+        let two = found.iter().find(|(id, _)| id == "c-two").expect("the second should be there");
+        assert_eq!(one.1, "the first answer\n");
+        assert_eq!(two.1, "the second answer\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A journal that is removed is gone, and removing one that was never
+    /// there is not a failure.
+    #[test]
+    fn a_journal_can_be_removed() {
+        let dir = scratch("removed");
+        let path = journal(&dir, "c-one");
+        append_to(&path, "an answer").expect("the write should work");
+        remove(&path).expect("the removal should work");
+        assert!(read_all(&dir).is_empty());
+        remove(&path).expect("removing it twice should not be a failure");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Every journal can be removed at once, and the directory is left so
+    /// that the next answer has somewhere to go.
+    #[test]
+    fn every_journal_can_be_removed() {
+        let dir = scratch("all-removed");
+        append_to(&journal(&dir, "c-one"), "one").expect("the write should work");
+        append_to(&journal(&dir, "c-two"), "two").expect("the write should work");
+        remove_all(&dir);
+        assert!(read_all(&dir).is_empty());
+        assert!(dir.exists(), "the directory should be left for the next answer");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A file that is not a journal is not a journal.
+    #[test]
+    fn a_file_that_is_not_a_journal_is_left_out() {
+        let dir = scratch("not-a-journal");
+        fs::write(dir.join("notes.txt"), "hello").expect("the file should be written");
+        append_to(&journal(&dir, "c-one"), "an answer").expect("the write should work");
+        let found = read_all(&dir);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, "c-one");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The journal holds a model's answers, so it belongs to its owner alone.
+    #[cfg(unix)]
+    #[test]
+    fn the_journal_is_kept_to_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = scratch("private");
+        let path = journal(&dir, "c-one");
+        append_to(&path, "an answer").expect("the write should work");
+
+        let file_mode = fs::metadata(&path).expect("the journal should be there").permissions().mode();
+        assert_eq!(file_mode & 0o777, 0o600, "the journal should be readable only by its owner");
+
+        let dir_mode = fs::metadata(&dir).expect("the directory should be there").permissions().mode();
+        assert_eq!(dir_mode & 0o777, 0o700, "the directory should be reachable only by its owner");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

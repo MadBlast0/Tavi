@@ -12,6 +12,7 @@ import {
   growthWarrantsAWrite,
   journalIsTheNewerCopy,
   parseJournal,
+  recoverAnswers,
   type PartialAnswer,
 } from "./partials.ts"
 
@@ -53,7 +54,7 @@ describe("the journal", () => {
       contents: line("Half an ans", null),
     })
     assert.ok(answer)
-    assert.equal(answer.stopped, true)
+    assert.equal(answer.outcome, "cut-off")
   })
 
   it("says an answer that finished is whole", () => {
@@ -62,7 +63,19 @@ describe("the journal", () => {
       contents: line("The whole thing.", "end_turn"),
     })
     assert.ok(answer)
-    assert.equal(answer.stopped, false)
+    assert.equal(answer.outcome, "complete")
+  })
+
+  it("says an answer the user stopped was stopped", () => {
+    /* The user stopped it and the app died before the conversation was
+       written. That is not the same as an answer that was cut off: somebody
+       did that on purpose. */
+    const answer = parseJournal({
+      id: "c-mfz3k-8a2b1c",
+      contents: line("Half an answer.", "stopped"),
+    })
+    assert.ok(answer)
+    assert.equal(answer.outcome, "stopped")
   })
 
   it("keeps the answer before a line the crash cut in half", () => {
@@ -78,7 +91,7 @@ describe("the journal", () => {
     })
     assert.ok(answer)
     assert.equal(answer.text, "The whole answer so far.")
-    assert.equal(answer.stopped, true)
+    assert.equal(answer.outcome, "cut-off")
   })
 
   it("skips a line that is not a line at all", () => {
@@ -114,7 +127,7 @@ describe("which copy of an answer is the answer", () => {
     turnId: "m-1",
     side: "chat",
     text,
-    stopped: true,
+    outcome: "cut-off",
   })
 
   it("takes the journal when the conversation has no such turn", () => {
@@ -165,5 +178,14 @@ describe("when the answer is written again", () => {
     /* Nothing has arrived since the last write, so there is nothing to
        write. */
     assert.equal(growthWarrantsAWrite(5_000, 5_000), false)
+  })
+})
+
+describe("putting the answers back", () => {
+  it("does nothing when there is nothing to put back", async () => {
+    /* There are no journals, so there is nothing to recover. The point of
+       the test is that the recovery runs at every launch, and that it is
+       safe to run when there is nothing to do. */
+    await recoverAnswers()
   })
 })

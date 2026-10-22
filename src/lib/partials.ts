@@ -96,8 +96,15 @@ export type PartialAnswer = {
   model?: string
   /** The whole of the answer, as far as it got. */
   text: string
-  /** Whether it was cut off rather than finished. */
-  stopped: boolean
+  /**
+   * Why the answer is not whole, if it is not.
+   *
+   * - `complete` — the answer finished.
+   * - `stopped` — the user stopped it.
+   * - `cut-off` — it was still being written when the app died, or was
+   *   closed. Nothing did that on purpose.
+   */
+  outcome: "complete" | "stopped" | "cut-off"
 }
 
 /** The line as it is written. */
@@ -306,7 +313,12 @@ export const parseJournal = (journal: PartialJournal): PartialAnswer | null => {
     side: last.side,
     ...(last.model ? { model: last.model } : {}),
     text: last.text,
-    stopped: last.stopReason === null,
+    outcome:
+      last.stopReason === null
+        ? "cut-off"
+        : last.stopReason === "stopped"
+          ? "stopped"
+          : "complete",
   };
 };
 
@@ -345,12 +357,22 @@ export const recoverAnswers = async (): Promise<void> => {
   }
 };
 
-/** The turn an answer becomes when it is put back. */
+/**
+ * The turn an answer becomes when it is put back.
+ *
+ * An answer that was cut off is marked as one that did not finish, and not
+ * as one the user stopped: the user did not stop it, and saying that they
+ * did would be a small lie about what happened.
+ */
 const recoveredTurn = (answer: PartialAnswer): StoredTurn => ({
   id: answer.turnId,
   role: "assistant",
   text: answer.text,
-  ...(answer.stopped ? { stopped: true } : {}),
+  ...(answer.outcome === "cut-off"
+    ? { incomplete: true }
+    : answer.outcome === "stopped"
+      ? { stopped: true }
+      : {}),
 });
 
 /** Puts one cut-off answer back into its chat. */
@@ -420,6 +442,20 @@ const recoverSession = async (answer: PartialAnswer): Promise<void> => {
     ...(session.folderName ? { folderName: session.folderName } : {}),
   });
   await clearPartialOperation(answer.threadId);
+};
+
+/**
+ * Writes the answers that are waiting to be written.
+ *
+ * Called when the app is going away, so that the text since the last write is
+ * not lost with it. It is best-effort: the webview is on its way out, and a
+ * write that does not land is a write the two-second cadence would have
+ * made anyway.
+ */
+export const flushAnswers = async (): Promise<void> => {
+  for (const [threadId, state] of open) {
+    if (state.text.length > state.written) await flush(threadId, state)
+  }
 };
 
 /** Removes every journal. Used when the conversations are removed. */

@@ -115,13 +115,13 @@ Two consequences:
 ```
 
 One file per conversation, in a `partials` directory beside `threads.json`.
-Each line is one event:
+Each line carries the whole of the answer as it has arrived, and the lines of
+one answer share the turn's id:
 
 ```json
-{"kind":"begin","threadId":"c-mfz3k-8a2b1c","side":"chat","model":"...","startedAt":1750000000000}
-{"kind":"delta","text":"The answer so far, "}
-{"kind":"delta","text":"as it arrives."}
-{"kind":"end","stopped":false,"usage":{"inputTokens":812,"outputTokens":47}}
+{"id":"c-mfz3k-8a2b1c-assistant","role":"assistant","side":"chat","model":"...","text":"The answer so far, ","stopReason":null,"timestamp":"2026-10-22T10:30:00.000Z"}
+{"id":"c-mfz3k-8a2b1c-assistant","role":"assistant","side":"chat","model":"...","text":"The answer so far, as it arrives.","stopReason":null,"timestamp":"2026-10-22T10:30:00.400Z"}
+{"id":"c-mfz3k-8a2b1c-assistant","role":"assistant","side":"chat","model":"...","text":"The answer so far, as it arrives. And the end of it.","stopReason":"end_turn","timestamp":"2026-10-22T10:30:01.200Z"}
 ```
 
 - **One file per conversation.** Two answers in flight cannot touch each
@@ -129,6 +129,11 @@ Each line is one event:
   exists.
 - **Append-only.** A write adds a line. It never rewrites what is already
   there, so a write is cheap and a crash can only ever lose the last line.
+- **The last line is the whole answer.** Every line carries everything, so
+  the last whole line is the answer, and a line the crash cut in half is
+  discarded and the one before it still has the answer.
+- **`stopReason` says how it ended.** `null` while it is being written,
+  `"end_turn"` when it finished, `"stopped"` when the user stopped it.
 - **Deleted when the answer ends.** The finished answer lives in
   `threads.json`; the journal is removed.
 
@@ -163,37 +168,47 @@ evictable, so a partial there is a kindness rather than a guarantee.
 
 ## 5. The write path
 
-### 5.1 Front-end — the runtime, not the composer
+### 5.1 Front-end — whoever holds the stream holds the journal
 
 The runtime (Layer 2 of the build plan) owns the stream, so the runtime owns
-the journal.
+the journal. Until the runtime arrives, the composer holds the stream and the
+composer owns the journal — and there is no case in which the composer is
+unmounted during an answer, because switching threads aborts the reply.
 
-- `appendPartial(threadId, text)` — called on each text delta, **buffered**.
-- **The flush cadence.** A write per token is I/O the app does not need.
-  Deltas are buffered and flushed when **500 ms** have passed **or** **2 KB**
-  have accumulated, whichever comes first — and immediately when the answer
-  ends, is stopped, or the view unmounts.
-  - *Why 500 ms:* a crash costs at most half a second of text, and the file is
-    opened and appended at most twice a second.
-  - *Why 2 KB:* a long answer that streams quickly should not sit in a buffer
-    waiting for the clock.
+- `writePartial(threadId, text)` — called on each text delta, **buffered**.
+- **The flush cadence.** A write per token is I/O the app does not need. The
+  text is written again when the answer has grown by **at least a kilobyte**
+  since the last write, **or by an eighth of what has been written so far**,
+  whichever is more — and a slow answer is written anyway, every **two
+  seconds**, so a crash costs seconds rather than the whole turn.
+  - *Why the growing threshold:* every line carries the whole of the answer,
+    so a long answer written from scratch every time would make the journal
+    the square of the answer. Growing the threshold with the answer keeps the
+    whole journal about eight times the size of the answer instead.
+  - *Why two seconds:* the answer is usually arriving faster than that, and
+    the growth rule covers it; the clock is there for the answer that trickles.
+  - *Why a kilobyte at the floor:* a short answer should be written whole
+    rather than in pieces.
+- The write happens **immediately** when the answer ends, when it is stopped,
+  and when the app goes away.
 - The flush is **fire-and-forget**. A write that fails is not an error the
   user is shown: the answer is still in memory, and the finished answer is
-  still written to `threads.json` at the end.
+  still written to the conversation at the end.
 
-> **This is why B6 waits for Layer 2.** Today the only thing holding the
-> stream is the composer, and the composer is not mounted while the user is
-> looking at another conversation. A journal written by the composer would
-> stop the moment the user switched away — which is exactly the case the
-> journal exists for.
-
-### 5.2 Back-end — three Rust commands
+### 5.2 Back-end — four Rust commands
 
 | Command | What it does |
 |---|---|
 | `append_partial(thread_id, line)` | Appends one line to `partials/<thread_id>.jsonl`, creating the file and the directory if needed. |
-| `read_partials()` | Reads every file in `partials/`, parses each into `{ threadId, side, model, startedAt, text, stopped, usage }`, and **discards a trailing line that is not whole**. |
+| `read_partials()` | Reads every journal in `partials/` and gives back the id and the lines, as they are on disk. |
 | `clear_partial(thread_id)` | Deletes `partials/<thread_id>.jsonl`. |
+| `clear_partials()` | Deletes every journal, and leaves the directory so the next answer has somewhere to go. |
+
+**The format is the frontend's.** Rust knows where the file lives, that it is
+a list of lines, and that it only grows. What a line says is decided above
+that line — the same way `threads.rs` treats the records it stores, as opaque
+text. So `read_partials` hands back the lines whole, and the frontend is the
+one that knows a half-written line from a complete one.
 
 **A line that is not whole is not a fact.** A crash during a write leaves a
 half-written line at the end of the file. It is discarded on read, and the
@@ -203,8 +218,10 @@ invent something.
 **The path is built from an id, so the id is checked.** A thread id is
 generated by the app — `<prefix><base36 time>-<random>` — but it crosses a
 command boundary, and a path built from an unchecked string is a path
-traversal. The rule: the id must match `[a-z0-9-]{1,64}` or the command
-refuses it.
+traversal. The rule: the id must be letters, digits, dashes and underscores,
+at most sixty-four of them, and must not be one of the names Windows refuses
+(`con`, `com1`, `lpt9`…) — a rule that is only true on some platforms is a
+rule that fails in the worst place.
 
 **Permissions.** The directory and its files are created with the app's own
 private mode — `0700`/`0600` on the platforms that have such a bit, and the
@@ -227,7 +244,11 @@ On launch, before the conversations are read:
      journal is **more complete** → fold it into the conversation and mark the
      turn unfinished.
    - Otherwise the journal is shorter → delete it.
-4. A journal whose conversation no longer exists → delete it.
+4. A journal whose conversation no longer exists → delete it. **Unless the
+   conversations could not be read at all** — a store that cannot be read is
+   a temporary thing, and the journal is then the only copy of the answer, so
+   it is kept. A journal is only ever swept away when the app knows the
+   conversation is not there.
 5. A conversation with no journal → untouched.
 
 **Why longer wins.** The two copies can disagree in one direction only. The
@@ -241,15 +262,28 @@ that could be wrong.
 
 ## 7. What an unfinished answer looks like
 
-The stored assistant turn already carries a `stopped?: boolean` flag. A
-crashed answer is stored with it set, so it renders as an answer that did not
-finish — the same as one the user stopped, which from the reader's side is
-what it is.
+**Two things, not one.** The stored assistant turn carries two flags, because
+two different things happened:
 
-> **To confirm:** whether *"stopped by the user"* and *"the app died"* should
-> be distinguishable. Reusing `stopped` is the smaller change and the honest
-> rendering. A separate `incomplete` flag is more precise, and costs a field
-> and a rendering rule.
+| | |
+|---|---|
+| `stopped?: boolean` | The user stopped it. They know that, and they did it on purpose. |
+| `incomplete?: boolean` | It was cut off — the app died, or was closed, while it was being written. Nobody did that on purpose. |
+
+A recovered answer carries the one that matches how it ended. An answer that
+was cut off is marked `incomplete`, **not** `stopped`: saying "Stopped" about
+an answer the app lost would be a small lie about what happened, and the app
+does not tell small lies.
+
+The rendering follows: **"Stopped"** for the one the user stopped, and
+**"Cut off — this answer did not finish"** for the one that was lost.
+
+The model is told either way, and told which: the note for a cut-off answer
+says it was cut off, and the note for a stopped one says it was stopped.
+Both say the answer is incomplete and must not be taken for the whole thing.
+
+> This was open in the first draft of this plan, as a question. It is answered
+> now: the two are distinguishable, and they are told apart.
 
 ---
 
@@ -280,38 +314,61 @@ moments later.
 
 ## 10. Tests
 
-### Rust
+### Rust — `src-tauri/src/partials.rs`
 
-- A partial is appended, read back, and the text is the whole of it.
-- A line that is not whole — a crash mid-write — is discarded, and the text
-  before it is kept.
-- Two conversations' journals do not interfere: writing one does not change
-  the other.
-- `clear_partial` removes the file, and reading afterwards finds nothing.
-- A thread id that is not a plain id is refused.
-- The file and the directory are created with the app's own private mode.
+| | Test |
+|---|---|
+| ✅ | A journal holds the lines written to it, and nothing else is added. |
+| ✅ | A journal only ever grows — the earlier lines are still there. |
+| ✅ | Two journals do not interfere: writing one does not change the other. |
+| ✅ | A journal can be removed, and removing one that was never there is not a failure. |
+| ✅ | Every journal can be removed, and the directory is left for the next answer. |
+| ✅ | A file that is not a journal is left out. |
+| ✅ | A conversation id that is not a plain id is refused. |
+| ✅ | The names Windows refuses are refused. |
+| ✅ | The journal and the directory are created with the app's own private mode. |
 
-### TypeScript
+### TypeScript — `src/lib/partials.test.ts`
 
-- The recovery rule: a journal shorter than the conversation's turn is
-  dropped; a longer one wins.
-- A journal whose conversation is gone is dropped.
-- The buffer flushes at the cadence, and immediately when the answer ends.
+| | Test |
+|---|---|
+| ✅ | The last line is read, and it has the whole of the answer. |
+| ✅ | A line the crash cut in half is discarded, and the line before it is kept. |
+| ✅ | A line that is not a line at all is skipped. |
+| ✅ | An empty journal, and one of lines that are not answers, read as nothing. |
+| ✅ | An answer that did not finish reads as cut off; one the user stopped reads as stopped; one that finished reads as complete. |
+| ✅ | The recovery rule: a journal shorter than the conversation's turn is dropped; a longer one wins; the same length keeps the conversation. |
+| ✅ | The buffer waits for a kilobyte before writing a short answer, and writes a long one less often than it is written. |
+| ✅ | The recovery runs and is safe when there is nothing to put back. |
+
+### And by running it
+
+The whole round trip was watched working in the desktop app: a journal planted
+in the app's data directory came back as a turn marked `incomplete`, with the
+text it had, and the journal was gone.
 
 ---
 
 ## 11. The work, in order
 
-1. **Rust** — the three commands, the id rule, the private directory, and the
-   tests.
-2. **TypeScript** — the adapters in `src/lib/desktop.ts` and
-   `src/lib/web.ts`, and the place they take in `src/lib/api.ts`.
-3. **The runtime** writes to it — Layer 2 of the build plan. *This is the
-   dependency that decides the order.*
-4. **The recovery** on launch.
-5. **The privacy removals.**
-6. **The rendering** of an unfinished answer.
-7. **`docs/storage.md`** — the new directory, and the platform paths.
+| | Step | Where |
+|---|---|---|
+| ✅ | **Rust** — the commands, the id rule, the private directory, and the tests | `src-tauri/src/partials.rs`, `src-tauri/src/appfile.rs` |
+| ✅ | **TypeScript** — the adapters and the seam | `src/lib/desktop.ts`, `src/lib/web.ts`, `src/lib/api.ts` |
+| ✅ | **The composer** writes to it | `src/blocks/prompt-input/prompt-block.tsx` |
+| ✅ | **The recovery** on launch | `src/main.tsx` |
+| ✅ | **The privacy removals** | `src/blocks/shell/settings-privacy.tsx` |
+| ✅ | **The rendering** of an unfinished answer, and the note the model gets | `src/blocks/prompt-input/prompt-block.tsx` |
+| ✅ | **`docs/storage.md`** — the new directory and the platform paths | `docs/storage.md` |
+| ⏳ | **The runtime** writes to it — Layer 2 of the build plan | *deferred: see below* |
+
+**The one step that is not done, and why.** The runtime is the next layer of
+the build plan and it is not built yet. Until it is, the composer holds the
+stream and the composer owns the journal — and there is no case in which the
+composer is unmounted during an answer, because switching threads aborts the
+reply. So the journal is complete for the app as it is. When the runtime
+arrives, the runtime becomes the writer and the composer becomes a reader:
+**one call site moves**, and the journal's own API does not change.
 
 ---
 
@@ -340,9 +397,10 @@ moments later.
 | The browser adapter | `src/lib/web.ts`, and `storageKeys` in `src/lib/storage.ts` |
 | The format, the buffering and the recovery | `src/lib/partials.ts` |
 | Writing the answer down as it arrives | `src/blocks/prompt-input/prompt-block.tsx` — `respondReal` |
-| Telling the model an answer was cut off | the same file — `CUT_OFF` |
+| Telling the model an answer did not finish | the same file — `CUT_OFF` and `STOPPED` |
 | Putting the answers back on launch | `src/main.tsx` — `recoverAnswers` |
 | Removing the journals with the conversations | `src/blocks/shell/settings-privacy.tsx` |
+| The two kinds of unfinished answer | `src/lib/threads.ts` — `stopped` and `incomplete` |
 | Where they live | `docs/storage.md` |
 
 ### The choices that were made along the way
@@ -351,6 +409,11 @@ moments later.
   A conversation write can fail — a full disk — and a journal left behind is
   the answer, recovered on the next launch. So `persist` now reports whether
   the write happened, and the journal is removed only when it did.
+- **A journal is never removed when the conversations could not be read.** A
+  store that cannot be read is a temporary thing, and the journal is then the
+  only copy of the answer. This one was found by running the app: a file with
+  a byte-order mark in it was correctly refused by the app, the store came up
+  empty, and the journal was swept away as orphaned. It is now kept.
 - **The answer is written whole, not by what is new.** Every line carries the
   whole of the answer so far, because a line the crash cut in half is then
   discarded and the line before it still has the answer. The cost is that the
@@ -359,12 +422,18 @@ moments later.
   written again once it has grown by a kilobyte, or by an eighth of what has
   been written so far, whichever is more.
 - **A slow answer is written anyway, every two seconds.** So a crash costs
-  seconds rather than the whole turn.
-- **The model is told.** An answer that was cut off is in the conversation as
-  a partial one, and a model reading it would take it for the whole answer
-  and carry on as though it had finished. So the request carries a note that
-  it was cut off — which is what the reference does for an interrupted tool
-  call, and for background work that did not finish.
+  seconds rather than the whole turn. And the text waiting to be written is
+  written when the app goes away.
+- **The model is told, and told why.** An answer that did not finish is in the
+  conversation as a partial one, and a model reading it would take it for the
+  whole answer and carry on as though it had finished. So the request carries
+  a note — one for an answer that was cut off, and one for an answer the user
+  stopped, because the two call for different things. This is what the
+  reference does for an interrupted tool call, and for background work that
+  did not finish.
+- **"Stopped" and "cut off" are told apart.** The user stopped one and the
+  app lost the other, and saying "Stopped" about an answer the app lost would
+  be a small lie. There are two flags, and two renderings.
 - **The two copies are settled by length, not by time.** The journal is
   written first and the conversation second, so the journal is never behind,
   except when the answer finished and the journal was not removed before the
