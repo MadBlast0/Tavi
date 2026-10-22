@@ -65,12 +65,35 @@ export type CliProviderState = {
   enabled: boolean
   /** How the app can talk to it. */
   modes: CliMode[]
+  /** The operating systems it is published for. */
+  platforms: string[]
+  /** Whether it is published for the system this app is on. */
+  supportedHere: boolean
+  /** Why it is not, when it is not. */
+  unsupportedReason: string | null
+  /**
+   * Whether it is signed in.
+   *
+   * `ready` and `signed-out` are what the app found out for itself;
+   * `may-need-sign-in` is what a tool that signs in itself gets, because the
+   * app cannot ask without asking the user to do something; and `unknown` is
+   * what nobody has said.
+   */
+  readiness: "ready" | "signed-out" | "may-need-sign-in" | "unknown"
   /** Whether it publishes a list of models. */
   models: boolean
   /** Whether it is still being worked on. */
   maintenance: CliMaintenance
   /** Whether the app can put it on this machine. */
   canInstall: boolean
+  /**
+   * Whether the app can run it.
+   *
+   * A tool can be found, installed, updated and removed without the app
+   * knowing how to talk to it, and saying so is better than offering a
+   * button that would fail.
+   */
+  canRun: boolean
   /** Whether the app can update it. */
   canUpdate: boolean
   /** Whether the app can remove it. */

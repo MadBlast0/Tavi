@@ -376,6 +376,27 @@ export const runCliLifecycle = (
       )
 
 /**
+ * Asks the system which program to use for a CLI provider.
+ *
+ * A program the app could not find can be pointed at by hand, which is the
+ * remedy when a tool lives somewhere the app does not look.
+ */
+export const chooseCliProgram = (): Promise<string | null> =>
+  isDesktopApp() ? desktop.chooseCliProgram() : Promise.resolve(null)
+
+/**
+ * Stops an install, an update or a removal that is in flight.
+ */
+export const cancelCliLifecycle = (): Promise<void> =>
+  isDesktopApp()
+    ? desktop.cancelCliLifecycle()
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
  * The models a CLI provider publishes.
  *
  * A CLI is not a model. One that has a list of them is asked for the list;

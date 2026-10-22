@@ -40,6 +40,9 @@ use crate::provider::ChatEvent;
 /// server, which has no CLI providers and says so.
 pub const CLI_PREFIX: &str = "cli:";
 
+/// The id the global preferences are changed under.
+const GLOBAL_ID: &str = "any";
+
 /// The file the app's own CLI preferences are kept in.
 const PREFS_FILE: &str = "cli-providers.json";
 
@@ -135,7 +138,8 @@ pub enum RunFormat {
 /// enable but cannot yet ask, and the settings pane says so rather than
 /// offering a button that would fail.
 #[derive(Clone, Copy, Debug)]
-pub struct CliRun {    /// The arguments that put the program in its non-interactive mode.
+pub struct CliRun {
+    /// The arguments that put the program in its non-interactive mode.
     pub args: &'static [&'static str],
     /// Whether the message goes in on standard input.
     ///
@@ -147,6 +151,66 @@ pub struct CliRun {    /// The arguments that put the program in its non-interac
     pub format: RunFormat,
     /// The flag that names the model, when the program has one.
     pub model_flag: Option<&'static str>,
+}
+
+/// How a provider takes a key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadinessState {
+    /// The tool has an account saved and the app has asked.
+    Ready,
+    /// The tool has nothing saved, and the app has asked.
+    SignedOut,
+    /// The tool signs in itself and the app cannot ask.
+    MayNeedSignIn,
+    /// Nobody has said.
+    Unknown,
+}
+
+impl ReadinessState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ReadinessState::Ready => "ready",
+            ReadinessState::SignedOut => "signed-out",
+            ReadinessState::MayNeedSignIn => "may-need-sign-in",
+            ReadinessState::Unknown => "unknown",
+        }
+    }
+}
+
+/// The operating systems a tool runs on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Platform {
+    Windows,
+    MacOs,
+    Linux,
+}
+
+/// The platforms every tool in the catalogue is published for.
+///
+/// A tool that names no platforms is published for all of them, and saying
+/// so is better than inventing a restriction. The list is here so that a tool
+/// added later with a real one has somewhere to put it.
+const ALL_PLATFORMS: &[Platform] = &[Platform::Windows, Platform::MacOs, Platform::Linux];
+
+/// How a tool is signed in, and whether the app can tell.
+///
+/// A tool that signs in itself keeps its own account and its own
+/// credentials, and the app neither asks for them nor looks for them. What
+/// the app can do is ask the tool, in the way the tool documents, whether it
+/// has an account saved — and that is the whole of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadinessCheck {
+    /// A command that lists what the tool has stored.
+    ///
+    /// The tool's own documentation names it, and it does not sign the user
+    /// in, so it can be run to find out.
+    Command(&'static [&'static str]),
+    /// The tool signs in itself, and there is no way to ask without asking
+    /// the user to do something.
+    OwnLogin,
+    /// Nobody has said how this tool signs in.
+    Unknown,
 }
 
 /// One CLI provider, as the app knows it.
@@ -175,6 +239,10 @@ pub struct CliProviderInfo {
     pub models: bool,
     /// Whether it is still being worked on.
     pub maintenance: Maintenance,
+    /// The operating systems it is published for.
+    pub platforms: &'static [Platform],
+    /// How it is signed in, and whether the app can tell.
+    pub readiness: ReadinessCheck,
 }
 
 /// The CLIs the app knows about.
@@ -201,6 +269,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "codex",
@@ -215,6 +285,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "opencode",
@@ -235,6 +307,10 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         }),
         models: true,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        /* OpenCode's own documentation names a way to ask what it has
+           stored, so the app can ask rather than guess. */
+        readiness: ReadinessCheck::Command(&["auth", "list"]),
     },
     CliProviderInfo {
         id: "gemini",
@@ -249,6 +325,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "copilot",
@@ -263,6 +341,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "cline",
@@ -272,12 +352,14 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         executables: &["cline"],
         modes: &[CliMode::Terminal],
         /* The npm package called `@cline/cli` installs a different program,
-           with a different name. The app will not offer to install a tool by
-           a name that turns out to belong to something else. */
+        with a different name. The app will not offer to install a tool by
+        a name that turns out to belong to something else. */
         install: None,
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "pi",
@@ -292,6 +374,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "kilo",
@@ -306,6 +390,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "qwen",
@@ -320,6 +406,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "kimi",
@@ -334,6 +422,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "goose",
@@ -343,11 +433,13 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         executables: &["goose"],
         modes: &[CliMode::Terminal],
         /* Goose is installed by its own script or by a package manager, and
-           the app does not run scripts it has not read. */
+        the app does not run scripts it has not read. */
         install: None,
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "vibe",
@@ -362,6 +454,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "kiro-cli",
@@ -371,11 +465,13 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         executables: &["kiro-cli", "kiro"],
         modes: &[CliMode::Terminal],
         /* The npm package of this name is a placeholder that installs a
-           program called something else. */
+        program called something else. */
         install: None,
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "openhands",
@@ -390,6 +486,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "aider",
@@ -404,6 +502,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "amp",
@@ -418,6 +518,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "crush",
@@ -427,11 +529,13 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         executables: &["crush"],
         modes: &[CliMode::Structured, CliMode::Terminal],
         /* The npm package of this name is a media tool. Crush is a Go program
-           and is installed with Go or a package manager. */
+        and is installed with Go or a package manager. */
         install: None,
         run: None,
         models: false,
         maintenance: Maintenance::Active,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
     CliProviderInfo {
         id: "open-interpreter",
@@ -446,6 +550,10 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Unknown,
+        platforms: ALL_PLATFORMS,
+        /* Nobody has said how this one signs in, so the app does not claim
+           that it does. */
+        readiness: ReadinessCheck::Unknown,
     },
     CliProviderInfo {
         id: "continue",
@@ -460,6 +568,8 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         run: None,
         models: false,
         maintenance: Maintenance::Legacy,
+        platforms: ALL_PLATFORMS,
+        readiness: ReadinessCheck::OwnLogin,
     },
 ];
 
@@ -650,7 +760,7 @@ fn real_program(path: &Path) -> PathBuf {
     };
 
     /* npm's shim ends with the program it stands for, in quotes, with the
-       folder it lives in written as a variable. */
+    folder it lives in written as a variable. */
     let mut found: Option<String> = None;
     let mut rest = text.as_str();
     while let Some(start) = rest.find('"') {
@@ -684,7 +794,6 @@ struct Version {
     text: Option<String>,
     error: Option<String>,
 }
-
 /// Asks a program for its version.
 ///
 /// A program that is installed and broken can hang here, so the wait is
@@ -705,7 +814,7 @@ fn version_of(path: &Path) -> Version {
             return Version {
                 text: None,
                 error: Some(format!("Could not start it: {error}")),
-            }
+            };
         }
     };
 
@@ -718,7 +827,7 @@ fn version_of(path: &Path) -> Version {
                 return Version {
                     text: None,
                     error: Some(format!("Could not wait for it: {error}")),
-                }
+                };
             }
         }
         if start.elapsed() > VERSION_TIMEOUT {
@@ -738,7 +847,7 @@ fn version_of(path: &Path) -> Version {
             return Version {
                 text: None,
                 error: Some(format!("Could not read its answer: {error}")),
-            }
+            };
         }
     };
 
@@ -806,12 +915,26 @@ pub struct CliProviderState {
     pub enabled: bool,
     /// How the app can talk to it.
     pub modes: Vec<&'static str>,
+    /// The operating systems it is published for.
+    pub platforms: Vec<&'static str>,
+    /// Whether it is published for the system this app is on.
+    pub supported_here: bool,
+    /// Why it is not, when it is not.
+    pub unsupported_reason: Option<String>,
+    /// Whether it is signed in.
+    pub readiness: String,
     /// Whether it publishes a list of models.
     pub models: bool,
     /// Whether it is still being worked on.
     pub maintenance: Maintenance,
     /// Whether the app can put it on this machine.
     pub can_install: bool,
+    /// Whether the app can run it.
+    ///
+    /// A tool can be found, installed, updated and removed without the app
+    /// knowing how to talk to it, and saying so is better than offering a
+    /// button that would fail.
+    pub can_run: bool,
     /// Whether the app can update it.
     pub can_update: bool,
     /// Whether the app can remove it.
@@ -853,7 +976,15 @@ fn scan_local(prefs: &CliPrefs) -> Vec<CliProviderState> {
                 .iter()
                 .map(|info| {
                     let chosen = prefs.paths.get(info.id).map(String::as_str);
-                    scope.spawn(move || state_of(info, chosen))
+                    scope.spawn(move || {
+                        let mut state = state_of(info, chosen);
+                        /* Whether the tool is signed in is asked only of the
+                           ones that are here, and only in the way the tool
+                           documents. */
+                        let path = resolve(info, chosen);
+                        state.readiness = readiness_of(info, path.as_deref()).as_str().to_string();
+                        state
+                    })
                 })
                 .collect();
             handles
@@ -865,8 +996,8 @@ fn scan_local(prefs: &CliPrefs) -> Vec<CliProviderState> {
     }
 
     /* What the user has said is applied last. The scan found what is on the
-       machine; the preferences say what the user wants, and the two are
-       different questions. */
+    machine; the preferences say what the user wants, and the two are
+    different questions. */
     for state in &mut states {
         state.enabled = prefs.is_enabled(&state.id);
         state.auto_update = prefs.auto_update.get(&state.id).copied().unwrap_or(false);
@@ -904,12 +1035,9 @@ async fn scan_all(prefs: &CliPrefs) -> Vec<CliProviderState> {
         return states;
     }
 
-    let answers = futures_util::future::join_all(
-        lookups
-            .iter()
-            .map(|(_, install)| registry_latest(install)),
-    )
-    .await;
+    let answers =
+        futures_util::future::join_all(lookups.iter().map(|(_, install)| registry_latest(install)))
+            .await;
 
     for ((index, _), latest) in lookups.iter().zip(answers) {
         let state = &mut states[*index];
@@ -953,14 +1081,20 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
                 Some(number) => (true, Some(path.clone()), Some(number), answer.text),
                 None => {
                     /* The program is there and is not the tool. Saying so is
-                       more use than saying "not installed" and leaving the
-                       person to wonder why. */
-                    let said = answer
-                        .text
-                        .as_deref()
-                        .map(|text| text.trim())
-                        .filter(|text| !text.is_empty())
-                        .unwrap_or("it did not say which version it is");
+                    more use than saying "not installed" and leaving the
+                    person to wonder why. */
+                    let said = match (
+                        answer
+                            .text
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|text| !text.is_empty()),
+                        answer.error.as_deref(),
+                    ) {
+                        (Some(text), _) => text.to_string(),
+                        (None, Some(error)) => error.to_string(),
+                        (None, None) => "it did not say which version it is".to_string(),
+                    };
                     problem = Some(format!(
                         "A program called {} is on this machine, but it is not the {}. It said: {}",
                         info.executables[0], info.label, said
@@ -974,6 +1108,22 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
 
     let install = info.install;
     let managed = install.is_some();
+
+    /* Whether the tool is published for the system this app is on. */
+    let here = if cfg!(windows) {
+        Platform::Windows
+    } else if cfg!(target_os = "macos") {
+        Platform::MacOs
+    } else {
+        Platform::Linux
+    };
+    let supported_here = info.platforms.contains(&here);
+    let unsupported_reason = (!supported_here).then(|| {
+        format!(
+            "{} is not published for this system.",
+            info.label
+        )
+    });
 
     CliProviderState {
         id: info.id.to_string(),
@@ -992,17 +1142,75 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
             .unwrap_or(CliSource::Unknown),
         enabled: true,
         modes: info.modes.iter().map(|mode| mode_name(mode)).collect(),
+        platforms: info.platforms.iter().map(|p| platform_name(p)).collect(),
+        supported_here,
+        unsupported_reason,
+        readiness: ReadinessState::Unknown.as_str().to_string(),
         models: info.models,
         maintenance: info.maintenance,
         can_install: managed,
+        can_run: info.run.is_some(),
         can_update: managed,
         can_uninstall: managed,
         auto_update: false,
         auto_update_all: false,
         latest_version: None,
-        update_state: "unknown".to_string(),
+        /* A tool nobody can update is not out of date and not up to date: it
+           is updated by whatever installed it, and the app says so. */
+        update_state: if managed {
+            "unknown".to_string()
+        } else {
+            "external".to_string()
+        },
         chosen_path: chosen.map(str::to_string),
         last_scan: None,
+    }
+}
+
+/// The name of a platform, in words.
+fn platform_name(platform: &Platform) -> &'static str {
+    match platform {
+        Platform::Windows => "windows",
+        Platform::MacOs => "macos",
+        Platform::Linux => "linux",
+    }
+}
+
+/// Asks a tool whether it is signed in.
+///
+/// The tool's own documentation names the command, and it does not sign the
+/// user in, so it can be run to find out. A tool that says nothing is
+/// reported as signed out rather than as ready, because an empty answer is
+/// not a yes.
+fn readiness_of(info: &CliProviderInfo, path: Option<&Path>) -> ReadinessState {
+    let ReadinessCheck::Command(args) = info.readiness else {
+        return match info.readiness {
+            ReadinessCheck::OwnLogin => ReadinessState::MayNeedSignIn,
+            _ => ReadinessState::Unknown,
+        };
+    };
+    let Some(path) = path else {
+        return ReadinessState::Unknown;
+    };
+    let program = real_program(path);
+
+    let output = Command::new(&program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return ReadinessState::Unknown;
+    };
+    if !output.status.success() {
+        return ReadinessState::Unknown;
+    }
+    let said = String::from_utf8_lossy(&output.stdout);
+    if said.contains("stored") {
+        ReadinessState::Ready
+    } else {
+        ReadinessState::SignedOut
     }
 }
 
@@ -1057,8 +1265,8 @@ pub async fn scan_cli_providers(
 /// Runs the scan off the caller's thread.
 async fn scan_and_store(app: &AppHandle, registry: &Arc<CliRegistry>) -> Vec<CliProviderState> {
     /* The guard is taken and let go before anything is waited for: a lock
-       held across an await would make the whole command unable to move
-       between threads. */
+    held across an await would make the whole command unable to move
+    between threads. */
     let already_scanning = {
         let Ok(mut scanning) = registry.scanning.lock() else {
             return Vec::new();
@@ -1072,8 +1280,8 @@ async fn scan_and_store(app: &AppHandle, registry: &Arc<CliRegistry>) -> Vec<Cli
     };
     if already_scanning {
         /* A scan is already running. The one that is running will finish and
-           leave its answer in the cache, and this call waits for it rather
-           than starting a second one. */
+        leave its answer in the cache, and this call waits for it rather
+        than starting a second one. */
         loop {
             if let Some(states) = registry.cached() {
                 return states;
@@ -1111,11 +1319,23 @@ pub async fn set_cli_provider_state(
     auto_update_all: Option<bool>,
     path: Option<String>,
 ) -> Result<Vec<CliProviderState>, String> {
-    let Some(info) = provider_for(id.trim()) else {
-        return Err(format!("\"{id}\" is not a CLI provider this app knows about."));
-    };
-
     let mut prefs = CliPrefs::read(&app);
+    /* The global preference is about all of them, so it does not name one.
+       The id is a word rather than a blank so that a blank cannot be
+       mistaken for a provider that does not exist. */
+    if id.trim() == GLOBAL_ID {
+        if let Some(auto_update_all) = auto_update_all {
+            prefs.auto_update_all = auto_update_all;
+        }
+        prefs.write(&app)?;
+        return Ok(scan_and_store(&app, registry.inner()).await);
+    }
+
+    let Some(info) = provider_for(id.trim()) else {
+        return Err(format!(
+            "\"{id}\" is not a CLI provider this app knows about."
+        ));
+    };
     if let Some(enabled) = enabled {
         prefs.enabled.insert(info.id.to_string(), enabled);
     }
@@ -1140,7 +1360,7 @@ pub async fn set_cli_provider_state(
     prefs.write(&app)?;
 
     /* The states are worked out again, because a path the user has just
-       pointed at may be a program that is now on this machine. */
+    pointed at may be a program that is now on this machine. */
     let states = scan_and_store(&app, &registry).await;
     Ok(states)
 }
@@ -1176,12 +1396,15 @@ pub enum CliEvent {
 pub async fn run_cli_lifecycle(
     app: AppHandle,
     registry: State<'_, Arc<CliRegistry>>,
+    lifecycle: State<'_, CliLifecycle>,
     id: String,
     action: LifecycleAction,
     on_event: Channel<CliEvent>,
 ) -> Result<(), String> {
     let Some(info) = provider_for(id.trim()) else {
-        return Err(format!("\"{id}\" is not a CLI provider this app knows about."));
+        return Err(format!(
+            "\"{id}\" is not a CLI provider this app knows about."
+        ));
     };
     let Some(install) = info.install else {
         return Err(format!(
@@ -1206,7 +1429,7 @@ pub async fn run_cli_lifecycle(
             return Err(format!(
                 "{} installs itself. Follow its own instructions: {}",
                 info.label, info.docs_url
-            ))
+            ));
         }
         (LifecycleAction::Update, CliInstall::Npm { package }) => (
             "npm",
@@ -1240,7 +1463,7 @@ pub async fn run_cli_lifecycle(
         ),
     };
 
-    let program = find_program(&program).ok_or_else(|| {
+    let program = find_program(program).ok_or_else(|| {
         format!(
             "{program} is not on this machine, so Tavi cannot use it to install {}.",
             info.label
@@ -1249,22 +1472,23 @@ pub async fn run_cli_lifecycle(
 
     let label = info.label.to_string();
     let event = on_event.clone();
-    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled = lifecycle.begin();
 
     /* The registry is put in an `Arc` so the background work can refresh it
-       when it is over, without the caller's borrow travelling with it. */
+    when it is over, without the caller's borrow travelling with it. */
     let registry = registry.inner().clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let outcome = run_lifecycle(&program, &args, &cancelled, &event, &label);
-        outcome
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        run_lifecycle(&program, &args, &cancelled, &event, &label)
     })
     .await
-    .map_err(|e| format!("The operation did not finish: {e}"))??;
+    .map_err(|e| format!("The operation did not finish: {e}"))?;
+    lifecycle.end();
+    outcome?;
 
     /* The state is worked out again, so the row that was just installed or
-       removed shows what is now true rather than what was true a moment
-       ago. */
+    removed shows what is now true rather than what was true a moment
+    ago. */
     let states = scan_all(&CliPrefs::read(&app)).await;
     registry.store(states);
 
@@ -1307,12 +1531,16 @@ fn run_lifecycle(
                 };
                 buffer.extend_from_slice(&chunk[..count]);
                 /* The lines are sent as they arrive, so a long install says
-                   what it is doing rather than sitting silent. */
+                what it is doing rather than sitting silent. */
                 while let Some(position) = buffer.iter().position(|byte| *byte == b'\n') {
-                    let line = String::from_utf8_lossy(&buffer[..position]).trim().to_string();
+                    let line = String::from_utf8_lossy(&buffer[..position])
+                        .trim()
+                        .to_string();
                     buffer.drain(..=position);
                     if !line.is_empty() {
-                        let _ = event.send(CliEvent::Log { message: line.clone() });
+                        let _ = event.send(CliEvent::Log {
+                            message: line.clone(),
+                        });
                     }
                     text.push_str(&line);
                     text.push('\n');
@@ -1407,7 +1635,9 @@ fn find_program(name: &str) -> Option<PathBuf> {
 #[tauri::command]
 pub async fn list_cli_models(app: AppHandle, id: String) -> Result<Vec<String>, String> {
     let Some(info) = provider_for(id.trim()) else {
-        return Err(format!("\"{id}\" is not a CLI provider this app knows about."));
+        return Err(format!(
+            "\"{id}\" is not a CLI provider this app knows about."
+        ));
     };
     if !info.models {
         return Err(format!(
@@ -1488,11 +1718,9 @@ pub async fn run_cli_chat(
     let program = real_program(&path);
 
     /* The folder the work is in, when there is one. The program is started
-       there, so the files it can reach are the ones the user chose. */
+    there, so the files it can reach are the ones the user chose. */
     let working_dir = match request.folder_id.as_deref().map(str::trim) {
-        Some(id) if !id.is_empty() => {
-            Some(crate::workspace::grant_of(&app, id)?.0)
-        }
+        Some(id) if !id.is_empty() => Some(crate::workspace::grant_of(&app, id)?.0),
         _ => None,
     };
 
@@ -1513,10 +1741,10 @@ pub async fn run_cli_chat(
 
     let mut command = Command::new(&program);
     command.args(recipe.args);
-    if let Some(flag) = recipe.model_flag {
-        if let Some(model) = model.as_deref() {
-            command.arg(flag).arg(model);
-        }
+    if let Some(flag) = recipe.model_flag
+        && let Some(model) = model.as_deref()
+    {
+        command.arg(flag).arg(model);
     }
     command
         .stdin(Stdio::piped())
@@ -1535,16 +1763,16 @@ pub async fn run_cli_chat(
     };
 
     /* The message goes in on its own thread: a program that never reads its
-       input would otherwise fill the pipe and wait for a reader that never
-       comes. */
-    if recipe.prompt_on_stdin {
-        if let Some(mut input) = child.stdin.take() {
-            std::thread::spawn(move || {
-                use std::io::Write;
-                let _ = input.write_all(prompt.as_bytes());
-                let _ = input.flush();
-            });
-        }
+    input would otherwise fill the pipe and wait for a reader that never
+    comes. */
+    if recipe.prompt_on_stdin
+        && let Some(mut input) = child.stdin.take()
+    {
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = input.write_all(prompt.as_bytes());
+            let _ = input.flush();
+        });
     }
 
     let stdout = child.stdout.take();
@@ -1823,14 +2051,19 @@ fn read_opencode_event(
                 },
             });
         }
-        ParsedEvent::Usage { model, usage: found } => {
+        ParsedEvent::Usage {
+            model,
+            usage: found,
+        } => {
             if model_id.is_none() {
                 *model_id = model;
             }
             *usage = Some(found);
         }
         ParsedEvent::Failed(message) => {
-            let _ = on_event.send(ChatEvent::Error { error_text: message });
+            let _ = on_event.send(ChatEvent::Error {
+                error_text: message,
+            });
         }
         ParsedEvent::Nothing => {}
     }
@@ -1848,9 +2081,7 @@ async fn registry_latest(install: &CliInstall) -> Option<String> {
             format!("https://registry.npmjs.org/{package}/latest"),
             "version",
         ),
-        CliInstall::Pip { package } => {
-            (format!("https://pypi.org/pypi/{package}/json"), "info")
-        }
+        CliInstall::Pip { package } => (format!("https://pypi.org/pypi/{package}/json"), "info"),
         CliInstall::Builtin { .. } => return None,
     };
 
@@ -1928,6 +2159,47 @@ fn version_number(text: &str) -> Option<String> {
     Some(parts.join("."))
 }
 
+/// The lifecycle operation in flight, so that one can be stopped.
+///
+/// The operation is a child process, and a child process that is installing
+/// software is worth being able to stop.
+#[derive(Default)]
+pub struct CliLifecycle {
+    current: Mutex<Option<Arc<AtomicBool>>>,
+}
+
+impl CliLifecycle {
+    fn begin(&self) -> Arc<AtomicBool> {
+        let mut guard = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        let flag = Arc::new(AtomicBool::new(false));
+        *guard = Some(flag.clone());
+        flag
+    }
+
+    fn end(&self) {
+        let mut guard = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+    }
+
+    fn cancel(&self) -> bool {
+        let guard = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref() {
+            Some(flag) => {
+                flag.store(true, Ordering::SeqCst);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// Stops an install, an update or a removal that is in flight.
+#[tauri::command]
+pub async fn cancel_cli_lifecycle(lifecycle: State<'_, CliLifecycle>) -> Result<(), String> {
+    lifecycle.cancel();
+    Ok(())
+}
+
 /// The time now, in seconds since the epoch.
 fn now() -> u64 {
     std::time::SystemTime::now()
@@ -1960,7 +2232,11 @@ mod tests {
     #[test]
     fn a_provider_says_what_it_is() {
         for provider in CLI_PROVIDERS {
-            assert!(!provider.label.trim().is_empty(), "{} has no name", provider.id);
+            assert!(
+                !provider.label.trim().is_empty(),
+                "{} has no name",
+                provider.id
+            );
             assert!(
                 !provider.description.trim().is_empty(),
                 "{} has no description",
@@ -2000,8 +2276,8 @@ mod tests {
     #[test]
     fn a_provider_that_publishes_models_says_so() {
         /* Only a tool that has been asked lists its models. A tool that does
-           not is asked for nothing, rather than for a list that is not
-           there. */
+        not is asked for nothing, rather than for a list that is not
+        there. */
         for provider in CLI_PROVIDERS {
             if provider.models {
                 assert!(
@@ -2035,7 +2311,10 @@ mod tests {
     #[test]
     fn a_provider_is_found_by_its_id() {
         for provider in CLI_PROVIDERS {
-            assert_eq!(provider_for(provider.id).map(|p| p.label), Some(provider.label));
+            assert_eq!(
+                provider_for(provider.id).map(|p| p.label),
+                Some(provider.label)
+            );
         }
         assert!(provider_for("not-a-provider").is_none());
     }
@@ -2067,8 +2346,8 @@ mod tests {
     #[test]
     fn a_version_that_cannot_be_compared_says_so() {
         /* A pre-release or a build stamp is not compared at all, because
-           saying "there is an update" when there is not would send the user
-           to install something they already have. */
+        saying "there is an update" when there is not would send the user
+        to install something they already have. */
         assert_eq!(is_newer("2.0.0-beta.1", "2.0.0"), None);
         assert_eq!(is_newer("v2.0.0", "2.0.0"), None);
     }
@@ -2076,18 +2355,14 @@ mod tests {
     #[test]
     fn a_shim_names_the_program_behind_it() {
         /* npm puts a `.cmd` beside the program on Windows, and the `.cmd`
-           says which program it stands for. The program is what the app
-           runs, so the name is read out of the shim. */
+        says which program it stands for. The program is what the app
+        runs, so the name is read out of the shim. */
         let folder = std::env::temp_dir().join("tavi-shim-test");
         let _ = std::fs::create_dir_all(&folder);
         let program = folder.join("thing.exe");
         std::fs::write(&program, b"not really a program").ok();
         let shim = folder.join("thing.cmd");
-        std::fs::write(
-            &shim,
-            format!(r#"@ECHO off\r\n"%dp0%\thing.exe"   %*\r\n"#),
-        )
-        .ok();
+        std::fs::write(&shim, r#"@ECHO off\r\n"%dp0%\thing.exe"   %*\r\n"#).ok();
 
         let found = real_program(&shim);
         assert_eq!(found, program);
@@ -2102,12 +2377,15 @@ mod tests {
     }
 
     /* The shapes below were taken from a real program's own output, so the
-       parsing is checked against what it actually says rather than against
-       what it might say. */
+    parsing is checked against what it actually says rather than against
+    what it might say. */
     #[test]
     fn a_line_of_text_is_read() {
         let line = r#"{"type":"text","timestamp":1792660761981,"sessionID":"ses_1","part":{"id":"prt_1","type":"text","text":"ok","time":{"start":1,"end":2}}}"#;
-        assert_eq!(parse_opencode_event(line), ParsedEvent::Text("ok".to_string()));
+        assert_eq!(
+            parse_opencode_event(line),
+            ParsedEvent::Text("ok".to_string())
+        );
     }
 
     #[test]
@@ -2115,7 +2393,10 @@ mod tests {
         let line = r#"{"type":"tool_use","sessionID":"ses_1","part":{"type":"tool","id":"call_1","tool":"shell","state":{"status":"completed","input":{"command":"echo hello"},"output":"hello\r\n","title":"shell"}}}"#;
         match parse_opencode_event(line) {
             ParsedEvent::Tool {
-                name, status, output, ..
+                name,
+                status,
+                output,
+                ..
             } => {
                 assert_eq!(name, "shell");
                 assert_eq!(status, "completed");
@@ -2133,7 +2414,8 @@ mod tests {
                 assert_eq!(usage["inputTokens"], 3559);
                 assert_eq!(usage["outputTokens"], 39);
                 assert_eq!(usage["cachedInputTokens"], 1408);
-            }            other => panic!("expected a usage, got {other:?}"),
+            }
+            other => panic!("expected a usage, got {other:?}"),
         }
     }
 
@@ -2149,12 +2431,15 @@ mod tests {
     #[test]
     fn a_line_nobody_understands_is_not_a_failure() {
         /* A program may add events. One the app has not heard of is kept out
-           of the way rather than ending the run. */
+        of the way rather than ending the run. */
         assert_eq!(
             parse_opencode_event(r#"{"type":"something_new","part":{}}"#),
             ParsedEvent::Nothing
         );
-        assert_eq!(parse_opencode_event("not json at all"), ParsedEvent::Nothing);
+        assert_eq!(
+            parse_opencode_event("not json at all"),
+            ParsedEvent::Nothing
+        );
         assert_eq!(parse_opencode_event(""), ParsedEvent::Nothing);
     }
 
@@ -2222,10 +2507,12 @@ mod tests {
         let prefs = CliPrefs::default();
         for state in scan_local(&prefs) {
             println!(
-                "{:<18} installed={:<5} version={:<12} problem={:?}",
+                "{:<18} installed={:<5} version={:<12} readiness={:<16} update={:<8} problem={:?}",
                 state.id,
                 state.installed,
                 state.version.clone().unwrap_or_else(|| "—".to_string()),
+                state.readiness,
+                state.update_state,
                 state.problem
             );
         }
