@@ -154,6 +154,14 @@ export type ChatRequest = {
      * is what stops the app offering a model the request will not use.
      */
     providerId?: string
+    /**
+     * The program's own session to carry on in, when it has one.
+     *
+     * A CLI provider keeps its own memory of a conversation, and this is
+     * which one. It is the thread's own, so a thread and a program's session
+     * are the same conversation rather than two copies of it.
+     */
+    sessionId?: string
     reasoningEffort?: string
     /**
      * The reasoning preference, already checked and written the provider's
@@ -181,9 +189,16 @@ export type ChatEvent =
   | { type: "text-delta"; delta: string }
   | {
       type: "message-metadata"
-      messageMetadata?: { modelId?: string; usage?: ChatUsage }
+      messageMetadata?: {
+        modelId?: string
+        usage?: ChatUsage
+        sessionId?: string
+      }
     }
-  | { type: "finish"; messageMetadata?: { modelId?: string; usage?: ChatUsage } }
+  | {
+      type: "finish"
+      messageMetadata?: { modelId?: string; usage?: ChatUsage; sessionId?: string }
+    }
   | { type: "error"; errorText: string }
   | { type: "tool"; tool: ToolActivity }
 
@@ -390,6 +405,22 @@ export const chooseCliProgram = (): Promise<string | null> =>
 export const cancelCliLifecycle = (): Promise<void> =>
   isDesktopApp()
     ? desktop.cancelCliLifecycle()
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * A report about one CLI provider, for a person to paste somewhere.
+ *
+ * It says what the app found and what it could not find, and leaves out the
+ * whole PATH, the environment and any command line — the parts most likely
+ * to carry something that should not be pasted into a public place.
+ */
+export const cliProviderDiagnostics = (id: string): Promise<string> =>
+  isDesktopApp()
+    ? desktop.cliProviderDiagnostics(id)
     : Promise.reject(
         new Error(
           "CLI providers are on this computer. Open the desktop app to change them.",

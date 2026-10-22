@@ -103,6 +103,14 @@ export type ThreadBase = {
    * provider to another.
    */
   provider?: string
+  /**
+   * The program's own session, when the thread was run through one.
+   *
+   * A CLI provider keeps its own memory of a conversation, and this is which
+   * one. It is the thread's own, so a thread and a program's session are the
+   * same conversation rather than two copies of it.
+   */
+  sessionId?: string
   usage?: StoredUsage
   /**
    * When the thread was pinned, or absent if it is not.
@@ -120,6 +128,7 @@ export type ThreadDraft<E extends object> = {
   model?: string
   effort?: string
   provider?: string
+  sessionId?: string
   usage?: StoredUsage
 } & E
 

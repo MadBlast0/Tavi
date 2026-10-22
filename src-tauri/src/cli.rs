@@ -129,6 +129,28 @@ pub enum RunFormat {
     /// Newline-delimited JSON. Each line is an event with a `type` and a
     /// `part`, and the part is what the event is about.
     OpenCodeJson,
+    /// Newline-delimited JSON, each line carrying a `type` and the text
+    /// under `event.delta`.
+    ClaudeJson,
+    /// Newline-delimited JSON, each line carrying an `event` and what
+    /// happened under it.
+    GeminiJson,
+}
+
+/// How the message reaches the program.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromptDelivery {
+    /// In on standard input.
+    ///
+    /// When it goes in this way, nothing the user typed is ever part of the
+    /// command line, which is what keeps a message full of quotation marks
+    /// and punctuation from being read as a command.
+    Stdin,
+    /// As an argument, where the program's own documentation puts it.
+    ///
+    /// The program is started directly, with the argument as one argument, so
+    /// a message full of punctuation is still data and not a command.
+    Argument,
 }
 
 /// How a CLI is run when it is asked for an answer.
@@ -139,18 +161,28 @@ pub enum RunFormat {
 /// offering a button that would fail.
 #[derive(Clone, Copy, Debug)]
 pub struct CliRun {
-    /// The arguments that put the program in its non-interactive mode.
-    pub args: &'static [&'static str],
-    /// Whether the message goes in on standard input.
-    ///
-    /// When it does, nothing the user typed is ever part of the command
-    /// line, which is what keeps a message full of quotation marks and
-    /// punctuation from being read as a command.
-    pub prompt_on_stdin: bool,
+    /// The arguments that put the program in its non-interactive mode, before
+    /// the message.
+    pub args_before: &'static [&'static str],
+    /// The arguments that come after the message.
+    pub args_after: &'static [&'static str],
+    /// How the message reaches the program.
+    pub prompt: PromptDelivery,
     /// The event format the program speaks.
     pub format: RunFormat,
     /// The flag that names the model, when the program has one.
     pub model_flag: Option<&'static str>,
+    /// The flag that names the program's own session, when it has one.
+    ///
+    /// A program that keeps a session of its own is told to carry on in it,
+    /// so the conversation continues where it left off rather than in a
+    /// summary of it.
+    pub session_flag: Option<&'static str>,
+    /// Whether the recipe has been checked against the program itself.
+    ///
+    /// A recipe written from the documentation is a claim about a program
+    /// nobody has run, and the settings pane says which of the two it is.
+    pub verified: bool,
 }
 
 /// How a provider takes a key.
@@ -266,7 +298,17 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         install: Some(CliInstall::Npm {
             package: "@anthropic-ai/claude-code",
         }),
-        run: None,
+        run: Some(CliRun {
+            args_before: &["-p"],
+            args_after: &["--output-format", "stream-json", "--verbose"],
+            prompt: PromptDelivery::Argument,
+            format: RunFormat::ClaudeJson,
+            model_flag: Some("--model"),
+            session_flag: None,
+            /* The recipe is from the tool's own documentation. It has not
+               been checked against the program, and the pane says so. */
+            verified: false,
+        }),
         models: false,
         maintenance: Maintenance::Active,
         platforms: ALL_PLATFORMS,
@@ -300,10 +342,13 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
             uninstall: &["uninstall"],
         }),
         run: Some(CliRun {
-            args: &["run", "--format", "json"],
-            prompt_on_stdin: true,
+            args_before: &["run", "--format", "json"],
+            args_after: &[],
+            prompt: PromptDelivery::Stdin,
             format: RunFormat::OpenCodeJson,
             model_flag: Some("--model"),
+            session_flag: Some("--session"),
+            verified: true,
         }),
         models: true,
         maintenance: Maintenance::Active,
@@ -322,7 +367,17 @@ pub const CLI_PROVIDERS: &[CliProviderInfo] = &[
         install: Some(CliInstall::Npm {
             package: "@google/gemini-cli",
         }),
-        run: None,
+        run: Some(CliRun {
+            args_before: &["-p"],
+            args_after: &["--output-format", "stream-json"],
+            prompt: PromptDelivery::Argument,
+            format: RunFormat::GeminiJson,
+            model_flag: Some("--model"),
+            session_flag: None,
+            /* The recipe is from the tool's own documentation. It has not
+               been checked against the program, and the pane says so. */
+            verified: false,
+        }),
         models: false,
         maintenance: Maintenance::Active,
         platforms: ALL_PLATFORMS,
@@ -935,6 +990,12 @@ pub struct CliProviderState {
     /// knowing how to talk to it, and saying so is better than offering a
     /// button that would fail.
     pub can_run: bool,
+    /// Whether the recipe for running it has been checked against the
+    /// program itself.
+    ///
+    /// A recipe written from the documentation is a claim about a program
+    /// nobody has run, and the settings pane says which of the two it is.
+    pub run_verified: bool,
     /// Whether the app can update it.
     pub can_update: bool,
     /// Whether the app can remove it.
@@ -1150,6 +1211,7 @@ fn state_of(info: &CliProviderInfo, chosen: Option<&str>) -> CliProviderState {
         maintenance: info.maintenance,
         can_install: managed,
         can_run: info.run.is_some(),
+        run_verified: info.run.map(|run| run.verified).unwrap_or(false),
         can_update: managed,
         can_uninstall: managed,
         auto_update: false,
@@ -1733,6 +1795,15 @@ pub async fn run_cli_chat(
         .filter(|model| !model.is_empty())
         .map(str::to_string);
 
+    /* The program's own session, when the thread has one. */
+    let session = request
+        .config
+        .as_ref()
+        .and_then(|config| config.session_id.as_deref())
+        .map(str::trim)
+        .filter(|session| !session.is_empty())
+        .map(str::to_string);
+
     let request_id = request
         .request_id
         .clone()
@@ -1740,11 +1811,27 @@ pub async fn run_cli_chat(
     let cancelled = cancellations.register(&request_id);
 
     let mut command = Command::new(&program);
-    command.args(recipe.args);
+    command.args(recipe.args_before);
+    /* A program whose own documentation takes the message as an argument
+       gets it as one argument. The program is started directly, with no
+       command interpreter in between, so a message full of quotation marks
+       and punctuation is still data and not a command. */
+    if recipe.prompt == PromptDelivery::Argument {
+        command.arg(&prompt);
+    }
+    command.args(recipe.args_after);
     if let Some(flag) = recipe.model_flag
         && let Some(model) = model.as_deref()
     {
         command.arg(flag).arg(model);
+    }
+    /* A program that keeps a session of its own is told to carry on in it,
+       so the conversation continues where it left off rather than in a
+       summary of it. */
+    if let Some(flag) = recipe.session_flag
+        && let Some(session) = session.as_deref()
+    {
+        command.arg(flag).arg(session);
     }
     command
         .stdin(Stdio::piped())
@@ -1765,7 +1852,7 @@ pub async fn run_cli_chat(
     /* The message goes in on its own thread: a program that never reads its
     input would otherwise fill the pipe and wait for a reader that never
     comes. */
-    if recipe.prompt_on_stdin
+    if recipe.prompt == PromptDelivery::Stdin
         && let Some(mut input) = child.stdin.take()
     {
         std::thread::spawn(move || {
@@ -1780,12 +1867,13 @@ pub async fn run_cli_chat(
     let format = recipe.format;
     let reader = std::thread::spawn(move || {
         let Some(mut stdout) = stdout else {
-            return (None, None);
+            return (None, None, None);
         };
         let mut buffer = String::new();
         let mut chunk = [0u8; 8192];
         let mut model_id: Option<String> = None;
         let mut usage: Option<serde_json::Value> = None;
+        let mut session: Option<String> = None;
 
         loop {
             let count = match stdout.read(&mut chunk) {
@@ -1803,12 +1891,24 @@ pub async fn run_cli_chat(
                 }
                 match format {
                     RunFormat::OpenCodeJson => {
-                        read_opencode_event(line, &event, &mut model_id, &mut usage);
+                        read_opencode_event(
+                            line,
+                            &event,
+                            &mut model_id,
+                            &mut usage,
+                            &mut session,
+                        );
+                    }
+                    RunFormat::ClaudeJson => {
+                        read_claude_event(line, &event, &mut model_id, &mut usage);
+                    }
+                    RunFormat::GeminiJson => {
+                        read_gemini_event(line, &event, &mut model_id, &mut usage);
                     }
                 }
             }
         }
-        (model_id, usage)
+        (model_id, usage, session)
     });
 
     let start = Instant::now();
@@ -1839,13 +1939,17 @@ pub async fn run_cli_chat(
         std::thread::sleep(Duration::from_millis(50));
     };
 
-    let (model_id, usage) = reader.join().unwrap_or((None, None));
+    let (model_id, usage, session) = reader.join().unwrap_or((None, None, None));
     cancellations.finish(&request_id);
 
     match status {
         Some(status) if status.success() => {
             let _ = on_event.send(ChatEvent::Finish {
-                message_metadata: crate::provider::EventMetadata { model_id, usage },
+                message_metadata: crate::provider::EventMetadata {
+                    model_id,
+                    usage,
+                    session_id: session,
+                },
             });
             Ok(())
         }
@@ -2023,13 +2127,138 @@ fn parse_opencode_event(line: &str) -> ParsedEvent {
     }
 }
 
+/// Reads one line of Claude Code's own events, and says what it means.
+///
+/// The shapes here are the ones the tool's own documentation gives: a
+/// `stream_event` carries the text as it arrives, and a `result` carries the
+/// end of the run.
+fn read_claude_event(
+    line: &str,
+    on_event: &Channel<ChatEvent>,
+    model_id: &mut Option<String>,
+    usage: &mut Option<serde_json::Value>,
+) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    let Some(kind) = value.get("type").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    match kind {
+        "stream_event" => {
+            let text = value
+                .pointer("/event/delta/text")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if !text.is_empty() {
+                let _ = on_event.send(ChatEvent::TextDelta {
+                    delta: text.to_string(),
+                });
+            }
+        }
+        "result" => {
+            if let Some(model) = value.get("model").and_then(|v| v.as_str()) {
+                *model_id = Some(model.to_string());
+            }
+            if let Some(reported) = value.get("usage") {
+                *usage = Some(serde_json::json!({
+                    "inputTokens": reported.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "outputTokens": reported.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                }));
+            }
+            if let Some(error) = value.get("is_error").and_then(|v| v.as_bool())
+                && error
+            {
+                let message = value
+                    .get("result")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("The run reported an error.")
+                    .to_string();
+                let _ = on_event.send(ChatEvent::Error { error_text: message });
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Reads one line of Gemini CLI's own events, and says what it means.
+///
+/// The shapes here are the ones the tool's own documentation gives: a
+/// `step_update` carries the text as it arrives, and a `result` carries the
+/// end of the run.
+fn read_gemini_event(
+    line: &str,
+    on_event: &Channel<ChatEvent>,
+    model_id: &mut Option<String>,
+    usage: &mut Option<serde_json::Value>,
+) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    let Some(kind) = value.get("event").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    match kind {
+        "step_update" => {
+            let step = value.get("step_update");
+            if let Some(text) = step
+                .and_then(|s| s.get("text_delta"))
+                .and_then(|v| v.as_str())
+                && !text.is_empty()
+            {
+                let _ = on_event.send(ChatEvent::TextDelta {
+                    delta: text.to_string(),
+                });
+            }
+            if let Some(model) = step
+                .and_then(|s| s.get("model"))
+                .and_then(|v| v.as_str())
+                && model_id.is_none()
+            {
+                *model_id = Some(model.to_string());
+            }
+        }
+        "result" => {
+            let result = value.get("result");
+            if let Some(model) = result
+                .and_then(|r| r.get("model"))
+                .and_then(|v| v.as_str())
+                && model_id.is_none()
+            {
+                *model_id = Some(model.to_string());
+            }
+            if let Some(reported) = result.and_then(|r| r.get("usage")) {
+                *usage = Some(serde_json::json!({
+                    "inputTokens": reported.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "outputTokens": reported.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "reasoningTokens": reported.get("thinking_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "cachedInputTokens": reported.get("cache_read_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                }));
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Sends what a line of a program's events meant.
 fn read_opencode_event(
     line: &str,
     on_event: &Channel<ChatEvent>,
     model_id: &mut Option<String>,
     usage: &mut Option<serde_json::Value>,
+    session: &mut Option<String>,
 ) {
+    /* Every event carries the session it belongs to, so the first one is
+       enough. It is what the next run is told to carry on in. */
+    if session.is_none()
+        && let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
+        && let Some(id) = value.get("sessionID").and_then(|v| v.as_str())
+    {
+        *session = Some(id.to_string());
+    }
+
     match parse_opencode_event(line) {
         ParsedEvent::Text(text) => {
             let _ = on_event.send(ChatEvent::TextDelta { delta: text });
@@ -2200,6 +2429,104 @@ pub async fn cancel_cli_lifecycle(lifecycle: State<'_, CliLifecycle>) -> Result<
     Ok(())
 }
 
+/// A report about one CLI provider, for a person to paste somewhere.
+///
+/// It is built to be shared: it says what the app found and what it could
+/// not find. It leaves out the things that are not the app's to share — the
+/// whole PATH, the environment, and any command line — because a report
+/// about one program does not need them and they are the parts most likely
+/// to carry something that should not be pasted into a public place.
+#[tauri::command]
+pub async fn cli_provider_diagnostics(
+    app: AppHandle,
+    id: String,
+) -> Result<String, String> {
+    let Some(info) = provider_for(id.trim()) else {
+        return Err(format!(
+            "\"{id}\" is not a CLI provider this app knows about."
+        ));
+    };
+
+    let prefs = CliPrefs::read(&app);
+    let found = resolve(info, prefs.paths.get(info.id).map(|s| s.as_str()));
+    let (version, problem) = match &found {
+        Some(path) => {
+            let answer = version_of(path);
+            let number = answer.text.as_deref().and_then(version_number);
+            let problem = number.is_none().then(|| {
+                answer
+                    .text
+                    .as_deref()
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| "it did not say which version it is".to_string())
+            });
+            (number, problem)
+        }
+        None => (None, None),
+    };
+
+    let mut report = String::new();
+    report.push_str("Tavi — CLI provider report\n\n");
+    report.push_str(&format!("provider: {} ({})\n", info.label, info.id));
+    report.push_str(&format!(
+        "version of the app: {}\n",
+        app.package_info().version
+    ));
+    report.push_str(&format!(
+        "platform: {}\n",
+        if cfg!(windows) {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "linux"
+        }
+    ));
+    report.push_str(&format!("found: {}\n", found.is_some()));
+    if let Some(path) = &found {
+        report.push_str(&format!("at: {}\n", path.display()));
+    }
+    report.push_str(&format!("version: {}\n", version.unwrap_or_else(|| "unknown".into())));
+    if let Some(problem) = &problem {
+        report.push_str(&format!("note: {problem}\n"));
+    }
+    report.push_str(&format!(
+        "source: {}\n",
+        match found.as_ref().map(|path| source_of(path)) {
+            Some(CliSource::PackageManager) => "a package manager",
+            Some(CliSource::External) => "somebody else",
+            _ => "nobody has said",
+        }
+    ));
+    report.push_str(&format!(
+        "readiness: {}\n",
+        readiness_of(info, found.as_deref()).as_str()
+    ));
+    report.push_str(&format!(
+        "modes: {}\n",
+        info.modes
+            .iter()
+            .map(|mode| mode_name(mode))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    report.push_str(&format!(
+        "can be run: {}\n",
+        if info.run.is_some() { "yes" } else { "no" }
+    ));
+    report.push_str(&format!(
+        "recipe checked against the program: {}\n",
+        if info.run.map(|run| run.verified).unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
+    ));
+    report.push_str("\nThe PATH, the environment and any command line are left out on purpose.\n");
+    Ok(report)
+}
+
 /// The time now, in seconds since the epoch.
 fn now() -> u64 {
     std::time::SystemTime::now()
@@ -2265,7 +2592,7 @@ mod tests {
         for provider in CLI_PROVIDERS {
             if let Some(run) = provider.run {
                 assert!(
-                    !run.args.is_empty(),
+                    !run.args_before.is_empty(),
                     "{} is run with no arguments",
                     provider.id
                 );

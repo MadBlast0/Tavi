@@ -94,6 +94,14 @@ export type CliProviderState = {
    * button that would fail.
    */
   canRun: boolean
+  /**
+   * Whether the recipe for running it has been checked against the program
+   * itself.
+   *
+   * A recipe written from the documentation is a claim about a program
+   * nobody has run, and the settings pane says which of the two it is.
+   */
+  runVerified: boolean
   /** Whether the app can update it. */
   canUpdate: boolean
   /** Whether the app can remove it. */

@@ -44,6 +44,7 @@ const provider = (over: Partial<CliProviderState> = {}): CliProviderState => ({
   maintenance: "active",
   canInstall: true,
   canRun: true,
+  runVerified: true,
   canUpdate: true,
   canUninstall: true,
   autoUpdate: false,

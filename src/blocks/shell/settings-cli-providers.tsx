@@ -4,10 +4,11 @@ import * as React from "react"
 import {
   CircleCheckIcon,
   CircleHelpIcon,
+  ClipboardIcon,
+  EllipsisIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
   InfoIcon,
-  MoreHorizontalIcon,
   PackageIcon,
   RefreshCwIcon,
   SquareIcon,
@@ -77,6 +78,7 @@ import { Switch } from "@/components/switch"
 import {
   cancelCliLifecycle,
   chooseCliProgram,
+  cliProviderDiagnostics,
   listCliProviders,
   openExternal,
   runCliLifecycle,
@@ -451,6 +453,11 @@ function CliProviderRow({
               {readiness}
             </Badge>
           ) : null}
+          {state.canRun && !state.runVerified ? (
+            <Badge appearance="muted" shape="pill" size="sm">
+              Not checked here
+            </Badge>
+          ) : null}
           {state.supportedHere ? null : (
             <Badge variant="destructive" appearance="outline" size="sm">
               {state.unsupportedReason ?? "Not for this system"}
@@ -521,7 +528,7 @@ function CliProviderRow({
               />
             }
           >
-            <MoreHorizontalIcon className="size-4" />
+            <EllipsisIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onDetails(state)}>
@@ -856,6 +863,7 @@ function CliProviderDetails({
 }) {
   const [busy, setBusy] = React.useState(false)
   const [problem, setProblem] = React.useState<string | null>(null)
+  const [report, setReport] = React.useState<string | null>(null)
 
   const change = async (changes: Parameters<typeof setCliProviderState>[1]) => {
     setBusy(true)
@@ -876,6 +884,31 @@ function CliProviderDetails({
     const path = await chooseCliProgram()
     if (!path) return
     await change({ path })
+  }
+
+  /* The report is fetched when the dialog opens, so that it is there to be
+     read without another round trip. */
+  React.useEffect(() => {
+    let alive = true
+    void cliProviderDiagnostics(state.id)
+      .then((text) => {
+        if (alive) setReport(text)
+      })
+      .catch(() => {
+        if (alive) setReport(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [state.id])
+
+  const copyReport = async () => {
+    if (!report) return
+    try {
+      await navigator.clipboard.writeText(report)
+    } catch {
+      setProblem("The clipboard could not be written to. Select the text instead.")
+    }
   }
 
   return (
@@ -976,6 +1009,15 @@ function CliProviderDetails({
             </SettingRow>
           </div>
 
+          {report ? (
+            <div className="mt-4 flex flex-col gap-2">
+              <p className="text-sm font-medium">Diagnostics</p>
+              <pre className="max-h-48 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">
+                {report}
+              </pre>
+            </div>
+          ) : null}
+
           {problem ? (
             <p className="text-sm text-destructive">{problem}</p>
           ) : null}
@@ -983,6 +1025,15 @@ function CliProviderDetails({
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Close
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => void copyReport()}
+            disabled={!report}
+          >
+            <ClipboardIcon className="size-4" />
+            Copy diagnostics
           </Button>
           <Button
             type="button"

@@ -270,6 +270,12 @@ export const cancelCliLifecycle = async (): Promise<void> => {
   await invoke("cancel_cli_lifecycle")
 }
 
+/** A report about one CLI provider, for a person to paste somewhere. */
+export const cliProviderDiagnostics = async (id: string): Promise<string> => {
+  requireDesktop()
+  return invoke<string>("cli_provider_diagnostics", { id })
+}
+
 /** The models a CLI provider publishes. */
 export const listCliModels = async (id: string): Promise<string[]> => {
   requireDesktop()

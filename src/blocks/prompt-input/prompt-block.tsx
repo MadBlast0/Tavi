@@ -577,6 +577,8 @@ type WriteState = {
   effort: string
   /** The provider the request went to. */
   provider: string
+  /** The program's own session, when it has one. */
+  sessionId: string | undefined
   /** The agent mode. Code only. */
   mode: string
   /** The folder's id and name. Code only. */
@@ -852,6 +854,17 @@ export function PromptBlock() {
       chat: readPref(sidePref(PREF.provider, "chat")) ?? "",
       code: readPref(sidePref(PREF.provider, "code")) ?? "",
     }),
+  )
+  /**
+   * The program's own session, per side.
+   *
+   * A CLI provider keeps its own memory of a conversation, and this is which
+   * one. It belongs to the thread rather than to the side, so it is restored
+   * with the thread and written with it — a thread and a program's session
+   * are the same conversation rather than two copies of it.
+   */
+  const [cliSessionBySide, setCliSessionBySide] = React.useState<Record<Side, string>>(
+    () => ({ chat: "", code: "" }),
   )
   const model = modelBySide[variant]
   const effort = effortBySide[variant]
@@ -1149,6 +1162,12 @@ export function PromptBlock() {
         /* The provider the thread is about, the same way. */
         if (chat.provider)
           setProviderBySide((current) => ({ ...current, [side]: chat.provider! }))
+        /* And the program's own session, so the conversation carries on where
+           it left off rather than in a summary of it. */
+        setCliSessionBySide((current) => ({
+          ...current,
+          [side]: chat.sessionId ?? "",
+        }))
         return
       }
 
@@ -1169,6 +1188,12 @@ export function PromptBlock() {
       /* The provider the session is about, the same way. */
       if (session.provider)
         setProviderBySide((current) => ({ ...current, [side]: session.provider! }))
+      /* And the program's own session, so the conversation carries on where
+         it left off rather than in a summary of it. */
+      setCliSessionBySide((current) => ({
+        ...current,
+        [side]: session.sessionId ?? "",
+      }))
       if (session.mode) setMode(session.mode)
       setFolderId(
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
@@ -1733,6 +1758,9 @@ export function PromptBlock() {
             /* The provider the model list was fetched for. The request and
                the list are about the same provider by construction. */
             ...(provider ? { providerId: provider } : {}),
+            /* The program's own session, so the conversation continues where
+               it left off rather than in a summary of it. */
+            ...(write.sessionId ? { sessionId: write.sessionId } : {}),
             /* One dial: `none` is the "do not reason" position on it, not a
                separate switch. The level is validated against the model's
                capability and refused rather than downgraded — and the
@@ -1758,6 +1786,14 @@ export function PromptBlock() {
             if (usage) {
               reported = usage as PromptTokenUsage
               if (stillHere()) setUsage(usage as PromptTokenUsage)
+            }
+            /* The program's own session. It is kept so that the next turn
+               carries on in it rather than starting again. */
+            const session = event.messageMetadata?.sessionId
+            if (session) {
+              if (stillHere()) {
+                setCliSessionBySide((current) => ({ ...current, [write.side]: session }))
+              }
             }
             return
           }
@@ -1868,6 +1904,7 @@ export function PromptBlock() {
          answers, so the thread remembers where it began without refusing to
          go somewhere else. */
       provider: write.provider || undefined,
+      sessionId: write.sessionId,
       usage: write.usage ?? undefined,
     }
     /* The thread the turn was asked about, before the write. */
@@ -1927,6 +1964,7 @@ export function PromptBlock() {
     model,
     effort,
     provider,
+    sessionId: cliSessionBySide[variant] || undefined,
     mode,
     folderId: folder?.id,
     folderName: folder?.name,

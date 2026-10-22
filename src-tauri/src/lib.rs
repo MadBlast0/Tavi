@@ -141,6 +141,7 @@ pub fn run() {
             cli::run_cli_lifecycle,
             cli::cancel_cli_lifecycle,
             cli::list_cli_models,
+            cli::cli_provider_diagnostics,
             cli::run_cli_chat,
             projects::list_projects,
             projects::clone_repository,
