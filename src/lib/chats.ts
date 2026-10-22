@@ -86,6 +86,14 @@ export const clearChatUnread = (id: string) => chatStore.clearUnread(id)
 /** Turns this chat's announcements on or off. */
 export const toggleMuteChat = (id: string) => chatStore.toggleMute(id)
 
+/**
+ * Puts this chat in the archived list, or takes it out again.
+ *
+ * The chat is still a chat: it keeps its turns, and it can be brought back.
+ */
+export const setChatArchived = (id: string, archived: boolean) =>
+  chatStore.setArchived(id, archived)
+
 export const forkChat = (id: string): Promise<StoredChat | undefined> => chatStore.fork(id)
 
 /** The last write that did not happen, if there was one. */

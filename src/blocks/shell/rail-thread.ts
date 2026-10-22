@@ -29,6 +29,8 @@ export type RailThread = {
   unreadAt?: number
   /** When the thread was muted, or absent if it is not. */
   mutedAt?: number
+  /** When the thread was archived, or absent if it is not. */
+  archivedAt?: number
   /** Which side the thread belongs to, and therefore which store holds it. */
   side: Side
 }

@@ -182,7 +182,58 @@ it becomes the writer, and the composer becomes a reader.
 
 ---
 
-## 7. Saying that something finished
+## 7. The conversation runtime
+
+A reply belongs to a conversation, and a conversation outlives any component.
+
+**Why it is here.** The composer used to *be* the runtime: the turns, the
+status, the abort handle and the error were all component state, so a reply
+could only exist while the component that started it was mounted and showing
+the same conversation. Switching threads aborted it. The comment in the code
+said it plainly — *"One composer, one stream."* — and that one rule was what
+stood between the app and every parallel feature.
+
+**What it owns.** `src/lib/conversation.ts` holds a conversation's live
+turns, its status, its usage, its error and whether it is being compacted;
+it holds one abort handle per conversation; and it owns the reply's whole
+life — the stream, the events, the journal, the conversation the answer lands
+in, and the announcement.
+
+**What it does not own.** *What is asked.* The request is prepared by the
+composer, because preparing it needs the folder's files and the model's own
+capabilities, and those are the viewer's facts.
+
+**The composer reads a conversation rather than owning one.** It subscribes
+to the conversation it is showing and to nothing else, because the text
+arrives many times a second and a rail of fifty rows has no business
+redrawing for it. The rail listens to the *status* instead, and to every
+conversation's status rather than to one.
+
+| | Before | After |
+|---|---|---|
+| A reply in another conversation | aborted | keeps running |
+| Two conversations | one could answer | both can |
+| Stopping | stopped the one | stops the one, and only the one |
+| The rail's running dot | one id, for the composer | per conversation |
+| A half-written message | followed the reader to the next conversation | stays in the conversation it was written in |
+| A draft | belonged to the side | belongs to the conversation |
+| The "may this touch the composer" check | there | gone — a reply belongs to a conversation, so the question does not arise |
+
+**The turn vocabulary moved with it.** `src/lib/turns.ts` holds the live
+shape of a turn, the stored shape, and the conversions between them, because
+the runtime needs them as much as the composer does.
+
+**Two rules that were found by running the app, and are worth writing
+down.** A conversation that is answering keeps the turns it has: the answer
+being written is not in the store yet, so loading the stored turns over the
+top would throw it away — and the conversation would then be written back
+without it. And a half-sent message says which conversation it belongs to,
+because a message that was only "the last one sent" follows the reader into
+the next conversation.
+
+---
+
+## 8. Saying that something finished
 
 A reply that is being written is on screen, and the reader reads it as it
 arrives. The moment the app is not in front, the answer is happening
@@ -254,7 +305,7 @@ announced would be a second place for a conversation to be.
 
 ---
 
-## 8. What is deliberately not being built
+## 9. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.

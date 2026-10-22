@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   BellIcon,
   BellOffIcon,
   CopyIcon,
@@ -35,6 +37,7 @@ import {
   deleteChat,
   forkChat,
   renameChat,
+  setChatArchived,
   toggleMuteChat,
   togglePinChat,
 } from "@/lib/chats"
@@ -42,6 +45,7 @@ import {
   deleteSession,
   forkSession,
   renameSession,
+  setSessionArchived,
   toggleMuteSession,
   togglePinSession,
 } from "@/lib/sessions"
@@ -96,6 +100,7 @@ export function ThreadContextMenu({
           rename: renameChat,
           togglePin: togglePinChat,
           toggleMute: toggleMuteChat,
+          setArchived: setChatArchived,
           fork: forkChat,
         }
       : {
@@ -103,6 +108,7 @@ export function ThreadContextMenu({
           rename: renameSession,
           togglePin: togglePinSession,
           toggleMute: toggleMuteSession,
+          setArchived: setSessionArchived,
           fork: forkSession,
         }
 
@@ -183,6 +189,19 @@ export function ThreadContextMenu({
           <ContextMenuItem onClick={() => actions.toggleMute(thread.id)}>
             {thread.mutedAt ? <BellIcon /> : <BellOffIcon />}
             {thread.mutedAt ? "Unmute" : "Mute"}
+          </ContextMenuItem>
+
+          {/* Archiving is the reversible option, and the one the app can offer
+              where there is nowhere to look for something that was merely
+              forgotten. The thread keeps its turns and can be brought back
+              from the archived list. */}
+          <ContextMenuItem
+            onClick={() =>
+              actions.setArchived(thread.id, !thread.archivedAt)
+            }
+          >
+            {thread.archivedAt ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+            {thread.archivedAt ? "Unarchive" : "Archive"}
           </ContextMenuItem>
 
           {/* No ellipsis. It was there to signal that a dialog opens rather than

@@ -4,11 +4,7 @@ Two kinds of document live here, and they are kept apart on purpose.
 
 | | What it is | Where it lives |
 |---|---|---|
-<<<<<<< HEAD
 | **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md), [`icons.md`](icons.md), [`layout.md`](layout.md), [`visual-baseline.md`](visual-baseline.md) and [`workspace-state.md`](workspace-state.md) |
-=======
-| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md) and [`icons.md`](icons.md) |
->>>>>>> task/1.3
 | **The app as it is meant to become** | What is deferred, what was planned, and what has not been built | [`docs/plan/`](plan/) |
 
 A document in `docs/` describes something that is true of the code you can

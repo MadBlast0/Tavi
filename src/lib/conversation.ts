@@ -86,6 +86,15 @@ export type Conversation = {
   servedModel: string | null
   /** The last thing that went wrong, if anything did. */
   error: string | null
+  /**
+   * Whether this conversation is being compacted right now.
+   *
+   * It is the conversation's, and not the composer's: a compaction is
+   * something happening to one conversation, and a reader who switched
+   * conversations in the middle of one must not find the next one claiming
+   * to be busy.
+   */
+  compacting: boolean
   /** When the turn was sent. */
   startedAt: number
   /** The assistant turn being written, while one is. */
@@ -236,6 +245,7 @@ export const setConversationTurns = (
     usage: existing?.usage ?? null,
     servedModel: existing?.servedModel ?? null,
     error: existing?.error ?? null,
+    compacting: existing?.compacting ?? false,
     startedAt: existing?.startedAt ?? Date.now(),
     turnId: existing?.turnId ?? null,
   })
@@ -310,6 +320,23 @@ export const loadConversation = (
   if (isRunning(id)) return
   setConversationTurns(id, side, turns)
   setConversationReport(id, report.usage, report.servedModel)
+}
+
+/**
+ * Says a conversation is being compacted, or that it is not.
+ *
+ * A compaction rewrites a conversation into a summary, and it takes a while.
+ * The flag is the conversation's, so a reader who switched conversations in
+ * the middle of one does not find the next one claiming to be busy.
+ */
+export const markConversationCompacting = (
+  id: string,
+  compacting: boolean,
+): void => {
+  const existing = conversations.get(id)
+  if (!existing) return
+  existing.compacting = compacting
+  publish(id)
 }
 
 /**
@@ -398,6 +425,7 @@ export const startConversation = (options: ConversationStart): void => {
     usage: null,
     servedModel: null,
     error: null,
+    compacting: false,
     startedAt: Date.now(),
     turnId,
   })

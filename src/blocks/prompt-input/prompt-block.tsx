@@ -68,6 +68,7 @@ import {
   failConversation,
   forgetConversation,
   loadConversation,
+  markConversationCompacting,
   markConversationPending,
   setConversationError,
   setConversationReport,
@@ -100,7 +101,7 @@ import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
 } from "@/lib/modes"
-import type { Side } from "@/lib/sides"
+import { SIDES, type Side } from "@/lib/sides"
 import { DEFAULT_PROVIDER_ID } from "@/lib/providers"
 import { serializeReasoning } from "@/lib/provider-reasoning"
 import { unknownCapabilities } from "@/lib/reasoning"
@@ -780,25 +781,6 @@ export function PromptBlock() {
   const provider = providerBySide[variant]
 
   /**
-   * What the user has typed, attached, mentioned or queued — per side.
-   *
-   * The composer is one shell with two regions, and the regions share the
-   * shell's context. That context is where the text and the attachments live,
-   * so without this a half-written chat would be waiting in the Code
-   * composer, and a chat's attachments would go out with a code message.
-   *
-   * The content belongs to the side, not to the composer, so the composer is
-   * told what it is showing and reports what changed.
-   */
-  const [contentBySide, setContentBySide] = React.useState<
-    Record<Side, PromptInputContent>
-  >(() => ({
-    chat: { text: readComposerDraft("chat"), files: [], mentions: [], queue: [] },
-    code: { text: readComposerDraft("code"), files: [], mentions: [], queue: [] },
-  }))
-  const content = contentBySide[variant]
-
-  /**
    * Choosing a model, or an effort level, changes the side you are on.
    *
    * The picker is one control with two memories: the same button in the chat
@@ -835,17 +817,6 @@ export function PromptBlock() {
     [variant],
   )
 
-  /** A change to the composer content, which belongs to the side. */
-  const onContentChange = React.useCallback(
-    (change: Partial<PromptInputContent>) => {
-      setContentBySide((current) => ({
-        ...current,
-        [variant]: { ...current[variant], ...change },
-      }))
-    },
-    [variant],
-  )
-
   /** The agent mode. Code only — a chat has no repository to be careful in. */
   const [mode, setMode] = React.useState(() => readPref(PREF.mode) ?? "edit")
   const [realModels, setRealModels] = React.useState<PromptModel[]>([])
@@ -864,6 +835,14 @@ export function PromptBlock() {
      runtime's. They are read from it below, with the turns. */
   /** Folders this app has actually been given access to. Empty until one is picked. */
   const [folders, setFolders] = React.useState<Workspace[]>([])
+  /**
+   * Whether the folders have been read.
+   *
+   * It is not the same as "there are folders": a machine with none of them
+   * still has to be able to restore a conversation, and waiting for a list
+   * that is never going to arrive would mean never restoring one.
+   */
+  const [foldersRead, setFoldersRead] = React.useState(false)
   const [folderId, setFolderId] = React.useState<string | undefined>(undefined)
   const [projectFiles, setProjectFiles] = React.useState<WorkspaceFile[]>([])
   /**
@@ -951,6 +930,78 @@ export function PromptBlock() {
   const usage = shown?.usage ?? null
   const servedModel = shown?.servedModel ?? null
   const saveError = shown?.error ?? null
+
+  /**
+   * What the user has typed, attached, mentioned or queued — per
+   * conversation.
+   *
+   * The composer is one shell with two regions, and the regions share the
+   * shell's context. That context is where the text and the attachments live,
+   * so without this a half-written chat would be waiting in the Code
+   * composer, and a chat's attachments would go out with a code message.
+   *
+   * **The content belongs to the conversation, not to the side.** A half
+   * written message belongs to the conversation it was written in, and
+   * switching conversations must not carry it to the next one — which is
+   * what it used to do, because the only thing it belonged to was the side.
+   *
+   * **A conversation that does not exist yet has the side's content.** There
+   * is no conversation to belong to until the first message is sent, and the
+   * words the reader has typed belong to the place they typed them.
+   *
+   * The content belongs to the conversation, not to the composer, so the
+   * composer is told what it is showing and reports what changed.
+   */
+  const [contentByKey, setContentByKey] = React.useState<
+    Record<string, PromptInputContent>
+  >(() => ({
+    chat: { text: readComposerDraft("chat"), files: [], mentions: [], queue: [] },
+    code: { text: readComposerDraft("code"), files: [], mentions: [], queue: [] },
+  }))
+  /**
+   * The key the composer is showing.
+   *
+   * A conversation's own key, and the side's key for a conversation that does
+   * not exist yet.
+   */
+  const contentKey = shownId ? `thread:${shownId}` : variant
+  const content = React.useMemo(
+    () =>
+      contentByKey[contentKey] ?? {
+        /* Read here rather than in an effect, so that switching
+           conversations does not show an empty box for a frame before the
+           draft appears in it. */
+        text: readComposerDraft(contentKey),
+        files: [],
+        mentions: [],
+        queue: [],
+      },
+    [contentByKey, contentKey],
+  )
+
+  /** A change to the composer content, which belongs to the conversation. */
+  const onContentChange = React.useCallback(
+    (change: Partial<PromptInputContent>) => {
+      /* The draft is written as it is typed, and against the conversation it
+         belongs to. Writing it in an effect instead would write one
+         conversation's words into another's draft the moment the reader
+         switched conversations. */
+      if (change.text !== undefined) writeComposerDraft(contentKey, change.text)
+      setContentByKey((current) => ({
+        ...current,
+        [contentKey]: {
+          ...(current[contentKey] ?? {
+            text: "",
+            files: [],
+            mentions: [],
+            queue: [],
+          }),
+          ...change,
+        },
+      }))
+    },
+    [contentKey],
+  )
   const [canPick, setCanPick] = React.useState(false)
   /* Clone dialog. Opening it is what the folder menu triggers; the URL, the
      result and any failure all live here rather than in the menu, so a slow
@@ -1000,7 +1051,15 @@ export function PromptBlock() {
       })
     }
   }, [])
-  const [compacting, setCompacting] = React.useState(false)
+  /**
+   * Whether the conversation on screen is being compacted.
+   *
+   * It is the conversation's, and not the composer's: a compaction is
+   * something happening to one conversation, and a reader who switched
+   * conversations in the middle of one must not find the next one claiming
+   * to be busy.
+   */
+  const compacting = shown?.compacting ?? false
   const dockRef = React.useRef<HTMLDivElement>(null)
 
   /**
@@ -1215,8 +1274,56 @@ export function PromptBlock() {
     setCanPick(isDesktopApp() || supportsDirectoryPicker())
   }, [])
 
+  /**
+   * The last conversation on each side is put back.
+   *
+   * The app is a place you come back to, and a place you come back to has
+   * the conversation you were in. Each side remembers its own, and they are
+   * put back when the app opens.
+   *
+   * It waits for the folders, because a code session's folder is part of the
+   * session, and a session restored without its folder is not the session.
+   */
+  const restored = React.useRef(false)
   React.useEffect(() => {
-    void listWorkspaces().then(setFolders)
+    if (restored.current) return
+    if (!foldersRead) return
+    restored.current = true
+    for (const side of SIDES) {
+      /* A side the reader has already opened is left alone: they asked for
+         that one, and it is newer than the one the app remembers. */
+      if (activeBySide[side]) continue
+      const id = readPref(sidePref(PREF.lastThread, side))
+      /* A conversation that is not there any more — deleted, or on another
+         machine — is not put back, and the side opens empty. */
+      if (id) loadThread(side, id)
+    }
+  }, [foldersRead, loadThread, activeBySide])
+
+  /**
+   * Each side remembers the conversation it had open.
+   *
+   * It is written from the one place that knows it, so that a conversation
+   * opened from the rail, a conversation made by sending the first message,
+   * and a conversation closed by pressing "New" are all the same fact
+   * recorded in the same place.
+   *
+   * **It waits for the restore.** Before the conversations are put back there
+   * is nothing open, and writing that would erase the very thing the
+   * restore is about to read.
+   */
+  React.useEffect(() => {
+    if (!restored.current) return
+    for (const side of SIDES) {
+      writePref(sidePref(PREF.lastThread, side), activeBySide[side] ?? undefined)
+    }
+  }, [activeBySide])
+
+  React.useEffect(() => {
+    void listWorkspaces().then((list) => {
+      setFolders(list)
+      setFoldersRead(true)
+    })
   }, [])
 
   /**
@@ -1444,13 +1551,11 @@ export function PromptBlock() {
     else writePref(PREF.mode, mode)
   }, [mode, folderId])
 
-  /* The draft is the side's, so it is saved against the side and restored into
-     the side. A half-written chat is waiting in the chat composer, and a
-     half-written session in the session composer, and neither appears in the
-     other. */
-  React.useEffect(() => {
-    writeComposerDraft(variant, content.text)
-  }, [variant, content.text])
+  /* The draft is the conversation's, so it is saved against the conversation
+     and restored into the conversation. A half-written chat is waiting in
+     the chat it was written in, and a half-written session in the session it
+     was written in, and neither appears in the other — nor in the next
+     conversation on the same side. */
 
   /* Starters name files by index, so a window chosen for one folder means
      nothing in another. Advancing rather than resetting keeps every thread open
@@ -1961,7 +2066,7 @@ export function PromptBlock() {
   const compact = async (): Promise<void> => {
     const KEEP = 6
     const cut = turns.length - KEEP
-    if (cut <= 0 || !model || compacting) return
+    if (cut <= 0 || !model || compacting || !shownId) return
 
     const transcript = turns
       .slice(0, cut)
@@ -1976,7 +2081,7 @@ export function PromptBlock() {
       .join("\n\n")
     if (!transcript.trim()) return
 
-    setCompacting(true)
+    markConversationCompacting(shownId, true)
     try {
       const summary = await askForText({
         messages: [
@@ -2018,7 +2123,7 @@ export function PromptBlock() {
     } catch {
       // Leave the thread untouched; a failed compaction should cost nothing.
     } finally {
-      setCompacting(false)
+      markConversationCompacting(shownId, false)
     }
   }
 

@@ -421,3 +421,62 @@ test("muting one thread leaves the others alone", async () => {
 
   assert.equal(chats.find(second.id)?.mutedAt, undefined);
 });
+
+/**
+ * An archived conversation is out of the way, not gone.
+ *
+ * It keeps its turns, it can be brought back, and it is still on disk. That
+ * is the whole difference between archiving and deleting, and it is the reason
+ * the app can offer it.
+ */
+test("a conversation can be archived and brought back", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+
+  await chats.setArchived(chat.id, true);
+  assert.ok(
+    typeof chats.find(chat.id)?.archivedAt === "number",
+    "the conversation should say it is archived",
+  );
+  assert.equal(
+    chats.find(chat.id)?.turns.length,
+    1,
+    "archiving must not lose the conversation",
+  );
+
+  await chats.setArchived(chat.id, false);
+  assert.equal(chats.find(chat.id)?.archivedAt, undefined);
+  assert.equal(chats.find(chat.id)?.turns.length, 1);
+});
+
+/**
+ * Archiving one conversation leaves the others alone.
+ *
+ * The flag is the conversation's own, so there is no shared state to spill
+ * over.
+ */
+test("archiving one conversation leaves the others alone", async () => {
+  const { chats } = stores();
+  const first = await chats.create({ turns: [aTurn("one")] });
+  const second = await chats.create({ turns: [aTurn("two")] });
+
+  await chats.setArchived(first.id, true);
+
+  assert.equal(chats.find(second.id)?.archivedAt, undefined);
+});
+
+/**
+ * The mark survives a restart.
+ *
+ * A conversation that was archived yesterday is still archived today.
+ */
+test("the archived mark is kept on disk", async () => {
+  const { chats } = stores();
+  const chat = await chats.create({ turns: [aTurn("hello")] });
+  await chats.setArchived(chat.id, true);
+
+  const stored = JSON.parse(
+    globalThis.localStorage.getItem("tavi.chats.v1")!,
+  ) as Record<string, unknown>[];
+  assert.ok(typeof stored[0].archivedAt === "number");
+});

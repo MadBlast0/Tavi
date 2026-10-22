@@ -2,17 +2,16 @@
 
 import * as React from "react"
 import {
+  ArchiveIcon,
   BellOffIcon,
   CircleSmallIcon,
   ClockIcon,
   FolderIcon,
-  LayoutPanelLeftIcon,
   ListFilterIcon,
   PinIcon,
   PlusIcon,
   ShapesIcon,
   SlidersHorizontalIcon,
-  XIcon,
   ZapIcon,
 } from "lucide-react"
 
@@ -51,11 +50,6 @@ import {
 } from "@/lib/sessions"
 import { formatWhen } from "@/lib/threads"
 import type { Side } from "@/lib/sides"
-import {
-  closeWorkspace,
-  openWorkspace,
-  useWorkspace,
-} from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
 
 /**
@@ -76,6 +70,7 @@ const railChat = (chat: StoredChat): RailThread => ({
   pinnedAt: chat.pinnedAt,
   unreadAt: chat.unreadAt,
   mutedAt: chat.mutedAt,
+  archivedAt: chat.archivedAt,
   side: "chat",
 })
 
@@ -89,6 +84,7 @@ const railSession = (session: StoredSession): RailThread => ({
   pinnedAt: session.pinnedAt,
   unreadAt: session.unreadAt,
   mutedAt: session.mutedAt,
+  archivedAt: session.archivedAt,
   side: "code",
 })
 
@@ -220,14 +216,10 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
       icon: SlidersHorizontalIcon,
       why: "Not built yet — there is nothing to customise",
     },
+    { id: "archived", label: "Archived", icon: ArchiveIcon },
   ],
   code: [
     { id: "new", label: "New", icon: PlusIcon },
-    {
-      id: "workspace",
-      label: "Workspace",
-      icon: LayoutPanelLeftIcon,
-    },
     {
       id: "artifacts",
       label: "Artifacts",
@@ -252,6 +244,7 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
       icon: SlidersHorizontalIcon,
       why: "Not built yet — there is nothing to customise",
     },
+    { id: "archived", label: "Archived", icon: ArchiveIcon },
   ],
 }
 
@@ -503,9 +496,6 @@ export function SidebarNav() {
   const { variant } = useComposerVariant()
   const bridge = useThreadBridge()
   const newThread = useNewThread()
-  /* Whether the workspace has the work area. The row has to say which it
-     will do, and the only way it can know is by asking. */
-  const { open: workspaceOpen } = useWorkspace()
   /* The two lists, kept apart.
      A chat is not a code session, so the rail is not one list drawn twice: it
      is two lists, and the switch says which of them you are looking at. */
@@ -514,6 +504,33 @@ export function SidebarNav() {
   )
   const [sessions, setSessions] = React.useState<RailThread[]>(() =>
     listSessions().map(railSession),
+  )
+
+  /**
+   * Whether the rail is showing the archived conversations.
+   *
+   * It is a switch rather than a place, because an archived conversation is
+   * still a conversation: it is out of the way, not gone, and one click
+   * brings it back.
+   */
+  const [archived, setArchived] = React.useState(false)
+
+  /**
+   * The list the rail is showing.
+   *
+   * An archived conversation is out of the way rather than gone, so the two
+   * lists are the same conversations read differently.
+   */
+  const listedChats = React.useMemo(
+    () => (archived ? chats : chats.filter((chat) => !chat.archivedAt)),
+    [chats, archived],
+  )
+  const listedSessions = React.useMemo(
+    () =>
+      archived
+        ? sessions
+        : sessions.filter((session) => !session.archivedAt),
+    [sessions, archived],
   )
   /* Per mode, for the same reason the lists themselves are: a chat list sorted
      one way and a project list sorted another is two answers to one list. Not
@@ -573,7 +590,7 @@ export function SidebarNav() {
    * their own.
    */
   const codeGroups = React.useMemo(() => {
-    const groups = groupByProject(sessions, folderNames).map(
+    const groups = groupByProject(listedSessions, folderNames).map(
       ([key, group]) =>
         [key, { name: group.name, threads: sortThreads(group.threads, sort) }] as const,
     )
@@ -614,23 +631,6 @@ export function SidebarNav() {
     newThread(variant)
   }
 
-  /**
-   * The workspace, in and out.
-   *
-   * The row says which it will do rather than carrying one label and
-   * changing only a mark: a row that says "Workspace" and closes the
-   * workspace when pressed is a row that lies about what it does, and the
-   * rail is the one place the user is looking when they decide to leave.
-   *
-   * Opening the workspace does not touch the conversation or the composer.
-   * They are still there when the workspace is closed again, exactly as
-   * they were.
-   */
-  function onWorkspace() {
-    if (workspaceOpen) closeWorkspace()
-    else openWorkspace()
-  }
-
   function onOpen(id: string) {
     bridge.functions.current?.open(id)
   }
@@ -650,22 +650,20 @@ export function SidebarNav() {
                 className={ROW}
                 disabled={Boolean(entry.why)}
                 title={entry.why}
+                isActive={entry.id === "archived" ? archived : undefined}
                 onClick={
                   entry.id === "new"
-                    ? onNew
-                    : entry.id === "workspace"
-                      ? onWorkspace
+                    ? () => {
+                        setArchived(false)
+                        onNew()
+                      }
+                    : entry.id === "archived"
+                      ? () => setArchived((current) => !current)
                       : undefined
                 }
               >
-                {entry.id === "workspace" && workspaceOpen ? (
-                  <XIcon />
-                ) : (
-                  <entry.icon />
-                )}
-                {entry.id === "workspace" && workspaceOpen
-                  ? "Close workspace"
-                  : entry.label}
+                <entry.icon />
+                {entry.label}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
@@ -674,7 +672,13 @@ export function SidebarNav() {
 
       <SidebarGroup className={GROUP}>
         <ThreadListHeading
-          label={variant === "code" ? "Sessions" : "Chats"}
+          label={
+            archived
+              ? "Archived"
+              : variant === "code"
+                ? "Sessions"
+                : "Chats"
+          }
           sortLabel={variant === "code" ? "sessions" : "chats"}
           sort={sort}
           onSortChange={onSortChange}
@@ -703,7 +707,7 @@ export function SidebarNav() {
         : (
             <SidebarGroup className={GROUP}>
               <SidebarMenu>
-                {sortThreads(chats, sort).map((thread) => (
+                {sortThreads(listedChats, sort).map((thread) => (
                   <ThreadRow
                     key={thread.id}
                     thread={thread}
@@ -719,10 +723,16 @@ export function SidebarNav() {
       {/* An empty list says so. A rail with a heading and nothing under it
           reads as a list that has failed to load rather than one that has
           nothing in it yet. */}
-      {(variant === "code" ? sessions.length === 0 : chats.length === 0) ? (
+      {(variant === "code"
+        ? listedSessions.length === 0
+        : listedChats.length === 0) ? (
         <SidebarGroup className={GROUP}>
           <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
-            {variant === "code" ? "No sessions yet." : "No chats yet."}
+            {archived
+              ? "Nothing archived yet."
+              : variant === "code"
+                ? "No sessions yet."
+                : "No chats yet."}
           </p>
         </SidebarGroup>
       ) : null}
