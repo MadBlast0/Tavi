@@ -15,6 +15,7 @@ import {
 } from "@/components/dropdown-menu"
 import { useNewThread } from "@/blocks/prompt-input/thread-bridge"
 import { hideWindow, quitApp } from "@/lib/desktop"
+import { openPalette } from "@/lib/open-palette"
 import { isDesktopApp } from "@/lib/platform"
 
 /**
@@ -46,7 +47,12 @@ type MenuEntry = {
 }
 
 /** The commands the menu can run. */
-type MenuAction = "new-chat" | "new-session" | "close-window" | "exit"
+type MenuAction =
+  | "new-chat"
+  | "new-session"
+  | "command-palette"
+  | "close-window"
+  | "exit"
 
 const NOT_BUILT = "Not built yet"
 
@@ -106,7 +112,7 @@ const MENU: MenuEntry[] = [
   {
     label: "View",
     children: [
-      { label: "Command palette" },
+      { label: "Command palette", action: "command-palette" },
       { label: "Sidebar" },
       { label: "Terminal changes" },
       { label: "Browser files" },
@@ -263,6 +269,10 @@ export function AppMenu() {
       }
       if (action === "new-session") {
         newThread("code")
+        return
+      }
+      if (action === "command-palette") {
+        openPalette()
         return
       }
       if (!isDesktopApp()) return

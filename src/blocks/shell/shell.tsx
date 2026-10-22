@@ -11,6 +11,7 @@ import {
 } from "@/components/sidebar"
 import { ComposerVariantSwitch } from "@/blocks/prompt-input/composer-variant"
 import { matchesHotkey } from "@/lib/hotkey"
+import { CommandPalette } from "./command-palette"
 import {
   notifySettingsClosed,
   OPEN_SETTINGS,
@@ -358,6 +359,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         width={width}
         onResize={setWidth}
         onResizeStart={(dragging) => setResizing(dragging)}
+      />
+      {/* The palette is a sibling of the work area rather than a child of
+          it: it is a place to go to, not a thing the work area holds. */}
+      <CommandPalette
+        onToggleRail={() => onRailOpenChange(!railOpen)}
       />
       {/* Outside the shell's own stacking, because the card portals to the end of
           the body and covers the rail anyway — mounting it inside would only
