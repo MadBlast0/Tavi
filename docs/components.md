@@ -95,6 +95,7 @@ One row per job. The **canonical** column is the one to use.
 | How far along | `@/components/progress` | |
 | A number that changes | `@/components/number-flow` | The token meter uses it |
 | A confirmation of a small act | `@/components/toast` | And never for something that did not happen |
+| A reply that finished while you were elsewhere | `@/components/toast`, shown by `@/blocks/shell/announce-bridge` | The app's own card. It carries the conversation's name and the first line of the answer, and it opens that conversation |
 | A keyboard key | `@/components/kbd` | |
 | A row of items | `@/components/item` | |
 | A card | `@/components/card` | |
@@ -147,6 +148,7 @@ reaches for when the shadcn set does not have the thing.
 | `@/components/desktop-tool-gate` | Renders a tool's controls only on the desktop |
 | `@/components/reasoning` | A reasoning block that can be opened and closed |
 | `@/components/provider-logo` | A provider's mark |
+| `@/blocks/shell/announce-bridge` | The app's announcement surface: the card, and the bridge that shows it |
 | `@/components/spinner`, `@/components/skeleton` | Used by the app as well as the vendored set |
 | `@/components/thread.aui`, `src/assistant.tsx`, `@/components/AssistantSurface` | The assistant-ui thread surface. **Not reachable from the entry point** — raw material |
 

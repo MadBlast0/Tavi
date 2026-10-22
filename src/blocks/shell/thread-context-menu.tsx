@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import {
+  BellIcon,
+  BellOffIcon,
   CopyIcon,
   GitForkIcon,
   PencilIcon,
@@ -33,12 +35,14 @@ import {
   deleteChat,
   forkChat,
   renameChat,
+  toggleMuteChat,
   togglePinChat,
 } from "@/lib/chats"
 import {
   deleteSession,
   forkSession,
   renameSession,
+  toggleMuteSession,
   togglePinSession,
 } from "@/lib/sessions"
 import type { RailThread } from "./rail-thread"
@@ -91,12 +95,14 @@ export function ThreadContextMenu({
           remove: deleteChat,
           rename: renameChat,
           togglePin: togglePinChat,
+          toggleMute: toggleMuteChat,
           fork: forkChat,
         }
       : {
           remove: deleteSession,
           rename: renameSession,
           togglePin: togglePinSession,
+          toggleMute: toggleMuteSession,
           fork: forkSession,
         }
 
@@ -168,6 +174,15 @@ export function ThreadContextMenu({
           <ContextMenuItem onClick={() => actions.togglePin(thread.id)}>
             {thread.pinnedAt ? <PinOffIcon /> : <PinIcon />}
             {thread.pinnedAt ? "Unpin" : "Pin"}
+          </ContextMenuItem>
+
+          {/* Mute is about being interrupted, not about the thread: a muted
+              thread still runs, and its reply still lands in it. It is the
+              one item here that says something about the app's behaviour
+              rather than about the conversation. */}
+          <ContextMenuItem onClick={() => actions.toggleMute(thread.id)}>
+            {thread.mutedAt ? <BellIcon /> : <BellOffIcon />}
+            {thread.mutedAt ? "Unmute" : "Mute"}
           </ContextMenuItem>
 
           {/* No ellipsis. It was there to signal that a dialog opens rather than

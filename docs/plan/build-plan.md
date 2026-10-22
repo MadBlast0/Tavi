@@ -130,7 +130,7 @@ Almost none, and that is the useful finding.
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
 | B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. The design is in [`../architecture.md`](../architecture.md) §6 |
-| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule and the settings. Planned and built in [`notifications.md`](notifications.md) |
+| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule, the card, the mark, the mute and the settings. Planned and built in [`notifications.md`](notifications.md) |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
 was already built for this and has simply never been asked to do it.
@@ -222,7 +222,12 @@ conversation can be opened beside the current one from the rail.
 | ✅ | The adapters, and the seam | `src/lib/desktop.ts`, `src/lib/web.ts`, `src/lib/api.ts` | both |
 | ✅ | A notification when a reply finishes and the app is not in front | `src/lib/notifications.ts` | front-end |
 | ✅ | The notification says which conversation, and that a reply **ended** | same | front-end |
+| ✅ | A card inside the app, for when the reader is in the app | `src/blocks/shell/announce-bridge.tsx` | front-end |
+| ✅ | The card opens the conversation it is about | `src/lib/open-thread.ts` | front-end |
+| ✅ | The conversation's own mark, so the reader can see what they missed | `src/lib/threads.ts` | front-end |
+| ✅ | A mute, per conversation | `src/blocks/shell/thread-context-menu.tsx` | front-end |
 | ✅ | A setting for when to be told | `src/blocks/shell/settings-general.tsx` | front-end |
+| ✅ | A test, so the reader can tell a broken app from a system saying no | same | front-end |
 
 **Done when** a reply finishes while the app is in the background, and you
 are told once. ✅

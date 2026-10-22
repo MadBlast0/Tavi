@@ -33,6 +33,7 @@ const shell = read("blocks", "shell", "shell.tsx")
 const titleBar = read("blocks", "shell", "title-bar.tsx")
 const sidebarNav = read("blocks", "shell", "sidebar-nav.tsx")
 const promptBlock = read("blocks", "prompt-input", "prompt-block.tsx")
+const stylesheet = read("index.css")
 const tauriConfig = read("..", "src-tauri", "tauri.conf.json")
 
 /**
@@ -68,9 +69,18 @@ test("the title bar is 28 pixels tall", () => {
   // It is drawn over the work area rather than beside it, and the number is
   // published in one place so the bar, the rail's header and the surface
   // cannot end up a pixel apart.
-  assert.ok(
-    shell.includes("[--shell-top-bar-h:1.75rem]"),
-    "the shell should publish the title bar's height, and it should be 1.75rem",
+  //
+  // The number is on the root, so that a menu or a popover — which is
+  // portalled to the end of the body — can see it too. It may be written in
+  // the stylesheet or set on the root from code; what the rule forbids is a
+  // height that is not 28 pixels, and two heights.
+  const published =
+    (stylesheet.match(/--shell-top-bar-h\s*:\s*([\d.]+rem)/) ?? [])[1] ??
+    (shell.match(/\[--shell-top-bar-h:([\d.]+rem)\]/) ?? [])[1]
+  assert.equal(
+    published,
+    "1.75rem",
+    "the title bar's height should be published as 1.75rem, which is 28 pixels",
   )
   assert.ok(
     titleBar.includes("h-(--shell-top-bar-h)"),

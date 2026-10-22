@@ -72,6 +72,20 @@ export const renameChat = (id: string, title: string) => chatStore.rename(id, ti
 
 export const togglePinChat = (id: string) => chatStore.togglePin(id)
 
+/**
+ * Notes that a reply finished in this chat while the reader was elsewhere.
+ *
+ * The rail's own badge carries this, so the reader can see what they missed
+ * even on a machine where the operating system refused to raise a toast.
+ */
+export const markChatUnread = (id: string) => chatStore.markUnread(id)
+
+/** Notes that the reader has looked at this chat. */
+export const clearChatUnread = (id: string) => chatStore.clearUnread(id)
+
+/** Turns this chat's announcements on or off. */
+export const toggleMuteChat = (id: string) => chatStore.toggleMute(id)
+
 export const forkChat = (id: string): Promise<StoredChat | undefined> => chatStore.fork(id)
 
 /** The last write that did not happen, if there was one. */

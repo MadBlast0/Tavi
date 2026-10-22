@@ -165,6 +165,21 @@
    stops mattering.
    --------------------------------------------------------------------------- */
 
+/* The title bar's thickness.
+
+   It is the single source of the bar's own height, of the rail's strip and of
+   where the work area's content starts, so the halves cannot end up a pixel
+   apart. It is set on the element rather than on the shell so that anything
+   portalled to the body — the app's announcement card, for one — can clear
+   the bar instead of guessing at its size.
+
+   It is not a colour, so it does not belong in a theme: it is the same in
+   every one, and a theme that could change it would be a theme that could
+   move the bar out from under the app. */
+html {
+    --shell-top-bar-h: 1.75rem;
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
