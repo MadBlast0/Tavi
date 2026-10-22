@@ -70,8 +70,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 | 4.1 | ✅ done | The frame every pane is drawn in |
 | 4.2 | ✅ done | The header: icon, title, actions, and the drag region |
-| 4.3 | ▶ next | The overflow menu, and the close, focus, maximize and pop-out controls |
-| 4.4 | ⬜ not started | The registry of pane types, and the model of an instance |
+| 4.3 | ✅ done | The overflow menu, and the close, focus, maximize and pop-out controls |
+| 4.4 | ▶ next | The registry of pane types, and the model of an instance |
 | 4.5 | ⬜ not started | The shared empty, loading, error and unavailable slots |
 
 **Phase 5 — Every pane's content, one pane at a time**
@@ -1594,6 +1594,28 @@ not grow with its content, so narrow panes do not push the layout around.
 
 **Reference:** The pane's overflow menu and close/focus/maximise/pop-out. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The frame | `src/blocks/workspace/pane.tsx` — the overflow menu, the pop-out, the close control, and the focus action |
+| The check | `src/lib/pane-actions.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The pane already carried its three controls — pop
+out, the menu's chevron, and close — and they were already icon-only
+buttons carrying their names. What was missing was the **focus** action in
+the overflow menu, and the **conditional** offering of actions: split and
+focus are offered only when their callbacks are provided, so a pane that
+cannot split or focus does not pretend it can. The close action is
+destructive, and the pop-out control says "not available yet" when it
+cannot be used.
+
+Maximize and restore are not here. They need the layout engine, and they
+are Task 7.7's job — an action that cannot work is omitted rather than
+drawn as though it could.
 ## Task 4.4 — Create the pane registry and instance model
 
 **Prompt to the coding AI:**

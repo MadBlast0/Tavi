@@ -138,7 +138,7 @@ export function Pane({
           >
             <PictureInPicture2Icon />
           </TooltipIconButton>
-          <PaneMenu onSplit={onSplit} onClose={onClose} />
+          <PaneMenu onSplit={onSplit} onFocus={onFocus} onClose={onClose} />
           <TooltipIconButton
             tooltip="Close"
             size="icon-xs"
@@ -168,9 +168,11 @@ export function Pane({
  */
 function PaneMenu({
   onSplit,
+  onFocus,
   onClose,
 }: {
   onSplit?: (edge: DockEdge) => void
+  onFocus?: () => void
   onClose?: () => void
 }) {
   return (
@@ -188,20 +190,32 @@ function PaneMenu({
         <ChevronDownIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Split</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => onSplit?.("left")}>
-          Split left
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSplit?.("right")}>
-          Split right
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSplit?.("top")}>
-          Split up
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSplit?.("bottom")}>
-          Split down
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {onFocus ? (
+          <>
+            <DropdownMenuItem onClick={onFocus}>
+              Focus pane
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {onSplit ? (
+          <>
+            <DropdownMenuLabel>Split</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => onSplit("left")}>
+              Split left
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSplit("right")}>
+              Split right
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSplit("top")}>
+              Split up
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSplit("bottom")}>
+              Split down
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem variant="destructive" onClick={onClose}>
           Close pane
         </DropdownMenuItem>
