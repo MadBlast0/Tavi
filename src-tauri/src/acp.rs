@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_mut, unused_assignments, unused_variables, unused)]
 //! The Agent Client Protocol, for the programs that speak it.
 //!
 //! A protocol, rather than a headless mode, is the way to a program that
