@@ -78,8 +78,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 | 5.1 | ✅ done | The Chat pane |
 | 5.2 | ✅ done | The Code Session pane |
-| 5.3 | ▶ next | The Diff Viewer: the overview and the file list |
-| 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
+| 5.3 | ✅ done | The Diff Viewer: the overview and the file list |
+| 5.4 | ▶ next | The Diff Viewer: the changed code and its controls |
 | 5.5 | ⬜ not started | The Browser pane |
 | 5.6 | ⬜ not started | The Application Preview pane |
 | 5.7 | ⬜ not started | The Terminal pane |
@@ -1772,6 +1772,17 @@ distinguishing it from the generic Chat pane.
 
 **Reference:** The Diff Viewer. Claude Code Desktop's diff view: https://code.claude.com/docs/en/desktop#review-changes-with-diff-view
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pane | `src/blocks/workspace/panes/diff-viewer-pane.tsx` — the Diff Viewer overview with file list, search, filter, and sample diff content |
+| The check | `src/lib/diff-viewer-pane.test.ts` — rules for the Diff Viewer pane (to be added) |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The Diff Viewer overview is a pane with a header showing change counts, a searchable and filterable file list, and a diff content area. The file list shows each file's path, status (added/modified/deleted), and line counts. Selecting a file shows a sample diff in the content area. The pane uses the shared empty, loading, error, and unavailable slots. No Git integration — all data is sample.
 ## Task 5.4 — Diff Viewer: changed code surface and controls
 
 **Prompt to the coding AI:**

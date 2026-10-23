@@ -6,43 +6,50 @@ import { SearchIcon } from "lucide-react"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 
-const SAMPLE_FILES = [
-  { path: "src/lib/workspace-state.ts", status: "modified" as const, additions: 47, deletions: 12 },
-  { path: "src/blocks/workspace/pane.tsx", status: "modified" as const, additions: 23, deletions: 8 },
-  { path: "src/blocks/workspace/panes/chat-pane.tsx", status: "added" as const, additions: 219, deletions: 0 },
-  { path: "src/blocks/workspace/panes/code-session-pane.tsx", status: "added" as const, additions: 197, deletions: 0 },
-  { path: "src/blocks/workspace/pane-registry.tsx", status: "added" as const, additions: 156, deletions: 0 },
-  { path: "src/blocks/workspace/pane-states.tsx", status: "added" as const, additions: 134, deletions: 0 },
-  { path: "src/lib/workspace-state.ts", status: "modified" as const, additions: 89, deletions: 31 },
-  { path: "src/blocks/workspace/layout/layout-tree.tsx", status: "added" as const, additions: 345, deletions: 0 },
-  { path: "src/blocks/workspace/pane-registry.test.ts", status: "added" as const, additions: 87, deletions: 0 },
-  { path: "src/blocks/workspace/pane-states.test.ts", status: "added" as const, additions: 76, deletions: 0 },
-  { path: "src/lib/pane-registry.test.ts", status: "added" as const, additions: 62, deletions: 0 },
-  { path: "README.md", status: "modified" as const, additions: 12, deletions: 3 },
-  { path: "src/lib/providers.ts", status: "deleted" as const, additions: 0, deletions: 245 },
-  { path: "docs/providers.md", status: "added" as const, additions: 169, deletions: 0 },
+interface SampleFile {
+  path: string
+  status: "added" | "modified" | "deleted"
+  additions: number
+  deletions: number
+}
+
+const SAMPLE_FILES: readonly SampleFile[] = [
+  { path: "src/lib/workspace-state.ts", status: "modified", additions: 47, deletions: 12 },
+  { path: "src/blocks/workspace/pane.tsx", status: "modified", additions: 23, deletions: 8 },
+  { path: "src/blocks/workspace/panes/chat-pane.tsx", status: "added", additions: 219, deletions: 0 },
+  { path: "src/blocks/workspace/panes/code-session-pane.tsx", status: "added", additions: 197, deletions: 0 },
+  { path: "src/blocks/workspace/pane-registry.tsx", status: "added", additions: 156, deletions: 0 },
+  { path: "src/blocks/workspace/pane-states.tsx", status: "added", additions: 134, deletions: 0 },
+  { path: "src/lib/workspace-state.ts", status: "modified", additions: 89, deletions: 31 },
+  { path: "src/blocks/workspace/layout/layout-tree.tsx", status: "added", additions: 345, deletions: 0 },
+  { path: "src/blocks/workspace/pane-registry.test.ts", status: "added", additions: 87, deletions: 0 },
+  { path: "src/blocks/workspace/pane-states.test.ts", status: "added", additions: 76, deletions: 0 },
+  { path: "src/lib/pane-registry.test.ts", status: "added", additions: 62, deletions: 0 },
+  { path: "README.md", status: "modified", additions: 12, deletions: 3 },
+  { path: "src/lib/providers.ts", status: "deleted", additions: 0, deletions: 245 },
+  { path: "docs/providers.md", status: "added", additions: 169, deletions: 0 },
 ] as const
 
-type FileStatus = typeof SAMPLE_FILES[number]["status"]
+type FileStatus = SampleFile["status"]
 type DiffState = "empty" | "populated" | "loading" | "error" | "unavailable" | "no-selection"
 
-function FileRow({ file, isSelected, onClick }: { file: typeof SAMPLE_FILES[number]; isSelected: boolean; onClick: () => void }) {
+function FileRow({ file, isSelected, onClick }: { file: SampleFile; isSelected: boolean; onClick: () => void }) {
   return (
     <button
       key={file.path}
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent ${isSelected ? "bg-accent text-accent-foreground" : ""}`}
+      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent"
     >
       <span className="size-3 shrink-0 text-muted-foreground" role="img" aria-label="File">📄</span>
       <span className="truncate flex-1">{file.path}</span>
-      <span className={`text-[10px] px-1 rounded ${file.additions > 0 ? "text-green-500" : "text-muted-foreground"}`}>+{file.additions}</span>
-      <span className={`text-[10px] px-1 rounded ${file.deletions > 0 ? "text-red-500" : "text-muted-foreground"}`}>-{file.deletions}</span>
+      <span className="text-[10px] px-1 rounded text-green-500">+{file.additions}</span>
+      <span className="text-[10px] px-1 rounded text-red-500">-{file.deletions}</span>
     </button>
   )
 }
 
-function DiffContent({ selected }: { selected: typeof SAMPLE_FILES[number] | null }) {
+function DiffContent({ selected }: { selected: SampleFile | null }) {
   if (!selected) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
@@ -57,8 +64,8 @@ function DiffContent({ selected }: { selected: typeof SAMPLE_FILES[number] | nul
         <span className="size-4 text-muted-foreground" role="img" aria-label="Code">📄</span>
         <span className="truncate text-sm font-medium">{selected.path}</span>
         <div className="ml-auto flex items-center gap-1">
-          <span className={`text-xs px-1 rounded ${selected.additions > 0 ? "text-green-500" : "text-muted-foreground"}`}>+{selected.additions}</span>
-          <span className={`text-xs px-1 rounded ${selected.deletions > 0 ? "text-red-500" : "text-muted-foreground"}`}>-{selected.deletions}</span>
+          <span className="text-xs px-1 rounded text-green-500">+{selected.additions}</span>
+          <span className="text-xs px-1 rounded text-red-500">-{selected.deletions}</span>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 p-3 overflow-auto font-mono text-xs bg-muted/30">
@@ -76,13 +83,10 @@ function DiffContent({ selected }: { selected: typeof SAMPLE_FILES[number] | nul
 }
 
 export function DiffViewerPane({ paneId }: { paneId: string }) {
-  const [state, setState] = React.useState<"empty" | "populated" | "loading" | "error" | "unavailable" | "no-selection">("populated")
+  const [state, setState] = React.useState<DiffState>("populated")
   const [selectedFile, setSelectedFile] = React.useState<string | null>(SAMPLE_FILES[0].path)
   const [search, setSearch] = React.useState("")
   const [filter, setFilter] = React.useState<"all" | "added" | "modified" | "deleted">("all")
-
-  const totalAdditions = SAMPLE_FILES.reduce((sum, f) => sum + f.additions, 0)
-  const totalDeletions = SAMPLE_FILES.reduce((sum, f) => sum + f.deletions, 0)
 
   function renderContent() {
     switch (state) {
@@ -131,8 +135,8 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
             <p className="text-xs">Choose a file from the list to view its diff</p>
           </div>
         )
-      default:
-        const selected = SAMPLE_FILES.find((f) => f.path === selectedFile)
+      default: {
+        const selected = SAMPLE_FILES.find((f) => f.path === selectedFile) ?? null
         const filteredFiles = SAMPLE_FILES.filter((f) => {
           if (filter !== "all" && f.status !== filter) return false
           if (search && !f.path.toLowerCase().includes(search.toLowerCase())) return false
@@ -140,6 +144,22 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
         })
         const totalAdditions = SAMPLE_FILES.reduce((sum, f) => sum + f.additions, 0)
         const totalDeletions = SAMPLE_FILES.reduce((sum, f) => sum + f.deletions, 0)
+
+        const fileButtons = SAMPLE_FILES.map((file) => {
+          return (
+            <button
+              key={file.path}
+              type="button"
+              onClick={() => setSelectedFile(file.path)}
+              className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent"
+            >
+              <span className="size-3 shrink-0 text-muted-foreground" role="img" aria-label="File">📄</span>
+              <span className="truncate flex-1">{file.path}</span>
+              <span className="text-[10px] px-1 rounded text-green-500">+{file.additions}</span>
+              <span className="text-[10px] px-1 rounded text-red-500">-{file.deletions}</span>
+            </button>
+          )
+        })
 
         return (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -165,7 +185,7 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
                 </div>
                 <select
                   value={filter}
-                  onChange={(e) => setFilter(e.target.value as typeof filter)}
+                  onChange={(e) => setFilter(e.target.value as any)}
                   className="px-2 py-1 text-xs border border-input bg-background rounded"
                 >
                   <option value="all">All</option>
@@ -183,23 +203,13 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
                       No files match the filter
                     </div>
                   ) : (
-                    SAMPLE_FILES.map((file) => {
-                      const isSelected = selectedFile === file.path
-                      return (
-                        <FileRow
-                          key={file.path}
-                          file={file}
-                          isSelected={selectedFile === file.path}
-                          onClick={() => setSelectedFile(isSelected ? null : file.path)}
-                        />
-                      )
-                    )}
+                    fileButtons
                   )}
                 </div>
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1">
-                  <DiffContent selected={selected} />
+                  <DiffContent selected={SAMPLE_FILES.find((f) => f.path === selectedFile) ?? null} />
                 </div>
               </div>
             </div>
@@ -207,11 +217,7 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
         )
       }
     }
-    return renderContent()
   }
-
-  const [search, setSearch] = React.useState("")
-  const [filter, setFilter] = React.useState<"all" | "added" | "modified" | "deleted">("all")
 
   return (
     <div data-slot="pane" className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
