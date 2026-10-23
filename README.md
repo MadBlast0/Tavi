@@ -169,27 +169,17 @@ app share one key.
 
 ## Branches and merging
 
-There are two long-lived lines. **`master`** is the line of work — new work
-is committed there, and the other branches are cut from it. **`main`** is the
-trunk: everything finished is merged into it, and it is the line that is
-provable at any moment.
+**`main`** is the trunk: everything finished is merged into it, and it is the
+line that is provable at any moment. Work happens on branches cut from it.
 
 A merge into `main` is **proved before it is committed**. The lockfile has
 to install, the TypeScript has to compile, the tests have to pass, the app
 has to build, and the Rust side has to compile with warnings as errors. A
 merge that does not pass is aborted, and `main` is left exactly as it was.
 
-A merge on a timer does the part a machine can do, and hands the rest to an
-agent: the script merges and proves, and when a merge conflicts or the gate
-goes red, it wakes an agent with the failing output and the rules to keep.
-
-```powershell
-./scripts/install-merge-timer.ps1   # merge and prove every 30 minutes
-./scripts/merge-main.ps1 -Report    # what is in main, and what is not
-```
-
 [`docs/merging.md`](docs/merging.md) has the whole thing: the gate, the
-timer, the report, and the two merges that needed a judgement call.
+manual merge steps, the report, and the two merges that needed a judgement
+call.
 
 ## Provider keys
 

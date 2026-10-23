@@ -1,23 +1,16 @@
-# Branches, merging, and the merge bot
+# Branches and merging
 
-## The two lines
+## The trunk
 
-There are two long-lived lines in this repository, and they are not the same
-thing.
+`main` is the trunk. Everything that is finished is merged into it, and it is
+the line that is supposed to be provable at any moment.
 
-| | What it is | Who writes to it |
-|---|---|---|
-| **`master`** | The line of work. New work is committed here, and the other branches are cut from it. | The work in progress. |
-| **`main`** | The trunk. Everything that is finished is merged into it, and it is the line that is supposed to be provable at any moment. | The merge bot, and anybody merging by hand. |
+Work happens on branches cut from `main`. A branch that is still being written
+to is not in `main` until it is finished and the merge has been proved.
 
-`main` is not a copy of `master`, and it does not run ahead of it on purpose. It
-is the place where work from every branch has been brought together and proved
-to work. A branch that is still being written to is not in `main` until it is
-finished and the merge has been proved.
-
-The point of keeping them apart is that `main` has a property the working
-branches do not have to have: **it is green.** It is the line you can put in
-front of somebody.
+The point of keeping the branches apart is that `main` has a property the
+working branches do not have to have: **it is green.** It is the line you can
+put in front of somebody.
 
 ## Why a merge is proved before `main` moves
 
@@ -51,8 +44,8 @@ So `main` does not move until the merge is proved. The gate is:
 
 The build prints one advisory — that a bundle is larger than 500 kB after
 minification. It is a standing condition of the app rather than something a
-merge introduces, so it is named in the script as the one warning that is
-allowed. Every other warning fails the gate.
+merge introduces, so it is the one warning the gate allows. Every other
+warning fails the gate.
 
 **If the gate fails, the merge is aborted and `main` is left exactly as it
 was.** It is not merged "with the problem still in it" and not merged on
@@ -60,8 +53,8 @@ Tuesday.
 
 ## The merges that were hard, and what was decided
 
-Two merges were not a matter of running the script. They are here because
-they are the cases the process exists for.
+Two merges were not routine. They are here because they are the cases the
+process exists for.
 
 ### The provider marks (`UIUX` into `main`)
 
@@ -113,139 +106,77 @@ copies of the same one.
 
 ## The report
 
-`./scripts/merge-main.ps1 -Report` says what every branch is holding and
-what is not in `main` yet. It merges nothing and wakes nobody.
+To see what every branch is holding that `main` does not have:
 
-```
-CLI                0 commit(s) not in main
-UIUX               0 commit(s) not in main
-master             0 commit(s) not in main
-task/1.3           0 commit(s) not in main
+```bash
+git branch -vv
+git log --oneline main..<branch>
 ```
 
-A branch is **safe to delete** when the report says two things: every one of
-its commits is reachable from `main`, and it is holding nothing uncommitted.
-A deleted branch takes its uncommitted work with it, and that work is gone.
+A branch is **safe to delete** when every one of its commits is reachable from
+`main`, and it is holding nothing uncommitted. A deleted branch takes its
+uncommitted work with it, and that work is gone.
 
-**The bot does not delete branches.** It has no business doing that, and the
-report is there so that the decision is made by somebody who can see it.
+**No branch is deleted automatically.** The report is there so that the
+decision is made by somebody who can see it.
 
-## The merge bot
+## Merging by hand
 
-`scripts/merge-main.ps1` is the bot. It runs on a timer, and each run does the
-same four things.
+A merge into `main` is done in the `main` worktree, and the gate is run
+against the merged tree before the merge is committed:
 
-1. **It checks the worktree is clean.** A merge must not land on top of
-   somebody's half-finished edits, so if the `main` worktree has any
-   uncommitted change the run stops and says so.
-2. **It finds the branches that have something new.** A branch with no commits
-   that `main` does not already have is skipped, and so is the bot's own
-   branch.
-3. **It merges each of them, one at a time, and proves each one before
-   committing it.** The proof runs against the merged tree, not against the
-   branch — that is the only way to know the *combination* works.
-4. **It pushes `main`** when it has moved, and it logs everything to
-   `%APPDATA%\Tavi\merge.log`.
+```bash
+git fetch origin
+git switch main
+git merge --no-commit --no-ff origin/<branch>
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm build
+cargo check --all-targets
+git commit -m "Merge branch '<branch>' into main"
+git push origin main
+```
 
-### What it will not do
+If the gate fails, `git merge --abort` and leave `main` exactly as it was.
+Nothing is merged "with the problem still in it" and nothing is merged on
+Tuesday.
 
-- **It will not touch another branch's worktree.** It reads other branches;
-  it writes to one place only, the `main` worktree. The work in `CLI` and
-  `UIUX` is never checked out, moved, reset or committed to by the bot.
-- **It will not merge work that is not committed.** Git merges commits, so a
-  branch that is holding uncommitted changes in its worktree is merged as of
-  its last commit. The bot reports how many files that is, so a merge is
-  never mistaken for more than it was.
-- **It will not guess.** See below.
-
-### When a merge needs judgement
-
-Two things need a person or an agent rather than a script:
+Two things need a person or an agent rather than the commands above:
 
 - the merge **conflicts**, so there is text to reconcile; and
 - the merge is **clean but the gate goes red**, so the two branches disagree
   about something the gate can see and git cannot.
 
-The bot does not try to settle either one. It writes down what failed and
-where the output is, and it calls:
-
-```bash
-opencode run --session <session> --auto "<the failing merge, and what to do about it>"
-```
-
-That wakes an agent in a session of your choosing, gives it the failing
-output, and tells it the rules: work in the `main` worktree, leave every other
-branch alone, keep both sides' features when the two sides disagree, prove
-the result with the same gate, and commit and push only what passes.
-
-This is the part that a CI service cannot do. A merge that needs judgement
-needs somebody who can read both sides and decide what the app should be —
-which is not a thing a YAML workflow can be told.
-
-## The timer
-
-The bot runs on a Windows scheduled task, every thirty minutes, whether or not
-a terminal or an agent session is open.
-
-```powershell
-# put it on the timer
-./scripts/install-merge-timer.ps1
-
-# take it off again
-./scripts/install-merge-timer.ps1 -Remove
-```
-
-The installer also writes `scripts/.tavi-merge.json`, which says which
-session to wake. It is a local file and it is not committed.
-
-The task runs the bot with `-Push`, because a merge that stays on this
-machine is a merge nobody else has. It is registered with
-`MultipleInstances: IgnoreNew`, so a run that takes longer than thirty
-minutes does not stack up behind itself, and the bot takes a lock file of
-its own for the same reason. A lock older than four hours is taken over, so
-a run that died cannot stop every run after it.
-
-### Running it by hand
-
-```powershell
-# everything: merge, prove, push, and wake an agent if something needs judgement
-./scripts/merge-main.ps1
-
-# report only, and do not wake anybody
-./scripts/merge-main.ps1 -NoAgent
-
-# just these two branches
-./scripts/merge-main.ps1 -NoAgent -Branches CLI,UIUX
-```
+A merge that needs judgement needs somebody who can read both sides and
+decide what the app should be — which is not a thing a YAML workflow can be
+told.
 
 ## The `main` worktree
 
-The bot needs a checkout of `main` that is its own, so that a merge never
+A merge is done in a checkout of `main` that is its own, so that it never
 happens in a tree somebody is working in. It is a git worktree, beside the
 repository rather than inside it:
 
 ```
 C:\Storage\Coding\Tavi-merge        ← the main worktree, on the main branch
-C:\Storage\Coding\Tavi              ← the ordinary checkout, on master
+C:\Storage\Coding\Tavi              ← the ordinary checkout, on local
 ```
 
 ```powershell
 git worktree list
 ```
 
-The bot works in the first of those and does not touch the second.
+Merges are done in the first of those and do not touch the second.
 
 ## Known limitations
 
-- **The timer needs the machine to be on.** It is a Windows scheduled task,
-  not a service. A machine that is asleep at the time does not run the bot
-  when it wakes up, unless the task is set to start when it was missed.
 - **A branch that is still being written to is not merged.** That is the
   point of the gate, but it means `main` trails the working branches by
   however long the work takes.
-- **The bot merges what is committed, not what is in the tree.** A branch
-  with uncommitted work is merged as of its last commit. The bot reports
-  this, but it does not wait for the work to be committed.
+- **A merge takes what is committed, not what is in the tree.** A branch
+  with uncommitted work is merged as of its last commit. The report shows
+  this, but a merge does not wait for the work to be committed.
 - **Nothing here runs the app.** The gate proves it compiles, that the tests
   pass and that it builds. It does not open a window and look at it, so a
   merge that is wrong in a way only a person can see will pass the gate.
