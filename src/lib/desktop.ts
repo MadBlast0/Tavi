@@ -34,6 +34,10 @@ import type {
   ChatRequest,
   CloneProgress,
   CloneResult,
+  GitBranches,
+  GitIdentity,
+  GitOutcome,
+  GitStatus,
   KeyStandingReport,
   NotificationPermission,
   PartialJournal,
@@ -406,6 +410,72 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
 export const grantWorkspace = async (path: string): Promise<Workspace> => {
   requireDesktop()
   return invoke<Workspace>("grant_workspace", { path })
+}
+
+/* -------------------------------------------------------------------------- */
+/* Git                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a repository looks like right now.
+ *
+ * The command is the app's own, and it runs git with an argument array and
+ * no shell. The reader's repository is never given to the model.
+ */
+export const gitStatus = async (path: string): Promise<GitStatus> => {
+  requireDesktop()
+  return invoke<GitStatus>("git_status", { path })
+}
+
+/** The branches the repository has, and which one is checked out. */
+export const gitBranches = async (path: string): Promise<GitBranches> => {
+  requireDesktop()
+  return invoke<GitBranches>("git_branches", { path })
+}
+
+/**
+ * Commits everything that is changed, staged or not.
+ *
+ * The identity is passed to git for this one commit and is not written into
+ * the repository or into the machine's configuration.
+ */
+export const gitCommit = async (
+  path: string,
+  message: string,
+  identity?: GitIdentity,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_commit", { path, message, identity })
+}
+
+/** Fetches from the remote and merges what it fetched. */
+export const gitPull = async (path: string): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_pull", { path })
+}
+
+/** Sends the branch to the remote it tracks. */
+export const gitPush = async (path: string): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_push", { path })
+}
+
+/** Checks out a branch that is already there. */
+export const gitSwitchBranch = async (
+  path: string,
+  branch: string,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_switch_branch", { path, branch })
+}
+
+/** Makes a branch and checks it out. */
+export const gitCreateBranch = async (
+  path: string,
+  branch: string,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_create_branch", { path, branch })
 }
 
 export const relinkWorkspace = async (

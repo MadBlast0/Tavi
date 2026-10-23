@@ -235,7 +235,58 @@ it becomes the writer, and the composer becomes a reader.
 
 ---
 
-## 7. Saying that something finished
+## 7. The conversation runtime
+
+A reply belongs to a conversation, and a conversation outlives any component.
+
+**Why it is here.** The composer used to *be* the runtime: the turns, the
+status, the abort handle and the error were all component state, so a reply
+could only exist while the component that started it was mounted and showing
+the same conversation. Switching threads aborted it. The comment in the code
+said it plainly — *"One composer, one stream."* — and that one rule was what
+stood between the app and every parallel feature.
+
+**What it owns.** `src/lib/conversation.ts` holds a conversation's live
+turns, its status, its usage, its error and whether it is being compacted;
+it holds one abort handle per conversation; and it owns the reply's whole
+life — the stream, the events, the journal, the conversation the answer lands
+in, and the announcement.
+
+**What it does not own.** *What is asked.* The request is prepared by the
+composer, because preparing it needs the folder's files and the model's own
+capabilities, and those are the viewer's facts.
+
+**The composer reads a conversation rather than owning one.** It subscribes
+to the conversation it is showing and to nothing else, because the text
+arrives many times a second and a rail of fifty rows has no business
+redrawing for it. The rail listens to the *status* instead, and to every
+conversation's status rather than to one.
+
+| | Before | After |
+|---|---|---|
+| A reply in another conversation | aborted | keeps running |
+| Two conversations | one could answer | both can |
+| Stopping | stopped the one | stops the one, and only the one |
+| The rail's running dot | one id, for the composer | per conversation |
+| A half-written message | followed the reader to the next conversation | stays in the conversation it was written in |
+| A draft | belonged to the side | belongs to the conversation |
+| The "may this touch the composer" check | there | gone — a reply belongs to a conversation, so the question does not arise |
+
+**The turn vocabulary moved with it.** `src/lib/turns.ts` holds the live
+shape of a turn, the stored shape, and the conversions between them, because
+the runtime needs them as much as the composer does.
+
+**Two rules that were found by running the app, and are worth writing
+down.** A conversation that is answering keeps the turns it has: the answer
+being written is not in the store yet, so loading the stored turns over the
+top would throw it away — and the conversation would then be written back
+without it. And a half-sent message says which conversation it belongs to,
+because a message that was only "the last one sent" follows the reader into
+the next conversation.
+
+---
+
+## 8. Saying that something finished
 
 A reply that is being written is on screen, and the reader reads it as it
 arrives. The moment the app is not in front, the answer is happening
@@ -261,17 +312,87 @@ at?"*, and it is answered by the thing that owns the conversation. The
 composer answers it today. When the conversation runtime arrives it answers
 the same question the same way, and the rule does not change.
 
+**What the answer is.** An announcement is made when all of these are true:
+the reader has asked to be told, the conversation is not muted, and the answer
+was somewhere the reader could not see — unless they asked to be told either
+way. "Somewhere they could not see" is two facts and not one: the app has to
+be in the front, *and* the conversation has to be the one on screen. A
+conversation the composer is showing is not visible while the app is behind
+another window.
+
+**What it says.** The title is the conversation's name, not the app's — a
+toast that says only "a reply finished" tells the reader nothing when there
+is more than one conversation, and the whole point is knowing which one to
+come back to. The body is the first line of the answer, or "A reply
+finished." when the preview is off. It never says the task is finished: the
+app knows when the provider stopped sending text, and it knows nothing else,
+because a chat cannot write files and a model cannot run commands.
+
+**A reply that was stopped is not announced.** The reader pressed the button;
+they know.
+
 **A conversation can be muted**, from its own menu, beside **Pin**. A muted
 conversation still runs, and its reply still lands in it — the reader simply
 does not want to be interrupted about it, which is a different thing from not
-wanting the answer.
+wanting the answer. It is not marked either: the mark says "New" beside the
+conversation's name, and a reader who muted it has said they do not want to
+be nudged about it.
 
-The whole of it, including what it cannot do, is in
-[`plan/notifications.md`](plan/notifications.md).
+**The settings** are in Settings → General → Notifications: whether to be
+told, whether to be told even when the answer is on screen, and whether the
+first line of the answer is shown. The permission is asked for when the
+first is turned on and not before — a permission asked for before the reader
+knows what it is for is a permission asked for before the question — and a
+refusal puts the setting back off. A fourth row sends a test notification,
+because a notification is raised by the operating system and the operating
+system may decline: on Windows only an *installed* app may raise one.
+
+**What it cannot do.** The system's toast cannot open the conversation — the
+plugin's action API is mobile-only — and the card inside the app can. A
+browser tab that is closed gets no notification at all: the browser's
+notification API is the tab's own, and a notification that outlived the tab
+would need a push service and a service worker. And a conversation that
+finished while the reader was elsewhere is recorded on the conversation
+itself rather than in a history, because a second list of what the app has
+announced would be a second place for a conversation to be.
 
 ---
 
-## 8. What is deliberately not being built
+## 9. Git
+
+A repository is a folder the reader has given the app, and git is the thing
+that knows what is in it.
+
+**The app runs git itself**, with an argument array and no shell, so a branch
+name or a commit message reaches git as data and never as a command line. The
+model cannot run git: it cannot choose an argument, and it cannot name a path
+the app has not been given.
+
+**The app never stores credentials.** The prompt is turned off, so git never
+waits for a password on a terminal the app does not have — it fails instead,
+and the failure is reported. A push works with whatever the machine already
+has.
+
+**The app does not write the reader's git configuration.** An identity, if
+there is one, is passed to git with `-c` for that one commit.
+
+**The front end names the grant, not the path.** The grant is the permission
+and the path is what the permission resolves to, and the app's own half has no
+business carrying a path around.
+
+**The status is read from git's machine-readable form**, one call, and the
+lines are read by field count because a path may contain spaces and the
+fields before it never do.
+
+**Git is a desktop thing.** A browser cannot run a program on the machine, so
+every call in the website refuses and says why.
+
+The whole of it, and where it came from, is in
+[`plan/git.md`](plan/git.md).
+
+---
+
+## 10. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.

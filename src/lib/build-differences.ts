@@ -89,6 +89,14 @@ export const BUILD_DIFFERENCES: BuildDifference[] = [
       "installed app that forgets its conversations is not an installed app.",
   },
   {
+    where: "src/lib/git.ts",
+    what: "Whether git can be run at all.",
+    why:
+      "Git is a program on the machine, and a browser cannot run one. The " +
+      "website refuses every call and says why, rather than showing a " +
+      "control that would do nothing.",
+  },
+  {
     where: "src/components/desktop-tool-gate.tsx",
     what: "Whether the native tools are offered to the model.",
     why:

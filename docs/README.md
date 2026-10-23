@@ -4,11 +4,7 @@ Two kinds of document live here, and they are kept apart on purpose.
 
 | | What it is | Where it lives |
 |---|---|---|
-<<<<<<< HEAD
 | **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md), [`icons.md`](icons.md), [`layout.md`](layout.md), [`visual-baseline.md`](visual-baseline.md) and [`workspace-state.md`](workspace-state.md) |
-=======
-| **The app as it is** | What the code does now, and where each thing lives | `docs/` — this folder, and [`architecture.md`](architecture.md), [`storage.md`](storage.md), [`tokens.md`](tokens.md), [`components.md`](components.md) and [`icons.md`](icons.md) |
->>>>>>> task/1.3
 | **The app as it is meant to become** | What is deferred, what was planned, and what has not been built | [`docs/plan/`](plan/) |
 
 A document in `docs/` describes something that is true of the code you can
@@ -42,7 +38,7 @@ and what it does and does not do.
 |---|---|
 | [`plan/later-on.md`](plan/later-on.md) | What is deferred, and why: the features that were deliberately left out, the things noticed while building, and the three that need a machine to check |
 | [`plan/build-plan.md`](plan/build-plan.md) | What to build next, bottom-up: the stack from the storage layer to the features, with the front-end and back-end work for each layer, and the conversation runtime that comes first |
-| [`plan/notifications.md`](plan/notifications.md) | Telling the user that a reply finished while they were not looking at it: the rule, the settings, and what it cannot do |
 | [`plan/docking.md`](plan/docking.md) | Which layout engine the workspace is built on and why: the requirements, the three candidates, the decision, what it does not settle, and the smallest experiment that would prove it |
+| [`plan/git.md`](plan/git.md) | The Git layer: what the reference does, the decisions, the cleanup policy, and how it meets the workspace plan |
 | [`plan/Plan_master.md`](plan/Plan_master.md) | The master plan the app was built from |
 | [`plan/api-keys-and-parity.md`](plan/api-keys-and-parity.md) | The API keys screen, and the audit of every place the desktop app and the website are not the same: twelve defects (three of them found by probing the live providers and the live code), the five deliberate differences and the eleven capability differences, the research behind each decision, the fifty-item plan — forty-nine of them done and one deferred — and the guardrails that would stop the two drifting apart again |

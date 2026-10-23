@@ -29,7 +29,7 @@ what removes it.
 | The provider a request goes to | A per-side preference, in the browser's storage | Low. A choice about where a request goes | Until the user clears site data | Clearing site data |
 | The CLI providers' own preferences | `cli-providers.json` beside the app's data, on the desktop. There is nothing on the website | Low. Which programs are offered, and whether they may update themselves | Until the app is reinstalled | Overwritten |
 | The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
-| Preferences: model, effort, agent mode, the rail's open state, the notification choices | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
+| Preferences: model, effort, agent mode, the rail's open state, the notification choices, the conversation each side had open | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
@@ -92,6 +92,12 @@ They are **not** per side. Whether to be told that a reply finished is a
 question about the reader and the machine, not about Chat or Code, and a
 reader who wants to know when a chat finishes wants to know when a session
 does too.
+
+**The conversation each side had open is per side**, though:
+`tavi.last-thread.chat` and `tavi.last-thread.code`. The app is a place you
+come back to, and a place you come back to has the conversation you were
+in. The two are separate because Chat and Code are separate places, and
+each side's last conversation is its own.
 
 The model and the effort are remembered **per side**: `tavi.model.chat` and
 `tavi.model.code`, `tavi.effort.chat` and `tavi.effort.code`. Chat and Code
@@ -206,7 +212,7 @@ stores, with separate shapes and separate caps:
 | | Chat | Code session |
 |---|---|---|
 | Key | `tavi.chats.v1` | `tavi.code-sessions.v1` |
-| Shape | turns, model, effort, pin, unread, mute | turns, model, effort, agent mode, folder, pin, unread, mute |
+| Shape | turns, model, effort, pin, unread, mute, archived | turns, model, effort, agent mode, folder, pin, unread, mute, archived |
 | A folder | none — there is nowhere to put one | the folder's id and its name |
 | Grouped by | nothing; the list is flat | the project it was run against |
 | Id prefix | `c-` | `s-` |
@@ -223,6 +229,7 @@ with the conversations, and could not be deleted with them.
 |---|---|
 | `unreadAt` | When a reply finished in this thread while the reader was elsewhere. The rail's badge says so until the thread is opened. It follows the **Response completions** setting, because a reader who has turned notifications off does not want to be told about a reply in any form. |
 | `mutedAt` | When the thread was muted. A muted thread is never announced, and it is never marked as having something the reader has not looked at. It still runs, and its reply still lands in it. |
+| `archivedAt` | When the thread was archived. An archived thread is out of the rail and in the archived list, and it is still a thread: it keeps its turns, it is still on disk, and it can be brought back. |
 
 Both are timestamps, and both are absent until they apply.
 

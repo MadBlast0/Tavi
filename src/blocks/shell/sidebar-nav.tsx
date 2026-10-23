@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  ArchiveIcon,
   BellOffIcon,
   CircleSmallIcon,
   ClockIcon,
@@ -42,6 +43,7 @@ import {
 import { ThreadContextMenu } from "./thread-context-menu"
 import type { RailThread } from "./rail-thread"
 import { listChats, onChatsChanged, type StoredChat } from "@/lib/chats"
+import { isRunning, subscribeStatuses } from "@/lib/conversation"
 import { listWorkspaces } from "@/lib/workspace"
 import {
   listSessions,
@@ -75,6 +77,7 @@ const railChat = (chat: StoredChat): RailThread => ({
   pinnedAt: chat.pinnedAt,
   unreadAt: chat.unreadAt,
   mutedAt: chat.mutedAt,
+  archivedAt: chat.archivedAt,
   side: "chat",
 })
 
@@ -88,6 +91,7 @@ const railSession = (session: StoredSession): RailThread => ({
   pinnedAt: session.pinnedAt,
   unreadAt: session.unreadAt,
   mutedAt: session.mutedAt,
+  archivedAt: session.archivedAt,
   side: "code",
 })
 
@@ -219,6 +223,7 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
       icon: SlidersHorizontalIcon,
       why: "Not built yet — there is nothing to customise",
     },
+    { id: "archived", label: "Archived", icon: ArchiveIcon },
   ],
   code: [
     { id: "new", label: "New", icon: PlusIcon },
@@ -251,6 +256,7 @@ const NAV: Record<"chat" | "code", NavEntry[]> = {
       icon: SlidersHorizontalIcon,
       why: "Not built yet — there is nothing to customise",
     },
+    { id: "archived", label: "Archived", icon: ArchiveIcon },
   ],
 }
 
@@ -514,6 +520,33 @@ export function SidebarNav() {
   const [sessions, setSessions] = React.useState<RailThread[]>(() =>
     listSessions().map(railSession),
   )
+
+  /**
+   * Whether the rail is showing the archived conversations.
+   *
+   * It is a switch rather than a place, because an archived conversation is
+   * still a conversation: it is out of the way, not gone, and one click
+   * brings it back.
+   */
+  const [archived, setArchived] = React.useState(false)
+
+  /**
+   * The list the rail is showing.
+   *
+   * An archived conversation is out of the way rather than gone, so the two
+   * lists are the same conversations read differently.
+   */
+  const listedChats = React.useMemo(
+    () => (archived ? chats : chats.filter((chat) => !chat.archivedAt)),
+    [chats, archived],
+  )
+  const listedSessions = React.useMemo(
+    () =>
+      archived
+        ? sessions
+        : sessions.filter((session) => !session.archivedAt),
+    [sessions, archived],
+  )
   /* Per mode, for the same reason the lists themselves are: a chat list sorted
      one way and a project list sorted another is two answers to one list. Not
      stored — a sort is a way of reading what is on screen, and re-reading it
@@ -523,6 +556,18 @@ export function SidebarNav() {
     code: "newest",
   })
   const sort = sortByMode[variant]
+
+  /**
+   * The rail draws a running dot, and the dot is about whether a
+   * conversation is answering — not about what it is saying.
+   *
+   * So it listens to the *status*, and not to the conversations themselves:
+   * the text arrives many times a second, and a rail of fifty rows has no
+   * business redrawing for it. And a reply can be running in a conversation
+   * this side is not showing, which is the whole point of the runtime.
+   */
+  const [, redraw] = React.useReducer((count: number) => count + 1, 0)
+  React.useEffect(() => subscribeStatuses(redraw), [])
 
   /**
    * The names of the folders this app has been given access to.
@@ -560,7 +605,7 @@ export function SidebarNav() {
    * their own.
    */
   const codeGroups = React.useMemo(() => {
-    const groups = groupByProject(sessions, folderNames).map(
+    const groups = groupByProject(listedSessions, folderNames).map(
       ([key, group]) =>
         [key, { name: group.name, threads: sortThreads(group.threads, sort) }] as const,
     )
@@ -626,6 +671,10 @@ export function SidebarNav() {
     setSortByMode((current) => ({ ...current, [variant]: next }))
   }
 
+  /* What the list is called. Chat and Code lead somewhere different, and the
+     archived switch is a third place again. */
+  const listLabel = archived ? "Archived" : variant === "code" ? "Sessions" : "Chats"
+
   return (
     <>
       <SidebarGroup className={GROUP}>
@@ -637,11 +686,17 @@ export function SidebarNav() {
                 className={ROW}
                 disabled={Boolean(entry.why)}
                 title={entry.why}
+                isActive={entry.id === "archived" ? archived : undefined}
                 onClick={
                   entry.id === "new"
-                    ? onNew
-                    : entry.id === "workspace"
-                      ? onWorkspace
+                    ? () => {
+                        setArchived(false)
+                        onNew()
+                      }
+                    : entry.id === "archived"
+                      ? () => setArchived((current) => !current)
+                      : entry.id === "workspace"
+                        ? onWorkspace
                       : undefined
                 }
               >
@@ -661,7 +716,7 @@ export function SidebarNav() {
 
       <SidebarGroup className={GROUP}>
         <ThreadListHeading
-          label={variant === "code" ? "Sessions" : "Chats"}
+          label={listLabel}
           sortLabel={variant === "code" ? "sessions" : "chats"}
           sort={sort}
           onSortChange={onSortChange}
@@ -680,7 +735,7 @@ export function SidebarNav() {
                     key={thread.id}
                     thread={thread}
                     active={thread.id === bridge.activeId}
-                    running={thread.id === bridge.runningId}
+                    running={isRunning(thread.id)}
                     onOpen={onOpen}
                   />
                 ))}
@@ -690,12 +745,12 @@ export function SidebarNav() {
         : (
             <SidebarGroup className={GROUP}>
               <SidebarMenu>
-                {sortThreads(chats, sort).map((thread) => (
+                {sortThreads(listedChats, sort).map((thread) => (
                   <ThreadRow
                     key={thread.id}
                     thread={thread}
                     active={thread.id === bridge.activeId}
-                    running={thread.id === bridge.runningId}
+                    running={isRunning(thread.id)}
                     onOpen={onOpen}
                   />
                 ))}
@@ -706,10 +761,16 @@ export function SidebarNav() {
       {/* An empty list says so. A rail with a heading and nothing under it
           reads as a list that has failed to load rather than one that has
           nothing in it yet. */}
-      {(variant === "code" ? sessions.length === 0 : chats.length === 0) ? (
+      {(variant === "code"
+        ? listedSessions.length === 0
+        : listedChats.length === 0) ? (
         <SidebarGroup className={GROUP}>
           <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
-            {variant === "code" ? "No sessions yet." : "No chats yet."}
+            {archived
+              ? "Nothing archived yet."
+              : variant === "code"
+                ? "No sessions yet."
+                : "No chats yet."}
           </p>
         </SidebarGroup>
       ) : null}

@@ -89,6 +89,15 @@ export const clearSessionUnread = (id: string) => sessionStore.clearUnread(id)
 /** Turns this session's announcements on or off. */
 export const toggleMuteSession = (id: string) => sessionStore.toggleMute(id)
 
+/**
+ * Puts this session in the archived list, or takes it out again.
+ *
+ * The session is still a session: it keeps its turns, and it can be brought
+ * back.
+ */
+export const setSessionArchived = (id: string, archived: boolean) =>
+  sessionStore.setArchived(id, archived)
+
 export const forkSession = (id: string): Promise<StoredSession | undefined> =>
   sessionStore.fork(id)
 

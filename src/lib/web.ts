@@ -19,6 +19,10 @@ import type {
   ChatRequest,
   CloneProgress,
   CloneResult,
+  GitBranches,
+  GitIdentity,
+  GitOutcome,
+  GitStatus,
   KeyStandingReport,
   ModelCatalogue,
   NotificationPermission,
@@ -374,6 +378,59 @@ export const windowHasFocus = async (): Promise<boolean> => {
   if (typeof document === "undefined") return false;
   return document.visibilityState !== "hidden" && document.hasFocus();
 };
+
+/* -------------------------------------------------------------------------- */
+/* Git                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Git runs on your machine, and a browser cannot run it.
+ *
+ * Every call refuses with that, rather than with a failure that looks like
+ * something went wrong. The desktop app runs git with an argument array and
+ * no shell; there is nothing here that could do the same, and pretending
+ * otherwise would be the one kind of lie this app does not tell.
+ */
+const GIT_UNAVAILABLE =
+  "Git runs on your machine, and a browser cannot run it. This is a desktop thing."
+
+export const gitStatus = async (_id: string): Promise<GitStatus> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitBranches = async (_id: string): Promise<GitBranches> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitCommit = async (
+  _path: string,
+  _message: string,
+  _identity?: GitIdentity,
+): Promise<GitOutcome> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitPull = async (_id: string): Promise<GitOutcome> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitPush = async (_id: string): Promise<GitOutcome> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitSwitchBranch = async (
+  _path: string,
+  _branch: string,
+): Promise<GitOutcome> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
+
+export const gitCreateBranch = async (
+  _path: string,
+  _branch: string,
+): Promise<GitOutcome> => {
+  throw new Error(GIT_UNAVAILABLE)
+}
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

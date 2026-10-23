@@ -4,6 +4,7 @@ mod acp;
 mod appfile;
 mod cli;
 mod files;
+mod git;
 mod keys;
 mod partials;
 mod projects;
@@ -162,6 +163,13 @@ pub fn run() {
             projects::list_projects,
             projects::clone_repository,
             projects::cancel_clone,
+            git::git_status,
+            git::git_branches,
+            git::git_commit,
+            git::git_pull,
+            git::git_push,
+            git::git_switch_branch,
+            git::git_create_branch,
             files::data_directory,
             files::write_file,
             files::read_file,

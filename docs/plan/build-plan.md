@@ -22,7 +22,7 @@ front-end and back-end work, and what it unblocks.
 | [`../storage.md`](../storage.md) | Where every piece of data lives, on each platform |
 | [`later-on.md`](later-on.md) | What was deliberately deferred, and why |
 | [`api-keys-and-parity.md`](api-keys-and-parity.md) | The API keys screen and the desktop/web parity audit |
-| [`notifications.md`](notifications.md) | Telling the user that a reply finished while they were not looking at it |
+| [`git.md`](git.md) | The Git layer: what the reference does, the decisions, the cleanup policy, and how it meets the workspace plan |
 | **This one** | **What to build next, bottom-up** |
 
 ## Where the ideas come from
@@ -80,43 +80,51 @@ one call, either back-end, already taking an `AbortSignal`.
 
 ---
 
-## Layer 2 — A conversation runtime ⬜ ← **the next piece**
+## Layer 2 — A conversation runtime ✅ ← **done**
 
 **What it is.** The lifecycle of a reply, owned by something that outlives any
 component.
 
-**Why it is the next piece.** Today the composer *is* the runtime. In
+**Why it was the next piece.** The composer *was* the runtime. In
 `src/blocks/prompt-input/prompt-block.tsx` — about 1,900 lines — the turns,
-the status, the abort handle, the folder, the agent mode and the error are all
-component state. So:
+the status, the abort handle, the folder, the agent mode and the error were
+all component state. So:
 
 > Switch to another thread, and the composer re-renders for a different
 > thread. The reply in flight is aborted and its partial text kept, marked
 > stopped. The comment in the code says it plainly: *"One composer, one
 > stream."*
 
-That single rule is what stands between the app and every parallel feature.
-It has to go first, because panes, notifications, per-thread badges and
-restoring a running conversation all assume a reply can outlive the thing
-showing it.
+That single rule was what stood between the app and every parallel feature.
+It has gone first, and this is where it went.
 
 ### Front-end work
 
 | # | Task | Where | Notes |
 |---|---|---|---|
-| F1 | A store holding one entry per thread | new `src/lib/conversation.ts` | `{ status, partial, error, usage, model, startedAt }` |
+| F1 | A store holding one entry per thread | `src/lib/conversation.ts` | `{ status, turns, usage, servedModel, error, compacting, startedAt, turnId }` |
 | F2 | `start(threadId, request)` | same | calls `api.streamChat`, feeds the events in, registers the abort controller |
 | F3 | `stop(threadId)` | same | aborts **that** thread's controller, and no other |
-| F4 | A way for views to subscribe | same | a view re-renders when its own thread's state changes |
+| F4 | A way for views to subscribe | same | a view re-renders when its own thread's state changes; the rail listens to the *status* only |
 | F5 | Move `turns` and `status` out of the composer | `prompt-block.tsx` | the composer reads the store instead of owning it |
-| F6 | Move `abortRef` out | `prompt-block.tsx` | one controller per thread, held by the store |
-| F7 | Stop aborting when the view changes | `prompt-block.tsx`, in `loadThread` | the *"one composer, one stream"* rule goes |
+| F6 | Move `abortRef` out | `prompt-block.tsx` | one controller per thread, held by the runtime |
+| F7 | Stop aborting when the view changes | `prompt-block.tsx`, in `loadThread` | the *"one composer, one stream"* rule has gone |
 | F8 | Persist the partial while it streams | `prompt-block.tsx` / `src/lib/threads.ts` | ✅ **done** — the journal, written by `src/lib/partials.ts`, so a reply is not lost if the app is closed mid-stream |
-| F9 | Per-thread error and compaction | `prompt-block.tsx` | `saveError` and `compacting` are single-valued today |
+| F9 | Per-thread error and compaction | `src/lib/conversation.ts` | both are the conversation's, so a reader who switched conversations does not find the next one busy |
 | F10 | The rail's badge reads per-thread status | `sidebar-nav.tsx` | replaces the single `bridge.runningId` |
 | F11 | A draft belongs to a thread | `prompt-block.tsx` | today a draft belongs to a side |
 | F12 | Drop the "still here" check | `prompt-block.tsx` (`replyMayTouchComposer`) | turns belong to the thread, not to the composer |
 | F13 | Drop the cross-checking `activeRef` | `prompt-block.tsx` | it exists only to stop one side's reply landing in the other |
+
+**The turn vocabulary moved with it.** `src/lib/turns.ts` holds the live
+shape of a turn, the stored shape, and the conversions between them, because
+the runtime needs them as much as the composer does.
+
+**What is in the runtime.** The request, the stream, the events, the journal,
+the conversation the answer lands in, and the announcement. **What is not** is
+*what is asked*: the request is prepared by the composer, because preparing
+it needs the folder's files and the model's own capabilities, and those are
+the viewer's facts.
 
 ### Back-end work
 
@@ -130,7 +138,7 @@ Almost none, and that is the useful finding.
 | B4 | The website's server handles concurrent requests | `server/main.ts` | ✅ a Node HTTP server — concurrent by nature |
 | B5 | Two conversations finishing at once | `src-tauri/src/threads.rs` | ✅ the lock covers the read **and** the write, so the file cannot be half-written |
 | B6 | Write the partial to disk during a stream | `src-tauri/src/partials.rs` | ✅ **done** — a journal per conversation, appended to, so a crash mid-stream does not lose the answer. The design is in [`../architecture.md`](../architecture.md) §6 |
-| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule, the card, the mark, the mute and the settings. Planned and built in [`notifications.md`](notifications.md) |
+| B7 | The notification plugin | `src-tauri/Cargo.toml` | ✅ **done** — the plugin, three narrow permissions, the adapters, the rule, the card, the mark, the mute and the settings. Designed and built in [`../architecture.md`](../architecture.md) §7 |
 
 **So: about 95% of the conversation runtime is front-end work.** The back-end
 was already built for this and has simply never been asked to do it.
@@ -141,16 +149,26 @@ was already built for this and has simply never been asked to do it.
   answer is written to a journal as it arrives, and a cut-off answer is put
   back into its conversation on the next launch, marked as one that did not
   finish, and the model is told so on the next turn.
-- ⬜ A reply keeps streaming after you switch to another thread or another side.
-- ⬜ Two threads can stream at the same time.
-- ⬜ Stopping one thread leaves the others running.
-- ⬜ The rail shows which thread is running, per thread.
+- ✅ **A reply keeps streaming after you switch to another thread or another
+  side.** The reply belongs to the conversation, and the conversation is not
+  the one on screen.
+- ✅ **Two threads can stream at the same time.** One abort handle per
+  conversation, and one live state per conversation.
+- ✅ **Stopping one thread leaves the others running.** The stop names the
+  conversation, and only that conversation's controller is aborted.
+- ✅ **The rail shows which thread is running, per thread.** The rail listens
+  to the *status*, and not to the conversations themselves: the text arrives
+  many times a second, and a rail of fifty rows has no business redrawing
+  for it.
 
-**What is left of Layer 2 is the runtime itself** — the thirteen front-end
-tasks above, `F1` to `F13`. The journal was written by the composer, because
-that is what holds the stream today; when the runtime arrives it becomes the
-writer and the composer becomes a reader, which is a change of one call site
-and nothing else.
+**All four were checked in the running app**, and two of them were broken
+until they were not: a half-sent message was following the reader into the
+next conversation, and loading a conversation whose reply was in flight was
+loading the stored turns over the top of the live ones — which threw the
+answer away and then wrote the conversation back without it.
+
+**What is left of Layer 2** is Layer 3, which is views: several
+conversations open at once.
 
 ---
 
@@ -239,7 +257,7 @@ works. When the runtime arrives, the rule widens to "this conversation is not
 the one on screen", which is the case of watching one conversation while
 another finishes. The rule is written once and the runtime answers it.
 
-The whole of it is in [`notifications.md`](notifications.md).
+The whole of it is in [`../architecture.md`](../architecture.md) §7.
 
 ---
 
@@ -251,14 +269,15 @@ repository.
 
 | | Task | Side | Notes |
 |---|---|---|---|
-| ⬜ | **Status** — clean or dirty, current branch, ahead or behind | Code | the cheapest and most useful of these |
-| ⬜ | **Pull** | Code | needs an authenticated fetch, same as clone |
-| ⬜ | **Switch or create a branch** | Code | |
-| ⬜ | **Commit** | Code | needs a message editor and `user.name` / `user.email` identity configuration |
-| ⬜ | **Push** | Code | needs credentials the app should never store |
-| ⬜ | **Private repositories** | Code | SSH works only if the host was configured outside the app; there is no token flow |
-| ⬜ | **An isolated copy of the repository per conversation** | Code | allocate by name, **never reuse an idle directory** |
-| ⬜ | **The cleanup policy for that copy** | Code | clean and unnamed → remove it and its branch; named or dirty → ask first; never fall back to a destructive delete |
+| ✅ | **Status** — clean or dirty, current branch, ahead or behind | Code | the cheapest and most useful of these. Read from git's machine-readable form, in `src-tauri/src/git.rs` |
+| ✅ | **Pull** | Code | needs an authenticated fetch, same as clone |
+| ✅ | **Switch or create a branch** | Code | |
+| ✅ | **Commit** | Code | needs a message editor and `user.name` / `user.email` identity configuration |
+| ✅ | **Push** | Code | needs credentials the app should never store |
+| ⬜ | The surface — the branch, the changed files, and the four actions | Code | **built** — `src/blocks/prompt-input/git-panel.tsx`, in the Code side's row under the prompt box. The design is in [`git.md`](git.md) §4 |
+| ⬜ | **Private repositories** | Code | SSH works only if the host was configured outside the app; there is no token flow, and the app will not add one |
+| ⬜ | **An isolated copy of the repository per conversation** | Code | allocate by name, **never reuse an idle directory**. **Gated on the write path** — a copy isolates *writes*, and the app cannot write |
+| ⬜ | **The cleanup policy for that copy** | Code | clean and unnamed → remove it and its branch; named or dirty → ask first; never fall back to a destructive delete. Designed in [`git.md`](git.md) §4.2 |
 | ⬜ | **A settings control for the projects folder** | Code | the location is currently resolved in one place |
 | ⬜ | **The write path** | Code | **deliberately not built** — see below |
 
@@ -266,6 +285,13 @@ repository.
 change; it does not write. An isolated copy of a repository exists to isolate
 *writes*, so building one before the write path would be infrastructure for a
 feature that is not there.
+
+**The design is in [`git.md`](git.md)**: what the reference does, what we take
+from it and what we do not, the decisions, and how this meets the workspace
+plan — which is the important part, because the workspace's diff viewer is
+**sample** content and the two must not be wired together.
+
+**The back end is built and tested.** The surface is not.
 
 ---
 
@@ -275,10 +301,10 @@ feature that is not there.
 
 | | Item | Layer |
 |---|---|---|
-| ⬜ | **The command palette** — Ctrl/Cmd+K, listing the active side's conversations and the app's commands | 5 |
-| ⬜ | **Search over conversations** — up to 50 per side | 5 |
-| ⬜ | **Archive** — needs a second list and a way back out of it | 5 |
-| ⬜ | **Restore the last open conversation per side** after a reload | 3 |
+| ✅ | **The command palette** — Ctrl/Cmd+K, listing the active side's conversations and the app's commands | 5 | `src/blocks/shell/command-palette.tsx` |
+| ✅ | **Search over conversations** — up to 50 per side | 5 | the palette's own search, over the same fifty |
+| ✅ | **Archive** — needs a second list and a way back out of it | 5 | the conversation's own menu, and an **Archived** row in the rail |
+| ✅ | **Restore the last open conversation per side** after a reload | 3 |
 | ⬜ | **Artifacts** — what a conversation produced | — |
 | ⬜ | **Scheduled** — things that run on their own | — |
 | ⬜ | **Routines** | — |
