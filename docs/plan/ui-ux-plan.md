@@ -76,8 +76,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 **Phase 5 — Every pane's content, one pane at a time**
 
-| 5.1 | ▶ next | The Chat pane |
-| 5.2 | ⬜ not started | The Code Session pane |
+| 5.1 | ✅ done | The Chat pane |
+| 5.2 | ▶ next | The Code Session pane |
 | 5.3 | ⬜ not started | The Diff Viewer: the overview and the file list |
 | 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
 | 5.5 | ⬜ not started | The Browser pane |
@@ -1712,6 +1712,26 @@ unavailable pane is a button that does nothing.
 
 **Reference:** The Chat pane. Claude Code Desktop's chat pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pane | `src/blocks/workspace/panes/chat-pane.tsx` — the Chat pane, with sample messages, a scrollable timeline and a composer |
+| The check | `src/lib/chat-pane.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The pane is built on the shared pane frame, with
+the shared state slots for its empty, loading, error and unavailable states.
+The messages scroll inside the pane and the composer stays at the bottom.
+The sample messages include a fenced code block, so the pane proves that
+code survives inside a message. The reply is a mock: typing and sending
+appends the user's message and, after a short delay, a reply that says
+"No model was called." No model is called.
+
+The state selector at the top of the pane switches between the six states,
+so each one can be seen without changing code.
 ## Task 5.2 — Code Session pane
 
 **Prompt to the coding AI:**
