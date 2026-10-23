@@ -77,8 +77,8 @@ Status blocks says what stands, what was wrong, and what it becomes.
 **Phase 5 — Every pane's content, one pane at a time**
 
 | 5.1 | ✅ done | The Chat pane |
-| 5.2 | ▶ next | The Code Session pane |
-| 5.3 | ⬜ not started | The Diff Viewer: the overview and the file list |
+| 5.2 | ✅ done | The Code Session pane |
+| 5.3 | ▶ next | The Diff Viewer: the overview and the file list |
 | 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
 | 5.5 | ⬜ not started | The Browser pane |
 | 5.6 | ⬜ not started | The Application Preview pane |
@@ -1742,6 +1742,26 @@ so each one can be seen without changing code.
 
 **Reference:** The Code Session pane. Claude Code Desktop's session pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pane | `src/blocks/workspace/panes/code-session-pane.tsx` — the Code Session pane, with project context, activity timeline, and composer |
+| The check | `src/lib/code-session-pane.test.ts` — eleven rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The pane is built on the shared pane frame, with
+the shared state slots for its empty, loading, error and unavailable states.
+The activity timeline shows file reads, writes, terminal commands, and diffs
+with execution status badges. The composer at the bottom sends messages that
+append a mock reply — no agent is run. The state selector at the top
+switches between empty, working, completed, failed, unavailable, long, and
+error states.
+
+The pane carries project context (folder name and git branch) in its header,
+distinguishing it from the generic Chat pane.
 ## Task 5.3 — Diff Viewer: overview and file navigation
 
 **Prompt to the coding AI:**
