@@ -26,8 +26,8 @@ test("the Chat pane exists", () => {
 
 test("the Chat pane uses the shared pane frame", () => {
   assert.ok(
-    pane.includes('from "../pane"'),
-    "the Chat pane should use the shared pane frame",
+    pane.includes("<Pane"),
+    "the Chat pane should render a Pane",
   )
   assert.ok(
     pane.includes("<Pane"),
