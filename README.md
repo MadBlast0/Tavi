@@ -72,7 +72,10 @@ pnpm tauri dev
 ```
 
 Or double-click `preview.bat`, which does the same thing and stays open on
-failure.
+failure. It starts the desktop window and the Node server, and opens a browser
+tab on the same URL — so you get both surfaces from one command, and both of
+them hot-reload as you edit. It refuses to start if `pnpm` is missing, or if
+either port is already taken, rather than running half-started.
 
 ## Checking
 
@@ -177,9 +180,7 @@ to install, the TypeScript has to compile, the tests have to pass, the app
 has to build, and the Rust side has to compile with warnings as errors. A
 merge that does not pass is aborted, and `main` is left exactly as it was.
 
-[`docs/merging.md`](docs/merging.md) has the whole thing: the gate, the
-manual merge steps, the report, and the two merges that needed a judgement
-call.
+
 
 ## Provider keys
 

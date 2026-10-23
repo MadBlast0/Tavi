@@ -1,14 +1,14 @@
 # Dockable Workspace UI/UX Plan
 
-**File purpose:** This is the source-of-truth implementation roadmap for completing the application's frontend UI/UX before adding real AI execution or developer-tool integrations.
+**File purpose:** This is the source-of-truth implementation roadmap for the dockable workspace UI/UX in the existing application. Preserve the app's working chat, model, provider, and session behavior. Add no new AI or developer-tool integrations in this phase; additional pane content is explicitly local/sample UI unless a task says it reuses an already-working capability.
 
 **Execution rule:** Follow this document from top to bottom. Give the coding AI **one numbered task at a time**. It must stop after that task, report what changed and wait for the next task. Do not ask the model to implement the entire document in one request.
 
-**Current starting point:** The app already has a dark desktop shell, a Chat/Code switch, a left sidebar, a Chat landing screen with a centered prompt composer, and a Code landing screen with a project/folder prompt composer and Sessions list. The user supplied screenshots of both screens. Treat these as approved visual references.
+**Current starting point:** The app already has a dark desktop shell, a Chat/Code switch, a left sidebar, Chat and Code landing screens, working chat/session flows, and a project/folder prompt composer. Verify the current implementation before each task. The screenshots previously supplied as visual references are not checked into this repository; do not claim pixel-level screenshot verification unless the user-provided images are available in the active task. Preserve the current app surface and existing behavior as observed in code.
 
 **Libraries to respect:** The app uses **shadcn/ui** for UI components and **Lucide** for icons. Audit what is already installed and implemented before using or creating components. Reuse the app's existing shared components, shadcn/ui components, tokens and conventions whenever possible.
 
-**Desired end state:** The app looks and behaves like a carefully integrated desktop AI development workspace, with a generic pane framework, realistic Chat/Code/terminal/diff/browser/files/activity interfaces, full UI states and controls, and a dockable workspace that can show up to six panes simultaneously. This phase is frontend UI/UX only.
+**Desired end state:** The app looks and behaves like a carefully integrated desktop AI development workspace. A user can drag separate sessions into a split workspace, and can arrange session and tool panes (terminal, diff, browser, files, activity, and related views) in nested layouts. The workspace has complete UI states and controls, with a product limit of six pane instances. This phase is UI/UX and local layout behavior; preserve existing live chat and session functionality, and do not imply sample tools perform real work.
 
 ---
 
@@ -40,17 +40,17 @@ Status blocks says what stands, what was wrong, and what it becomes.
 **Phase 0 — Audit the codebase and decide, before editing**
 
 | 0.1 | ✅ done | The audit: the stack, the entry points, the shell, the rail, the two sides, the composers, the state, the check commands, and the raw material on disk |
-| 0.2 | ✅ done | [`docs/visual-baseline.md`](../../visual-baseline.md) — the approved shape, as numbers, and the list of nine things that must not change |
+| 0.2 | ✅ done | §1.1 preservation contract; the former numeric screenshot baseline is not present in this checkout |
 | 0.3 | ✅ done | The findings, in the two documents it produced: the component map and the icon convention |
 | 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — rewritten: the engine is the app's own code, and the three candidates measured against the requirements the plan now has |
 
 **Phase 1 — The frontend foundation**
 
-| 1.1 | ✅ done | [`docs/tokens.md`](../../tokens.md) — the token map — and seven missing tokens, three of which the code already asked for |
-| 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
-| 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
+| 1.1 | ✅ done | `src/index.css` token map and theme checks |
+| 1.2 | ✅ done | Shared component conventions in `src/components/` and component-family checks |
+| 1.3 | ✅ done | Lucide convention in `AGENTS.md` and `src/blocks/workspace/pane-types.ts` |
 | 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
-| 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the model of the arrangement, the panes and the groups |
+| 1.5 | ✅ done | State ownership in this plan's §1.4 and `src/lib/workspace-state.ts` |
 
 **Phase 2 — The workspace region, and the way into it**
 
@@ -134,7 +134,7 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 ## 1.1 Preserve the existing app first
 
-The supplied screenshots define the current approved visual direction. Keep the dark theme, typography, visual density, sidebar organization, Chat/Code switch, top window chrome, prompt composer layouts and overall alignment intact unless a small change is necessary to integrate a new workspace feature.
+Keep the current dark theme, typography, visual density, sidebar organization, Chat/Code switch, top window chrome, prompt composer layouts and overall alignment intact unless a small change is necessary to integrate a new workspace feature. Use any supplied screenshots when available; they are not stored in this checkout, so do not invent numeric visual-baseline claims.
 
 The Chat and Code landing screens are not to be redesigned as part of this project. In particular:
 
@@ -157,16 +157,17 @@ Build the full **frontend presentation and local UI interactions** for:
 - Pane headers, action menus, title/selection/focus/close controls and layout controls.
 - Chat and Code Session pane presentations.
 - Diff Viewer, Browser, Preview, Terminal, File Explorer, File Editor, Plan, Tasks, Agent Activity, File Preview and Logs presentations.
-- A configurable nested layout that displays up to six panes at once.
+- A configurable nested layout with up to six pane instances docked at once (including inactive tabs in the cap).
 - Add, close, split, resize, drag-and-drop dock, focus, maximize/restore, layout presets and reset/restore interactions.
 - Accessible interaction states, keyboard basics, appropriate scroll behavior and responsive desktop behavior.
-- Mock/sample content that demonstrates all the interfaces without claiming real work has happened.
+- Local layout interactions and sample content for pane types that do not yet have a truthful working integration.
+- Session panes that bind to the app's existing chat/code session records and render their real current conversation when that path already exists. Do not replace a working composer, model selection, provider availability check, or send flow with a mock.
 
 ## 1.3 What stays out of scope
 
 Do not implement during this UI/UX phase:
 
-- Real AI API requests, model streaming, real conversation orchestration or agent execution.
+- New AI API requests, new model streaming paths, new conversation orchestration, or new agent execution. Existing working chat/session execution must continue to work and must not be stubbed out as part of the workspace integration.
 - Real shell/terminal execution or spawning processes.
 - Actual filesystem reads/writes, project discovery or file watcher support.
 - Real Git status, diff calculation, commits, branches or worktrees.
@@ -176,7 +177,7 @@ Do not implement during this UI/UX phase:
 - Full-featured IDE editing, installing a heavy code-editor engine, or adding syntax parsers unless one already exists and is specifically needed for the current UI.
 - Decorative animations as a requirement. Functional transitions are acceptable but animation polish can be done later.
 
-Local state changes are allowed when they demonstrate a real UI interaction: selecting a file in sample data, expanding a folder, changing a preview mode, toggling a filter, marking a mock checklist item, typing in a local demo composer, or rearranging panes. They must not imply that actual files, commands or AI operations were executed.
+Local state changes are allowed when they demonstrate a real UI interaction: selecting a file in sample data, expanding a folder, changing a preview mode, toggling a filter, marking a mock checklist item, typing in a clearly labeled demo composer, or rearranging panes. They must not imply that actual files, commands or AI operations were executed. A session pane connected to an already-working session is not sample data and must preserve that session's real identity and state.
 
 ## 1.4 Terminology
 
@@ -195,14 +196,14 @@ A session and a pane are different things. A session can be displayed in a Chat/
 
 ## 1.5 Six-pane product rule
 
-The app's selected limit is **six simultaneously visible, docked pane instances in the primary workspace**. This is our product requirement, not an assumed limitation of Claude or any docking library.
+The app's selected limit is **six docked pane instances in the primary workspace**, including panes currently hidden behind another tab in a tab group. This is our product requirement, not an assumed limitation of Claude or any docking library.
 
 - The number of available projects, sessions and registered pane types is not limited to six.
-- At six visible pane instances, adding a seventh must be prevented with clear feedback.
+- At six docked pane instances, adding a seventh must be prevented with clear feedback.
 - Rearranging the existing six panes must remain possible.
-- The standard example layout is three visible panes in the top row and three in the bottom row.
+- The standard example layout is three panes in the top row and three in the bottom row.
 - Do not hard-code six fixed cells. The same general layout system must also support one pane, two side-by-side panes, two stacked panes, uneven splits, three columns, nested splits and other valid arrangements.
-- For this initial version, prefer direct visible panes rather than hidden tab stacks. Do not let a tabbed group hide panes that the UI says are simultaneously visible. **Tabbed pane groups are requested by the product owner and are in scope.** See §1.7.
+- Tab groups are in scope. A group shows one pane at a time; inactive tabs remain part of the layout and count toward the six-pane cap. See §1.7.
 
 ---
 
@@ -216,7 +217,7 @@ rest of which are reached by its tab strip.
 A group changes what the cap counts, so the counting is written down:
 
 - **The cap counts pane instances, not places.** A group holding three tabs
-  is three panes, not one. Six visible pane instances means six, whether
+  is three panes, not one. Six pane instances means six, whether
   they are in six groups or in two.
 - **Every pane in the layout counts**, including the ones a tab is hiding.
   A group is a way of arranging panes, not a way of having more of them.
@@ -963,10 +964,10 @@ already on disk. Each finding landed in the document that owns it:
 |---|---|
 | The shape of the app, the entry points, the two chat paths | [`docs/architecture.md`](../../architecture.md) |
 | The height chain and the scroll boundaries | [`docs/layout.md`](../../layout.md) |
-| Every component, and which one to use for which job | [`docs/components.md`](../../components.md) |
-| The icons, and the pack they come from | [`docs/icons.md`](../../icons.md) |
+| Every component, and which one to use for which job | source files and this plan |
+| The icons, and the pack they come from | source files and this plan |
 | The check commands | [`README.md`](../../README.md) — *Checking* |
-| The vendored `react-resizable-panels` primitive, on disk and imported by nothing | [`docs/components.md`](../../components.md) and [`docs/plan/docking.md`](docking.md) |
+| The vendored `react-resizable-panels` primitive, on disk and imported by nothing | source files and this plan and [`docs/plan/docking.md`](docking.md) |
 
 The one thing that was not obvious and had to be checked: **there is one
 primitive family, not two.** The project has Base UI through shadcn's
@@ -980,29 +981,21 @@ primitive family, not two.** The project has Base UI through shadcn's
 
 **Acceptance criteria:** The visual contract is recorded in the project notes or task report. No UI is changed.
 
-**Reference:** The approved visual baseline: the Chat and Code landing screens, the dark theme, the rail, the composers. See docs/visual-baseline.md
+**Reference:** Preservation contract in §1.1; sizing and scroll constraints in `docs/layout.md`; visual screenshots are not checked into the repository
 
 **Status: done.**
 
 | | |
 |---|---|
-| The contract | [`docs/visual-baseline.md`](../../visual-baseline.md) — the window, the shell, the two different rails, the two states of the work area, the two composers, and the list of nine things that must not change |
-| The check | `src/lib/visual-baseline.test.ts` — eight checks, each broken on purpose to watch it fail |
-| What was found | There is **no** screenshot test in the project, and `docs/plan/api-keys-and-parity.md` records why: a screenshot diff fails on the engine and the display scaling before it fails on the design. So the check is the running app, compared by eye, against numbers that cannot quietly drift |
+| The contract | §1.1 and `docs/layout.md` — the shell, different rails, landing states, composers and window sizing |
+| The check | Existing source-level assertions; no screenshot test is recorded in this checkout |
+| Evidence limit | Supplied screenshots are not checked into the repository. Compare against them when present in the active task; otherwise compare the running app with current source behavior and do not claim numeric screenshot measurements. |
 
-Nothing was redesigned and no UI was changed. Every number in the document was
-measured in the running app or read out of the source.
-
-**Measured at the floor.** The window cannot be made smaller than 600 × 338,
-and that is where the app has to work. Driven through the real interface at
-that size — the rail opened as a sheet, Code selected, Workspace pressed:
-
-| | |
-|---|---|
-| The page | 338 tall and 338 tall — **it does not scroll** |
-| The work area | 600 × 338, 28px of top padding for the title bar |
-| The empty state | "Nothing open yet", its title between 157 and 179 |
-| The action | "Add view", its bottom at 258 and its right at 350 |
+**Sizing constraint.** `docs/layout.md` records the 600 × 338 window floor
+and the shell's scroll boundaries. The old screenshot measurements below
+depended on a removed visual-baseline artifact and a superseded “Workspace”
+rail action; treat the source document as historical only, not as current
+product behavior.
 
 ## Task 0.3 — Audit shadcn/ui and Lucide usage
 
@@ -1016,9 +1009,9 @@ that size — the rail opened as a sheet, Code selected, Workspace pressed:
 
 **Status: done.**
 
-The findings are in the two documents this work produced:
-[`docs/components.md`](../../components.md) for the components, and
-[`docs/icons.md`](../../icons.md) for the icons.
+The findings that remain available are in the installed component sources,
+the Lucide convention in `AGENTS.md`, and the pane type registry. The former
+component and icon audit notes are not present in this checkout.
 
 The audit found **one** primitive family in the project — Base UI, through
 shadcn's `base-nova` style — and no Radix and no Tabler. It found that
@@ -1032,7 +1025,7 @@ icon is a change to every screen at once.
 
 **Prompt to the coding AI:**
 
-> Evaluate the existing app stack and determine whether a current layout dependency, an additional docking library, or a small custom nested-split implementation is most appropriate. Compare the actual requirements: up to six simultaneously visible panes, nested horizontal/vertical splits, left/right/top/bottom drag-and-drop docking, resizable dividers, per-pane headers under our control, no hidden tab stack in the initial design, the ability to save/restore layout metadata, theme compatibility and maintainability. Consider libraries that provide a grid without mandatory tabs as well as full IDE docking libraries. Do not install anything or write implementation code. Recommend one approach, name any tradeoffs, and identify the smallest proof-of-fit experiment needed before committing.
+> Evaluate the existing app stack and determine whether a current layout dependency, an additional docking library, or a small custom nested-split implementation is most appropriate. Compare the actual requirements: up to six pane instances, nested horizontal/vertical splits, left/right/top/bottom drag-and-drop docking, resizable dividers, per-pane headers under our control, tab groups, the ability to save/restore layout metadata, theme compatibility and maintainability. Consider libraries that provide a grid without mandatory tabs as well as full IDE docking libraries. Do not install anything or write implementation code. Recommend one approach, name any tradeoffs, and identify the smallest proof-of-fit experiment needed before committing.
 
 **Acceptance criteria:** A clear documented choice and rationale exist before the layout engine is built. No dependency is installed.
 
@@ -1082,13 +1075,13 @@ at the app, not by a document.
 
 **Acceptance criteria:** Tokens remain centralized and the existing UI looks materially unchanged.
 
-**Reference:** The app's own tokens, in both modes. See docs/tokens.md
+**Reference:** `src/index.css`, the existing theme checks, and §3.1
 
 **Status: done.**
 
 | | |
 |---|---|
-| The map | [`docs/tokens.md`](../../tokens.md) — the roles, the values in both modes, the rules and where they are checked, typography, radii, spacing, controls, focus, the states, motion, and how to add a token |
+| The map | source files and this plan — the roles, the values in both modes, the rules and where they are checked, typography, radii, spacing, controls, focus, the states, motion, and how to add a token |
 | The tokens | `src/index.css` — seven added, in both themes, with their `--color-` mappings |
 | The rules | `src/lib/theme.test.ts` — five new tests, eighteen in all |
 | The proof | The built CSS was diffed before and after: both themes gained 7 tokens, lost 0, and **no existing value changed**. The only newly painted things are ones that drew nothing before |
@@ -1112,13 +1105,13 @@ separator is `--border`.
 
 **Acceptance criteria:** No duplicate design system; no imports refer to nonexistent files; no unrelated changes.
 
-**Reference:** The app's own components, on one family. See docs/components.md
+**Reference:** Current component implementations in `src/components/` and the installed component conventions in §3.2
 
 **Status: done.**
 
 | | |
 |---|---|
-| The map | [`docs/components.md`](../../components.md) — the one family everything is built on, the map of which component to use for which job, the app's own shared components, and the rules |
+| The map | source files and this plan — the one family everything is built on, the map of which component to use for which job, the app's own shared components, and the rules |
 | The duplicate | `src/components/tooltip-icon-button.tsx` was the only place the app's **own** code used the older generation under `src/components/ui/`. It is now on the canonical family, so everything the app runs is on one family |
 | The guard | `src/lib/components.test.ts` — four tests: every import points at a file that is there, the code reachable from the entry point is on one component family, there is one primitive family, and every component folder has a barrel |
 
@@ -1130,7 +1123,7 @@ material.
 The four deltas the move brought — a 10px corner becoming 8px, a 1px
 transparent border that is gone, a press that is now the app's 0.97 rather
 than the wrapper's 0.90, and a tooltip that waits 150ms rather than
-appearing at once — are set out in `docs/components.md` §4. Each was
+appearing at once — are set out in `src/index.css` and `docs/plan/ui-ux-research.md`. Each was
 measured in the browser rather than assumed.
 
 ## Task 1.3 — Establish Lucide icon conventions
@@ -1141,13 +1134,13 @@ measured in the browser rather than assumed.
 
 **Acceptance criteria:** The plan for icons is consistent, and the existing shell remains unchanged.
 
-**Reference:** Lucide icons and the marks the pane types take. See docs/icons.md
+**Reference:** `AGENTS.md`, `src/blocks/workspace/pane-types.ts`, and §3.3
 
 **Status: done.**
 
 | | |
 |---|---|
-| The convention | [`docs/icons.md`](../../icons.md) — one pack, the size scale, the stroke, when an icon is read aloud, and the rule that an icon is never the only message |
+| The convention | source files and this plan — one pack, the size scale, the stroke, when an icon is read aloud, and the rule that an icon is never the only message |
 | The map | `src/blocks/workspace/pane-types.ts` — thirteen kinds of view, each with a key, a name, a mark and a line for the Views menu |
 | The check | `src/lib/icons.test.ts` — one pack, named imports, the `Icon` suffix, no deprecated alias in the app's own code, and every mark present in the installed package |
 
@@ -1197,7 +1190,7 @@ the same.
 
 **Acceptance criteria:** State ownership is clear and does not duplicate the
 
-**Reference:** Who owns each piece of the workspace's state. See docs/workspace-state.md
+**Reference:** `src/lib/workspace-state.ts`, the ownership rules in §1.4, and `docs/plan/ui-ux-research.md`
 current state; the arrangement's rules are tested; the model survives a
 round trip through JSON.
 
@@ -1206,7 +1199,7 @@ round trip through JSON.
 | | |
 |---|---|
 | The model | `src/lib/workspace-state.ts` — the tree of panes, splits and groups; the rules on it; the operations on it |
-| The map | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight |
+| The map | source files and this plan — who owns each of the eight |
 | The check | `src/lib/workspace-state.test.ts` — twenty-two rules, each broken on purpose to watch it fail |
 
 **What changed.** The `open` flag is gone, and with it `openWorkspace()`
@@ -1357,7 +1350,7 @@ when the workspace is open and holds nothing. That is settled in Task 2.1.
 
 **Acceptance criteria:** New icon controls can use one consistent pattern; keyboard users can identify and focus them.
 
-**Reference:** The app's icon-only button. See docs/icons.md §7
+**Reference:** `src/components/tooltip-icon-button.tsx`, `AGENTS.md`, and §3.3
 
 
 
@@ -1367,7 +1360,7 @@ when the workspace is open and holds nothing. That is settled in Task 2.1.
 |---|---|
 | The pattern | `src/components/tooltip-icon-button.tsx` — the app's shared icon button, already the standard |
 | The check | `src/lib/icon-button.test.ts` — seven rules, each broken on purpose to watch it fail |
-| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) |
+| The map | source files and this plan §7, source files and this plan |
 
 **What this task found.** The pattern already existed: a `Button
 variant="ghost" size="icon"` inside a tooltip trigger, with the tooltip's
@@ -1376,8 +1369,8 @@ name are the same string and cannot disagree. The `tooltip` prop is
 required, so a caller cannot have the button without the name. The
 component's whole purpose is to make that impossible.
 
-What was missing was the audit and the check. `docs/icons.md` §7 already
-says a new pane uses it, and `docs/components.md` already says to use
+What was missing was the audit and the check. `AGENTS.md` and §3.3 already
+says a new pane uses it, and the corresponding current source files already says to use
 it and not a bare `Button` with `size="icon"`. The raw `size="icon"`
 usages that remain are inside shadcn primitives — dialog close, sheet
 close, sidebar trigger and the like — which are self-contained and are not
@@ -1397,7 +1390,7 @@ defaults the tooltip to the bottom.
 
 **Acceptance criteria:** The workspace can use standard menus without inconsistent behavior or invented component APIs.
 
-**Reference:** The app's menu, tooltip and context-menu primitives. See docs/components.md §2
+**Reference:** Installed menu and tooltip sources in `src/components/` and §3.5
 
 
 
@@ -1407,7 +1400,7 @@ defaults the tooltip to the bottom.
 |---|---|
 | The primitives | `@/components/tooltip`, `@/components/dropdown-menu`, `@/components/context-menu` — all on Base UI |
 | The check | `src/lib/menu.test.ts` — six rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 and §3 |
+| The map | source files and this plan §2 and §3 |
 
 **What this task found.** All three primitives are already on the canonical
 family — Base UI — and all three carry the same destructive variant, so a
@@ -1419,7 +1412,7 @@ hover, so a keyboard user gets the name.
 
 Nothing was added. The primitives cover the job, and a custom menu would
 have been a second one. The conventions are written down in
-`docs/components.md` §3, and the pane's menu is the proof that they are
+§3, and the pane's menu is the proof that they are
 followed.
 ## Task 3.3 — Standardize popovers and selection pickers
 
@@ -1429,7 +1422,7 @@ followed.
 
 **Acceptance criteria:** The primitives are ready for reuse and follow the local shadcn implementation.
 
-**Reference:** The app's popover, select and command primitives. See docs/components.md §2
+**Reference:** Installed popover/select/command sources in `src/components/` and §3.5
 
 
 
@@ -1439,7 +1432,7 @@ followed.
 |---|---|
 | The primitives | `@/components/popover`, `@/components/select`, `@/components/combobox`, `@/components/command` — all on Base UI |
 | The check | `src/lib/popover-picker.test.ts` — six rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §2 |
 
 **What this task found.** All four primitives are already on the canonical
 family — Base UI — and the command palette is built on Base UI's dialog
@@ -1459,7 +1452,7 @@ Task 7.1.
 
 **Acceptance criteria:** A common dialog convention exists for future rename/reset/unsaved-demo-state interactions.
 
-**Reference:** The app's dialog and alert-dialog primitives. See docs/components.md §2
+**Reference:** Installed dialog primitives in `src/components/` and §3.5
 
 
 
@@ -1469,7 +1462,7 @@ Task 7.1.
 |---|---|
 | The primitives | `@/components/dialog`, `@/components/alert-dialog` — both on Base UI |
 | The check | `src/lib/dialog.test.ts` — seven rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §2 |
 
 **What this task found.** Both primitives are already on the canonical
 family — Base UI's drawer — and both carry a title, a description and a
@@ -1479,7 +1472,7 @@ which is where a form's fields go.
 
 Nothing was added. The primitives cover the job, and a custom dialog would
 have been a second one. The conventions are written down in
-`docs/components.md` §3: a dialog is a form that wants focus, a
+§3: a dialog is a form that wants focus, a
 confirmation is for destructive or disruptive actions and only then.
 ## Task 3.5 — Standardize status, empty, loading, error and toast patterns
 
@@ -1489,7 +1482,7 @@ confirmation is for destructive or disruptive actions and only then.
 
 **Acceptance criteria:** Future panes have consistent patterns for non-happy-path states without a new design system.
 
-**Reference:** The app's badge, empty, skeleton, progress and toast primitives. See docs/components.md §2
+**Reference:** Installed status and feedback primitives in `src/components/` and §3.4
 
 # Phase 4 — Build the generic pane framework
 
@@ -1501,7 +1494,7 @@ confirmation is for destructive or disruptive actions and only then.
 |---|---|
 | The primitives | `@/components/badge`, `@/components/empty`, `@/components/skeleton`, `@/components/progress`, `@/components/toast` — all on Base UI |
 | The check | `src/lib/status.test.ts` — ten rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §2 |
 
 **What this task found.** All five primitives are already on the canonical
 family — Base UI — and the workspace empty state is the proof that the
@@ -1511,7 +1504,7 @@ size, with a title, a description and the Views picker as its one action.
 Nothing was added. The primitives cover the job, and a pane that needs a
 status, a loading placeholder, an empty state or a toast takes the one that
 is already there. The conventions are written down in
-`docs/components.md` §3: colour alone is never the message, and a status
+§3: colour alone is never the message, and a status
 carries a label, a symbol or a shape as well as a colour.
 ## Task 4.1 — Create the Pane container
 
@@ -1531,7 +1524,7 @@ carries a label, a symbol or a shape as well as a colour.
 |---|---|
 | The frame | `src/blocks/workspace/pane.tsx` — the pane frame, with a header strip, a scrollable content area, and the three controls |
 | The check | `src/lib/pane.test.ts` — nine rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+| The map | source files and this plan §2, source files and this plan §7 |
 
 **What this task found.** The frame already existed, written against the
 reference: a flat region on the window's background, no card, no rounded
@@ -1568,7 +1561,7 @@ draws itself and asks for its content.
 |---|---|
 | The header | `src/blocks/workspace/pane.tsx` — the header strip, with the mark, the title, the secondary context and the three controls |
 | The check | `src/lib/pane-header.test.ts` — six rules, each broken on purpose to watch it fail |
-| The map | [`docs/icons.md`](../../icons.md) §7 |
+| The map | source files and this plan §7 |
 
 **What this task found.** The header was already there, written against the
 reference: a strip of a fixed height, the pane's mark and title on the left,
@@ -1602,7 +1595,7 @@ not grow with its content, so narrow panes do not push the layout around.
 |---|---|
 | The frame | `src/blocks/workspace/pane.tsx` — the overflow menu, the pop-out, the close control, and the focus action |
 | The check | `src/lib/pane-actions.test.ts` — six rules, each broken on purpose to watch it fail |
-| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §7, source files and this plan §2 |
 
 **What this task found.** The pane already carried its three controls — pop
 out, the menu's chevron, and close — and they were already icon-only
@@ -1634,7 +1627,7 @@ drawn as though it could.
 |---|---|
 | The registry | `src/blocks/workspace/pane-registry.tsx` — the registry, built from `pane-types.ts`, with renderers, actions and the duplicate rule |
 | The check | `src/lib/pane-registry.test.ts` — seven rules, each broken on purpose to watch it fail |
-| The map | [`docs/icons.md`](../../icons.md), [`docs/components.md`](../../components.md) |
+| The map | source files and this plan, source files and this plan |
 
 **What this task found.** The naming half already existed in
 `pane-types.ts` — the key, the name, the mark and the description — and
@@ -1673,7 +1666,7 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 |---|---|
 | The slots | `src/blocks/workspace/pane-states.tsx` — empty, loading, error, unavailable and spinner |
 | The check | `src/lib/pane-states.test.ts` — eight rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §2 |
 
 **What this task found.** The primitives already existed — the empty component, the skeleton, the progress indicator, the toast — and the pane needed slots that use them rather than re-inventing them. The slots are `PaneEmpty`, `PaneLoading`, `PaneError`, `PaneUnavailable` and `PaneSpinner`, and each takes its own text, so a pane supplies the words that fit it rather than inheriting a sentence written for a different one. The header stays visible while the content changes state, because the slots are content and not frames — they do not draw a header, so the pane's header is the one that stays.
 
@@ -1686,7 +1679,7 @@ The empty slot offers at most one action, and the error slot offers a retry only
 |---|---|
 | The slots | `src/blocks/workspace/pane-states.tsx` — PaneEmpty, PaneLoading, PaneError, PaneUnavailable, PaneSkeletonText |
 | The check | `src/lib/pane-states.test.ts` — nine rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2 |
+| The map | source files and this plan §2 |
 
 **What this task found.** The primitives already existed — the empty
 component, the skeleton, the alert, the button — and what was missing was
@@ -1720,7 +1713,7 @@ unavailable pane is a button that does nothing.
 |---|---|
 | The pane | `src/blocks/workspace/panes/chat-pane.tsx` — the Chat pane, with sample messages, a scrollable timeline and a composer |
 | The check | `src/lib/chat-pane.test.ts` — nine rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+| The map | source files and this plan §2, source files and this plan §7 |
 
 **What this task found.** The pane is built on the shared pane frame, with
 the shared state slots for its empty, loading, error and unavailable states.
@@ -1750,7 +1743,7 @@ so each one can be seen without changing code.
 |---|---|
 | The pane | `src/blocks/workspace/panes/code-session-pane.tsx` — the Code Session pane, with project context, activity timeline, and composer |
 | The check | `src/lib/code-session-pane.test.ts` — eleven rules, each broken on purpose to watch it fail |
-| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+| The map | source files and this plan §2, source files and this plan §7 |
 
 **What this task found.** The pane is built on the shared pane frame, with
 the shared state slots for its empty, loading, error and unavailable states.
@@ -1780,7 +1773,7 @@ distinguishing it from the generic Chat pane.
 |---|---|
 | The pane | `src/blocks/workspace/panes/diff-viewer-pane.tsx` — the Diff Viewer overview with file list, search, filter, and sample diff content |
 | The check | `src/lib/diff-viewer-pane.test.ts` — rules for the Diff Viewer pane (to be added) |
-| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+| The map | source files and this plan §2, source files and this plan §7 |
 
 **What this task found.** The Diff Viewer overview is a pane with a header showing change counts, a searchable and filterable file list, and a diff content area. The file list shows each file's path, status (added/modified/deleted), and line counts. Selecting a file shows a sample diff in the content area. The pane uses the shared empty, loading, error, and unavailable slots. No Git integration — all data is sample.
 ## Task 5.4 — Diff Viewer: changed code surface and controls
@@ -2253,8 +2246,10 @@ themselves are not touched.
 
 **Prompt to the coding AI:**
 
-> Make a second session openable in the workspace beside the first, the way
-> the reference shows it: two session panes, each with its own
+> Make a second session openable in the workspace beside the first. The
+> target interaction for Tavi is to drag a session from the existing
+> session list into the workspace; show a split preview before committing
+> the drop. Render two session panes, each with its own
 > conversation, its own composer and its own project. A session pane is
 > bound to a session by a reference, never by a copy, and the two must not
 > be able to see each other's conversation, their state or their context.
@@ -2267,7 +2262,7 @@ themselves are not touched.
 
 **Acceptance criteria:** Two sessions can be shown at once; their
 
-**Reference:** Two sessions side by side. Claude Code Desktop: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+**Reference:** The product behavior is grounded in the user-confirmed Claude Code Desktop split-session screenshot and walkthrough (see `docs/plan/ui-ux-research.md`, R1). Anthropic's current docs confirm side-by-side sessions and document modifier-click; they do not document the sidebar drag gesture as a supported shortcut: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 conversations and their state stay separate; moving or closing a pane does
 not end its session; the rail is still the only navigation.
 
@@ -2347,7 +2342,7 @@ pane back rather than losing it.
 
 **Acceptance criteria:** New workspace features match the existing visual system and the Chat/Code landing screens remain approved.
 
-**Reference:** The last look. See docs/visual-baseline.md
+**Reference:** The last look. See §1.1 and `docs/layout.md`; original screenshots are not checked into the repository
 
 # Phase 9 — Final regression QA and handoff
 
@@ -2443,7 +2438,7 @@ Use this cycle for every single task:
 
 Suggested instruction to start the project:
 
-> Read `docs/ui-ux-plan.md` completely. Follow its global instructions and exact task order. Start with Task 0.1 only. Inspect the codebase without modifying any files. Report the architecture map, relevant file paths, build/check commands, existing shadcn/Lucide setup and likely docking approaches. Then stop and wait for my approval.
+> Read `AGENTS.md`, `docs/plan/ui-ux-plan.md`, and `docs/plan/ui-ux-research.md` completely. Follow the global product contract and task order. Start with the next incomplete task in the tracker, inspect the current code first, and complete only that task. Report changed files, evidence, and any reference mismatch; then stop for review.
 
 If a task is too large for the model, split that task into smaller numbered sub-tasks before implementation; do not let it skip ahead or rewrite unrelated files.
 
@@ -2466,8 +2461,13 @@ Use these as documentation references, not as a command to copy their visual des
 - **Claude Code Desktop — arrange your workspace:** https://code.claude.com/docs/en/desktop#arrange-your-workspace
 - **Claude Code Desktop — work in parallel with sessions:** https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
 - **Claude Code Desktop quickstart:** https://code.claude.com/docs/en/desktop-quickstart
-- **Claude Code desktop redesign announcement:** https://claude.com/blog/claude-code-desktop-redesign
-- **Pop-out panes in Claude Code Desktop:** https://aicatchup.com/news/claude-code-desktop-pop-out-panes
+- **Claude Code desktop redesign announcement:** https://claude.com/resources/articles/claude-code-desktop-redesign
+- **Tauri v2 WebviewWindow API:** https://v2.tauri.app/reference/javascript/api/namespacewebviewwindow/
+- **Tauri v2 window configuration:** https://v2.tauri.app/reference/config/#windowconfig
+- **WAI-ARIA APG window splitter:** https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/
+- **MDN HTML Drag and Drop API:** https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API
+- **Dockview feature and API documentation:** https://dockview.dev/docs/
+- **Tavi-specific evidence and task map:** [`docs/plan/ui-ux-research.md`](ui-ux-research.md)
 
 ---
 
