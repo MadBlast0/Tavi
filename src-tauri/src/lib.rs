@@ -1,11 +1,15 @@
 use tauri::AppHandle;
 
+mod acp;
 mod appfile;
+mod cli;
 mod files;
+mod git;
 mod keys;
 mod partials;
 mod projects;
 mod provider;
+mod pty;
 mod threads;
 mod tray;
 mod window_state;
@@ -124,6 +128,10 @@ pub fn run() {
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
         .manage(projects::Clones::default())
+        .manage(std::sync::Arc::new(cli::CliRegistry::default()))
+        .manage(cli::CliLifecycle::default())
+        .manage(pty::Terminals::default())
+        .manage(acp::AcpAgents::default())
         .invoke_handler(tauri::generate_handler![
             keys::list_provider_keys,
             keys::save_provider_key,
@@ -137,9 +145,31 @@ pub fn run() {
             provider::chat,
             provider::cancel_chat,
             provider::model_catalogue,
+            cli::list_cli_providers,
+            cli::scan_cli_providers,
+            cli::set_cli_provider_state,
+            cli::run_cli_lifecycle,
+            cli::cancel_cli_lifecycle,
+            cli::list_cli_models,
+            cli::cli_provider_diagnostics,
+            acp::acp_list_models,
+            acp::acp_stop_agent,
+            acp::acp_chat,
+            pty::start_cli_terminal,
+            pty::write_cli_terminal,
+            pty::resize_cli_terminal,
+            pty::stop_cli_terminal,
+            cli::run_cli_chat,
             projects::list_projects,
             projects::clone_repository,
             projects::cancel_clone,
+            git::git_status,
+            git::git_branches,
+            git::git_commit,
+            git::git_pull,
+            git::git_push,
+            git::git_switch_branch,
+            git::git_create_branch,
             files::data_directory,
             files::write_file,
             files::read_file,

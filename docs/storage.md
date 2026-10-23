@@ -27,12 +27,13 @@ what removes it.
 | Chats and code sessions | The app's own file on the desktop; `localStorage` on the web | The user's own conversations. Never sent anywhere but the provider they chose | Until the user deletes it. The newest 50 of each kind are kept | Deleting a thread, or **Settings ? Privacy ? Delete everything** |
 | The provider key | The OS credential store on the desktop; the server's own file on the website | A credential. Never logged, never sent back to a browser | Until the user removes it | **Settings ? Platform ? API keys ? Remove** |
 | The provider a request goes to | A per-side preference, in the browser's storage | Low. A choice about where a request goes | Until the user clears site data | Clearing site data |
+| The CLI providers' own preferences | `cli-providers.json` beside the app's data, on the desktop. There is nothing on the website | Low. Which programs are offered, and whether they may update themselves | Until the app is reinstalled | Overwritten |
 | The key's details | `provider-keys.json` beside the app's data; the same file, on the website | Low, but a fingerprint: the masked value and the account name | Until the key is removed | With the key |
 | Preferences: model, effort, agent mode, the rail's open state, the notification choices, the conversation each side had open | `localStorage` | Low. A choice the user made and could re-make | Until the user clears site data | Clearing site data |
 | Composer drafts, one per side | `localStorage` | The user's own words, unsent | Until sent, or cleared | Clearing site data, or sending |
 | Folder handles (website) | IndexedDB `tavi-fs` | A handle to a folder the user opened. The browser enforces it | Until the folder is forgotten | **Forget folder** in the picker |
 | Workspace grants (desktop) | The app's own file | A path the user chose | Until the folder is forgotten or the grant is relinked | **Forget folder** |
-| The model catalogue | A cache in the app's data directory on the desktop; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
+| The model catalogue | A cache in the app's data directory on the desktop, one file per provider; in the server's memory on the website. OpenRouter's public API is the source | None. A list of models | 15 minutes, then fetched again | Overwritten |
 | The window's size and position | The app's own file, written by Rust | None | Until the app is reinstalled | Overwritten |
 | Cloned repositories | The projects folder, on disk | The user's own code | Until the user deletes them | The user, or the file manager |
 | Attachments and mentions | Inlined into the conversation, and stored with the turn | The user's own words and files | With the thread | Deleting the thread |
@@ -289,20 +290,58 @@ request goes out with, and the provider the request is sent to all follow it.
 That is what makes the list and the request about the same provider by
 construction, rather than by agreeing to.
 
-A provider is a **shape** and some **configuration**. Most of the thirty
-providers the app knows about speak the OpenAI chat-completions shape and
-differ only in the address they live at and how the key is sent. Anthropic's
-Messages, Google's generate-content and Cohere's chat are three more shapes.
-Two of them — Amazon Bedrock and Google Vertex AI — are signed with AWS
-credentials and with Google's own rather than with a key, and the app says so
-plainly.
+**It starts unset, because the user chooses it.** The composer has a provider
+control of its own, beside the model one, and the model picker is not usable
+until a provider is chosen — the models belong to one. The control opens a
+dropdown with two kinds of provider, an **API provider** and a **CLI
+provider**. Pointing at either opens **its own dropdown beside it**: the API
+one is a searchable list of the providers the user has a key for, because a
+provider with no key is one the app cannot reach; the CLI one is the list of
+the CLI providers that are installed and turned on.
+
+**A thread records the provider it was started with**, the way it records the
+model and the effort. It is a rule as well as a record: a thread that has been
+talked to is about one provider — the models in it came from that provider,
+and the answer still coming is that provider's — so the provider is pinned
+once a message has been sent. The **model** is still free. A thread may be
+carried from one model of a provider to another; it may not be carried from
+one provider to another, and a new thread lifts the pin.
+
+**The CLI providers' own preferences are in the app's own file**, in
+`cli-providers.json`: which of them are turned on, whether each may update
+itself, whether any may, and a path the user has pointed at for a program
+the app could not find. What is *on the machine* is not kept there — that is
+found again on every scan, because a program can be removed between two
+visits, and a file that claimed a program was installed when it was not would
+be a lie.
+
+**A CLI provider is never a secret.** The program is on the machine already;
+the app starts it, reads what it says, and never asks it for a key. The
+program keeps its own account and its own configuration, and Tavi neither
+sees nor stores them.
+
+A provider is a **shape** and some **configuration**. Most of the
+twenty-eight providers the app knows about speak the OpenAI chat-completions
+shape and differ only in the address they live at and how the key is sent.
+Anthropic's Messages, Google's generate-content and Cohere's chat are three
+more shapes.
+
+**A provider also says where a reasoning level goes.** The field is not the
+same everywhere — OpenRouter takes `reasoning: { effort }`, OpenAI and the
+OpenAI-compatible providers take a top-level `reasoning_effort`, and Anthropic
+takes `output_config: { effort }` — and a level sent in the wrong field is
+one the provider ignores. The field is in the provider's own row, and both
+halves of the app read it from there.
 
 **A key may carry the address it belongs to.** Some providers do not live at
 one address: an Azure resource, a Databricks workspace, a model running on
-this machine. The key says which, and the key's address wins over the
-provider's default. The address is part of the key's metadata, and it is
-written next to the key rather than beside it — the address is not a secret,
-but it is not the provider's either.
+this machine, a gateway of your own. The key says which, and the key's
+address wins over the provider's default. The address is part of the key's
+metadata, and it is written next to the key rather than beside it — the
+address is not a secret, but it is not the provider's either.
+
+**A custom endpoint** is a provider of that kind: the OpenAI
+chat-completions shape at an address the user gives.
 
 ### Secrets - OS credential store
 

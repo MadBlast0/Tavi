@@ -13,7 +13,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const SRC = join(import.meta.dirname, "..")
-const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8")
+const read = (...parts: string[]) =>
+  // Normalised, so a check for a run of source lines does not depend on
+  // whether this checkout wrote them with CRLF or LF.
+  readFileSync(join(SRC, ...parts), "utf8").replace(/\r\n/g, "\n")
 
 const pane = read("blocks", "workspace", "pane.tsx")
 

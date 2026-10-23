@@ -664,7 +664,13 @@ fn standing_for_status(status: u16, checked_at: u64) -> Standing {
 /// its own. The others have a model listing, which answers yes or no and
 /// nothing more. Which one it is comes from the provider's own row, not from
 /// its name.
-fn identity_url(provider: &ProviderInfo) -> String {
+fn identity_url(provider: &ProviderInfo, base_url: Option<&str>) -> String {
+    let base = base_url
+        .map(str::trim)
+        .filter(|base| !base.is_empty())
+        .unwrap_or(provider.base_url)
+        .trim_end_matches('/');
+
     if provider.identity_reports_account {
         if let Some(resolved) = crate::provider::Provider::for_provider(provider.id) {
             return resolved.key_url();
@@ -672,7 +678,7 @@ fn identity_url(provider: &ProviderInfo) -> String {
     }
     /* The model listing. A listing answers "no" for a bad key and nothing
        more, which is what a check needs. */
-    format!("{}/models", provider.base_url.trim_end_matches('/'))
+    format!("{}/models", base)
 }
 
 /// What a provider says about a key.
@@ -683,7 +689,12 @@ fn identity_url(provider: &ProviderInfo) -> String {
 ///
 /// A provider whose check costs a request is only ever asked when the user
 /// asks for it. The list refresh never spends anything.
-async fn check(provider: &ProviderInfo, key: &str, spend: bool) -> Result<Standing, String> {    let checked_at = now_secs();
+async fn check(
+    provider: &ProviderInfo,
+    key: &str,
+    spend: bool,
+    base_url: Option<&str>,
+) -> Result<Standing, String> {    let checked_at = now_secs();
 
     if provider.validation == Validation::InferenceProbe {
         if !spend {
@@ -707,22 +718,14 @@ async fn check(provider: &ProviderInfo, key: &str, spend: bool) -> Result<Standi
             ..Default::default()
         });
     }
-    if matches!(provider.auth, Auth::GoogleOAuth) {
-        return Ok(Standing {
-            valid: None,
-            check_reason: Some("not-checked".to_string()),
-            checked_at: Some(checked_at),
-            ..Default::default()
-        });
-    }
 
-    let url = identity_url(provider);
+    let url = identity_url(provider, base_url);
     let resolved = crate::provider::Provider::for_provider(provider.id);
     let mut request = crate::provider::http().get(&url);
     request = match provider.auth {
-        Auth::Bearer | Auth::AwsBearer => request.bearer_auth(key),
+        Auth::Bearer => request.bearer_auth(key),
         Auth::Header(name) => request.header(name, key),
-        Auth::None | Auth::GoogleOAuth => request,
+        Auth::None => request,
     };
     if let Some(resolved) = resolved {
         request = match resolved.extra_header() {
@@ -826,7 +829,7 @@ async fn check(provider: &ProviderInfo, key: &str, spend: bool) -> Result<Standi
 /// nothing about the key — and one already has been.
 async fn first_published_model(provider: &ProviderInfo) -> Result<String, String> {
     let response = crate::provider::http()
-        .get(identity_url(provider))
+        .get(identity_url(provider, None))
         .send()
         .await
         .map_err(|e| format!("Could not reach {}: {e}", provider.label))?;
@@ -1134,7 +1137,9 @@ pub async fn list_provider_keys(app: AppHandle) -> Result<Vec<Value>, String> {
             if provider.validation == Validation::IdentityEndpoint {
                 let secret = read_credential(&store.service, &format!("{KEY_USER_PREFIX}{}", record.id))?;
                 if let Some(secret) = secret {
-                    if let Ok(standing) = check(provider, &secret, false).await {
+                    if let Ok(standing) =
+                check(provider, &secret, false, record.base_url.as_deref()).await
+            {
                         record.standing = standing;
                     }
                 }
@@ -1204,6 +1209,7 @@ pub async fn check_provider_key(
     provider: String,
     key: String,
     spend: bool,
+    base_url: Option<String>,
 ) -> Result<Value, String> {
     let provider =
         provider_for(&provider).ok_or("That provider is not one the app knows about.")?;
@@ -1212,7 +1218,7 @@ pub async fn check_provider_key(
         return Err("Key must not be empty.".to_string());
     }
 
-    let standing = check(provider, key, spend).await?;
+    let standing = check(provider, key, spend, base_url.as_deref()).await?;
     Ok(json!({
         "valid": standing.valid,
         "checkReason": standing.check_reason,
@@ -1257,7 +1263,7 @@ pub async fn save_provider_key(
     /* Checked first, and a refusal is a refusal: the key is not stored, and
        whatever was in use stays in use. A provider that could not be reached
        is not a refusal, and a check that costs a request is not run here. */
-    let standing = check(provider, &secret, false).await?;
+    let standing = check(provider, &secret, false, base_url.as_deref()).await?;
     if standing.valid == Some(false) && standing.check_reason.as_deref() == Some("not-accepted")
     {
         return Err(format!("{} did not accept this key.", provider.label));
@@ -1292,11 +1298,17 @@ pub async fn replace_provider_key(app: AppHandle, id: String, key: String) -> Re
     let path = index_path(&app)?;
     let store = Store::new(KEY_SERVICE, &path);
     let index = ensure_index(&store)?;
-    let (provider_id, _) = find_key(&index, &id)?;
+    let (provider_id, position) = find_key(&index, &id)?;
     let provider = provider_for(&provider_id)
         .ok_or("That provider is not one the app knows about.")?;
+    /* The address the key already lives at, which is where it is checked. */
+    let address = index
+        .providers
+        .get(&provider_id)
+        .and_then(|group| group.keys.get(position))
+        .and_then(|record| record.base_url.clone());
 
-    let standing = check(provider, &secret, false).await?;
+    let standing = check(provider, &secret, false, address.as_deref()).await?;
     if standing.valid == Some(false) && standing.check_reason.as_deref() == Some("not-accepted")
     {
         return Err(format!("{} did not accept this key.", provider.label));
@@ -1353,7 +1365,7 @@ pub async fn recheck_provider_key(app: AppHandle, id: String) -> Result<(), Stri
     let secret = read_credential(&store.service, &format!("{KEY_USER_PREFIX}{id}"))?
         .ok_or("That key is not one the app holds.")?;
 
-    let standing = check(provider, &secret, true).await?;
+    let standing = check(provider, &secret, true, None).await?;
 
     let group = index
         .providers

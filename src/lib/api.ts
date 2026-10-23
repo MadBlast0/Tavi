@@ -21,6 +21,12 @@
  */
 
 import { providerCatalogue, type SlimModel } from "./catalogue.ts"
+import {
+  isCliProviderId,
+  type CliLifecycleAction,
+  type CliProviderChanges,
+  type CliProviderState,
+} from "./cli-providers.ts"
 import * as desktop from "./desktop.ts"
 import { isDesktopApp } from "./platform.ts"
 import { providerFor } from "./providers.ts"
@@ -29,6 +35,11 @@ import * as web from "./web.ts"
 import type { KeyStandingReport, ProviderKey } from "./secret.ts"
 
 export type { KeyStandingReport, ProviderKey }
+export type {
+  CliLifecycleAction,
+  CliProviderChanges,
+  CliProviderState,
+}
 
 /* -------------------------------------------------------------------------- */
 /* The vocabulary                                                              */
@@ -126,6 +137,14 @@ export type ChatRequest = {
   mode?: string
   /** The folder's name. Code only. */
   folder?: string
+  /**
+   * The folder's id. Code only.
+   *
+   * A name is not enough to say which folder is meant — two folders can have
+   * the same name — and a CLI provider has to be started in the right one, so
+   * the id is sent as well.
+   */
+  folderId?: string
   config?: {
     modelName?: string
     /**
@@ -136,6 +155,14 @@ export type ChatRequest = {
      * is what stops the app offering a model the request will not use.
      */
     providerId?: string
+    /**
+     * The program's own session to carry on in, when it has one.
+     *
+     * A CLI provider keeps its own memory of a conversation, and this is
+     * which one. It is the thread's own, so a thread and a program's session
+     * are the same conversation rather than two copies of it.
+     */
+    sessionId?: string
     reasoningEffort?: string
     /**
      * The reasoning preference, already checked and written the provider's
@@ -163,10 +190,53 @@ export type ChatEvent =
   | { type: "text-delta"; delta: string }
   | {
       type: "message-metadata"
-      messageMetadata?: { modelId?: string; usage?: ChatUsage }
+      messageMetadata?: {
+        modelId?: string
+        usage?: ChatUsage
+        sessionId?: string
+      }
     }
-  | { type: "finish"; messageMetadata?: { modelId?: string; usage?: ChatUsage } }
+  | {
+      type: "finish"
+      messageMetadata?: { modelId?: string; usage?: ChatUsage; sessionId?: string }
+    }
   | { type: "error"; errorText: string }
+  | { type: "tool"; tool: ToolActivity }
+
+/**
+ * A tool the agent used.
+ *
+ * Only a CLI provider sends these. An API provider has no tools of its own,
+ * so it sends none, and the thread shows no activity for it.
+ */
+export type ToolActivity = {
+  /** The name the program calls the tool by. */
+  name: string
+  /** What it was doing, in words. */
+  title: string
+  /** How far it got: running, completed or failed. */
+  status: string
+  /** What it was given. */
+  input?: unknown
+  /** What it said. */
+  output?: string
+}
+
+/** The models and configuration an agent offers. */
+export type AcpConfigResult = {
+  sessionId: string
+  configOptions: AcpConfigOption[]
+}
+
+/** A configuration option an agent exposes. */
+export type AcpConfigOption = {
+  id: string
+  name: string
+  category?: string
+  type: string
+  currentValue: unknown
+  options?: { value: string; name: string; description?: string }[]
+}
 
 /**
  * The model catalogue, and how old the copy is.
@@ -235,10 +305,11 @@ export const checkProviderKey = (
   provider: string,
   key: string,
   spend: boolean,
+  baseUrl?: string,
 ): Promise<KeyStandingReport> =>
   isDesktopApp()
-    ? desktop.checkProviderKey(provider, key, spend)
-    : web.checkProviderKey(provider, key, spend)
+    ? desktop.checkProviderKey(provider, key, spend, baseUrl)
+    : web.checkProviderKey(provider, key, spend, baseUrl)
 
 export const recheckProviderKey = (id: string): Promise<void> =>
   isDesktopApp() ? desktop.recheckProviderKey(id) : web.recheckProviderKey(id)
@@ -279,6 +350,213 @@ export const fetchModels = async (providerId: string): Promise<ModelCatalogue> =
 }
 
 /* -------------------------------------------------------------------------- */
+/* The CLI providers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The CLI providers, and what state they are in.
+ *
+ * A CLI provider is a program on this machine, so the website's server has
+ * none — the list is empty there rather than an error, because there is
+ * nothing wrong with a browser: it simply is not the place where the
+ * programs are.
+ */
+export const listCliProviders = (): Promise<CliProviderState[]> =>
+  isDesktopApp() ? desktop.listCliProviders() : Promise.resolve([])
+
+/**
+ * The models and configuration an agent offers.
+ *
+ * The agent is asked, and it says what it has: a model list with friendly
+ * names, and the effort levels its models accept. They are the agent's own,
+ * so the picker shows what the agent offers rather than a guess at it.
+ */
+export const listAcpModels = (
+  provider: string,
+): Promise<AcpConfigResult> =>
+  isDesktopApp()
+    ? desktop.listAcpModels(provider)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Stops the agent for a provider. */
+export const stopAcpAgent = (provider: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.stopAcpAgent(provider)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/**
+ * Looks again, for a provider that has just been installed or removed.
+ */
+export const scanCliProviders = (): Promise<CliProviderState[]> =>
+  isDesktopApp() ? desktop.scanCliProviders() : Promise.resolve([])
+
+/**
+ * Changes what the app remembers about a CLI provider.
+ *
+ * Whether it is offered, whether it may update itself and where it lives
+ * are one file, and they are written together.
+ */
+export const setCliProviderState = (
+  id: string,
+  changes: CliProviderChanges,
+): Promise<CliProviderState[]> =>
+  isDesktopApp()
+    ? desktop.setCliProviderState(id, changes)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * Installs, updates or removes a CLI provider.
+ *
+ * The operation runs the tool's own means — a package manager, or the tool's
+ * own command — and never a script fetched from the internet.
+ */
+export const runCliLifecycle = (
+  id: string,
+  action: CliLifecycleAction,
+  onLog?: (message: string) => void,
+): Promise<void> =>
+  isDesktopApp()
+    ? desktop.runCliLifecycle(id, action, onLog)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * Asks the system which program to use for a CLI provider.
+ *
+ * A program the app could not find can be pointed at by hand, which is the
+ * remedy when a tool lives somewhere the app does not look.
+ */
+export const chooseCliProgram = (): Promise<string | null> =>
+  isDesktopApp() ? desktop.chooseCliProgram() : Promise.resolve(null)
+
+/**
+ * Stops an install, an update or a removal that is in flight.
+ */
+export const cancelCliLifecycle = (): Promise<void> =>
+  isDesktopApp()
+    ? desktop.cancelCliLifecycle()
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/**
+ * A report about one CLI provider, for a person to paste somewhere.
+ *
+ * It says what the app found and what it could not find, and leaves out the
+ * whole PATH, the environment and any command line — the parts most likely
+ * to carry something that should not be pasted into a public place.
+ */
+export const cliProviderDiagnostics = (id: string): Promise<string> =>
+  isDesktopApp()
+    ? desktop.cliProviderDiagnostics(id)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to change them.",
+        ),
+      )
+
+/* -------------------------------------------------------------------------- */
+/* The terminals                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Starts a program in a real terminal.
+ *
+ * A program that will not do anything without a terminal — one that draws a
+ * full-screen interface, or wants a person to type at it — is run in a real
+ * pseudo-terminal, and what it draws comes back as it draws it.
+ *
+ * There is no screen that shows a terminal yet, so nothing in the app calls
+ * this. The capability is here because the plan asks for it, and a surface
+ * that shows a terminal is a separate piece of work.
+ */
+export const startCliTerminal = (
+  program: string,
+  args: string[],
+  workingDir: string | undefined,
+  onOutput: (event: CliTerminalEvent) => void,
+): Promise<string> =>
+  isDesktopApp()
+    ? desktop.startCliTerminal(program, args, workingDir, onOutput)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Writes to a terminal, as if the person had typed it. */
+export const writeCliTerminal = (id: string, data: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.writeCliTerminal(id, data)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Tells a terminal it is a different size, so the program redraws. */
+export const resizeCliTerminal = (
+  id: string,
+  rows: number,
+  cols: number,
+): Promise<void> =>
+  isDesktopApp()
+    ? desktop.resizeCliTerminal(id, rows, cols)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Stops a terminal and lets go of it. */
+export const stopCliTerminal = (id: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.stopCliTerminal(id)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** What a terminal says. */
+export type CliTerminalEvent =
+  | { type: "output"; data: string }
+  | { type: "exit"; code: number | null }
+
+/**
+ * The models a CLI provider publishes.
+ *
+ * A CLI is not a model. One that has a list of them is asked for the list;
+ * one that has not is not asked, and the app shows no model picker for it
+ * rather than an empty one.
+ */
+export const listCliModels = (id: string): Promise<string[]> =>
+  isDesktopApp()
+    ? desktop.listCliModels(id)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/* -------------------------------------------------------------------------- */
 /* The conversation                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -287,15 +565,25 @@ export const fetchModels = async (providerId: string): Promise<ModelCatalogue> =
  *
  * The events are the ones the composer already reads off the stream, so the
  * two servers are interchangeable from there on.
+ *
+ * A CLI provider is a different kind of provider, but it is the same kind of
+ * conversation: the request carries the provider's id, and the id says which
+ * one it is. The desktop runs the program; the website's server cannot, and
+ * says so.
  */
 export const streamChat = (
   request: ChatRequest,
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
-): Promise<void> =>
-  isDesktopApp()
+): Promise<void> => {
+  const providerId = request.config?.providerId ?? ""
+  if (isDesktopApp() && isCliProviderId(providerId)) {
+    return desktop.streamCliChat(request, onEvent, signal)
+  }
+  return isDesktopApp()
     ? desktop.streamChat(request, onEvent, signal)
     : web.streamChat(request, onEvent, signal)
+}
 
 /* -------------------------------------------------------------------------- */
 /* The answers in flight                                                       */
@@ -398,6 +686,125 @@ export const showSystemNotification = (title: string, body: string): void =>
  */
 export const systemHasFocus = (): Promise<boolean> =>
   isDesktopApp() ? desktop.windowHasFocus() : web.windowHasFocus()
+
+/* -------------------------------------------------------------------------- */
+/* Git                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** One file's state, as git reports it. */
+export type ChangedFile = {
+  /** The path, relative to the repository's root, with forward slashes. */
+  path: string
+  /** What happened to it, in git's own words: `M`, `A`, `D`, `R`, `?`. */
+  status: string
+  /** Whether it is staged, and so would be part of a commit as it stands. */
+  staged: boolean
+}
+
+/** What a repository looks like right now. */
+export type GitStatus = {
+  /** The repository's folder. */
+  path: string
+  /** Whether the folder is a repository at all. */
+  repository: boolean
+  /**
+   * The branch that is checked out, or an empty string when there is none —
+   * which is what a repository with no commits has, and what a detached HEAD
+   * has.
+   */
+  branch: string
+  /** Whether the working tree has nothing changed in it. */
+  clean: boolean
+  /** The files that are changed, staged or not. */
+  changed: ChangedFile[]
+  /** How many commits the branch is ahead of the one it tracks. */
+  ahead: number
+  /** How many commits the branch is behind the one it tracks. */
+  behind: number
+  /** The branch this one tracks, when it tracks one. */
+  upstream?: string
+  /** Whether the repository has a remote to push to. */
+  hasRemote: boolean
+}
+
+/** A branch in the repository. */
+export type GitBranch = {
+  name: string
+  /** Whether it is the one that is checked out. */
+  current: boolean
+  /** Whether it tracks a remote branch. */
+  upstream?: string
+}
+
+/** The branches the repository has. */
+export type GitBranches = {
+  path: string
+  branches: GitBranch[]
+}
+
+/** Who a commit is by, when the reader has said. */
+export type GitIdentity = {
+  name: string
+  email: string
+}
+
+/** What a git call did. */
+export type GitOutcome = {
+  ok: boolean
+  /** What git said, in its own words, when it had something to say. */
+  message?: string
+  /** What went wrong, when it did not work. */
+  error?: string
+}
+
+/**
+ * What a repository looks like right now.
+ *
+ * A folder that is not a repository is not an error: the status says so, and
+ * the caller says it in turn.
+ */
+export const gitStatus = (id: string): Promise<GitStatus> =>
+  isDesktopApp() ? desktop.gitStatus(id) : web.gitStatus(id)
+
+/** The branches the repository has, and which one is checked out. */
+export const gitBranches = (id: string): Promise<GitBranches> =>
+  isDesktopApp() ? desktop.gitBranches(id) : web.gitBranches(id)
+
+/** Commits everything that is changed, staged or not. */
+export const gitCommit = (
+  id: string,
+  message: string,
+  identity?: GitIdentity,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitCommit(id, message, identity)
+    : web.gitCommit(id, message, identity)
+
+/** Fetches from the remote and merges what it fetched. */
+export const gitPull = (id: string): Promise<GitOutcome> =>
+  isDesktopApp() ? desktop.gitPull(id) : web.gitPull(id)
+
+/** Sends the branch to the remote it tracks. */
+export const gitPush = (id: string): Promise<GitOutcome> =>
+  isDesktopApp() ? desktop.gitPush(id) : web.gitPush(id)
+
+/** Checks out a branch that is already there. */
+export const gitSwitchBranch = (
+  id: string,
+  branch: string,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitSwitchBranch(id, branch)
+    : web.gitSwitchBranch(id, branch)
+
+/** Makes a branch and checks it out. */
+export const gitCreateBranch = (
+  id: string,
+  branch: string,
+): Promise<GitOutcome> =>
+  isDesktopApp()
+    ? desktop.gitCreateBranch(id, branch)
+    : web.gitCreateBranch(id, branch)
 
 /* -------------------------------------------------------------------------- */
 /* The projects                                                                */

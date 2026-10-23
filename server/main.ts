@@ -754,7 +754,13 @@ const server = createServer(async (req, res) => {
         sendJson(res, 400, { error: "Key must not be empty." });
         return;
       }
-      sendJson(res, 200, await fetchProviderStatus(known, key, spend));
+      const address =
+        typeof body.baseUrl === "string" ? body.baseUrl : undefined;
+      sendJson(
+        res,
+        200,
+        await fetchProviderStatus(known, key, spend, address),
+      );
       return;
     }
 

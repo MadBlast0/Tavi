@@ -30,7 +30,7 @@
  * capabilities, and those are the viewer's facts.
  */
 
-import { streamChat, type ChatRequest } from "./api.ts"
+import { streamChat, type ChatRequest, type ToolActivity } from "./api.ts"
 import { chatWriteError, findChat, saveChat } from "./chats.ts"
 import { announceReply } from "./notifications.ts"
 import {
@@ -63,6 +63,10 @@ export type RunFacts = {
   model: string
   /** The effort level the turn was asked at. */
   effort: string
+  /** The provider the request went to. */
+  provider?: string
+  /** The program's own session, when it has one. */
+  sessionId?: string
   /** The agent mode. Code only. */
   mode: string
   /** The folder's id and name. Code only. */
@@ -115,6 +119,13 @@ export type ConversationStart = {
   write: RunFacts
   /** The folder's files, as they were when the turn was sent. */
   known: WorkspaceFile[]
+  /**
+   * Told when the program hands back the session it continued in.
+   *
+   * The next turn from the same side carries it, so a CLI conversation
+   * continues where it left off rather than in a summary of it.
+   */
+  onSession?: (session: string) => void
 }
 
 /**
@@ -491,6 +502,24 @@ const runConversation = async (
               publish(id)
             }
           }
+          /* The program's own session, kept so that the next turn carries on
+             in it rather than starting again. */
+          const session = event.messageMetadata?.sessionId
+          if (session) options.onSession?.(session)
+          return
+        }
+        if (event.type === "tool" && event.tool) {
+          /* What the agent did is part of what it said, so it is shown as it
+             happens and kept with the turn. */
+          const tool = event.tool
+          const current = conversations.get(id)
+          if (!current) return
+          current.turns = current.turns.map((turn) =>
+            turn.id === turnId && turn.role === "assistant"
+              ? { ...turn, tools: [...(turn.tools ?? []), tool] }
+              : turn,
+          )
+          publish(id)
           return
         }
         if (event.type === "text-delta" && event.delta) {
@@ -574,6 +603,11 @@ const settle = async (
     turns: await toStoredTurns(current.turns, run?.known ?? []),
     model: write?.model || undefined,
     effort: write?.effort || undefined,
+    /* The provider the thread is about, and the program's session. Both are
+       recorded rather than enforced: the thread remembers where it began
+       without refusing to go somewhere else. */
+    provider: write?.provider || undefined,
+    sessionId: write?.sessionId,
     usage: current.usage ?? undefined,
   }
   const saved =

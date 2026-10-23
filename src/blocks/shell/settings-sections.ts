@@ -3,7 +3,6 @@ import {
   BrainIcon,
   BoxesIcon,
   CircleUserRoundIcon,
-  CodeXmlIcon,
   ComponentIcon,
   CreditCardIcon,
   Grid2x2Icon,
@@ -14,6 +13,7 @@ import {
   SettingsIcon,
   ShieldCheckIcon,
   SunriseIcon,
+  TerminalIcon,
   TimerIcon,
   WrenchIcon,
 } from "lucide-react"
@@ -36,14 +36,16 @@ export type SettingsGroup = {
  * The groups are how the card is read rather than where anything is stored:
  * "Settings" is what you would change about yourself, "This computer" is what
  * you would change about the machine you are sitting at, "Customize" is what
- * you would add to the app, and "Platform" holds the few things that belong to
- * the provider rather than to either.
+ * you would add to the app, and "Platform" holds the ways to reach a model —
+ * an API key, or a CLI installed on this computer. Those two sit together
+ * because they are the same choice made twice: what answers when you send a
+ * message.
  *
- * Nothing in here is built yet. Every one of these rows opens onto an empty
- * pane that says so, which is why none of them carry a value, a control or a
- * setting behind them. They are here so the shape of the card is decided while
- * the card is still empty, and so the sections land in a chosen order instead
- * of whatever order they happen to get built in.
+ * Most of what is listed here is not built yet. A row with nothing behind it
+ * opens onto an empty pane that says so, rather than onto a control that does
+ * nothing. They are listed so the shape of the card is decided while the card
+ * is still mostly empty, and so the sections land in a chosen order instead of
+ * whatever order they happen to get built in.
  *
  * The icons are picked to be told apart at 16px without reading the label. Two
  * of them are reused on purpose: Extensions and Plugins are both third-party
@@ -63,7 +65,6 @@ export const SETTINGS_SECTIONS: SettingsGroup[] = [
       { id: "memory", label: "Memory", icon: BrainIcon },
       { id: "reflect", label: "Reflect", icon: SunriseIcon },
       { id: "time-and-focus", label: "Time and focus", icon: TimerIcon },
-      { id: "claude-code", label: "Claude Code", icon: CodeXmlIcon },
     ],
   },
   {
@@ -87,7 +88,10 @@ export const SETTINGS_SECTIONS: SettingsGroup[] = [
   {
     id: "platform",
     label: "Platform",
-    entries: [{ id: "api-keys", label: "API keys", icon: KeyRoundIcon }],
+    entries: [
+      { id: "api-keys", label: "API keys", icon: KeyRoundIcon },
+      { id: "cli-providers", label: "CLI providers", icon: TerminalIcon },
+    ],
   },
 ]
 

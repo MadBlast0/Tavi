@@ -4,12 +4,17 @@ import * as React from "react"
 import {
   ArrowUpIcon,
   CheckIcon,
+  ChevronRightIcon,
+  CircleCheckIcon,
   CircleHelpIcon,
   FolderOpenIcon,
   GitBranchIcon,
   KeyRoundIcon,
   MicIcon,
+  PlugIcon,
   SquareIcon,
+  TerminalIcon,
+  TriangleAlertIcon,
   PaperclipIcon,
   PlusIcon,
   SearchIcon,
@@ -42,7 +47,25 @@ import { Kbd, KbdGroup } from "@/components/kbd"
 import { NumberFlow } from "@/components/number-flow"
 import { openSettings } from "@/lib/open-settings"
 import { ProviderLogo } from "@/components/provider-logo"
-import { PROVIDERS, providerFor } from "@/lib/providers"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPage,
+} from "@/components/command/command"
+import { PROVIDERS } from "@/lib/providers"
+import {
+  cliProviderId,
+  isCliProviderId,
+  offeredCliProviders,
+  providerChoice,
+  type CliProviderState,
+} from "@/lib/cli-providers"
+import { type ToolActivity } from "@/lib/api"
+import { toolDetail, toolFailed, toolLabel } from "./tool-activity"
 import type { ProviderKey } from "@/lib/secret"
 
 import {
@@ -706,68 +729,254 @@ function PromptInputEffort(props: EffortProps) {
 }
 
 /**
- * The providers the app can talk to, and the one in use.
+ * The provider the request goes to.
  *
- * The strip is the first thing in the picker because everything else in it
- * belongs to the provider that is chosen: the models listed, the effort
- * levels offered, and the key the request goes out with. A provider with no
- * key is dimmed rather than hidden — it is one the user may have a key for
- * elsewhere, and the picker says what is missing rather than pretending the
- * provider is not there.
+ * A button that says which provider is in use, and a menu that chooses one.
+ * The menu has two kinds of provider — an **API provider**, which is a key
+ * and an address, and a **CLI provider**, which is a program on this machine
+ * — and each opens a list of its own, beside it.
+ *
+ * The list of API providers is the providers the user has a key for, because
+ * a provider with no key is one the app cannot reach: the list says what is
+ * missing rather than offering something that will fail.
+ *
+ * The second list is its own dropdown rather than a page of this one, so the
+ * two kinds can be told apart at a glance, and so the list of providers can
+ * be searched without searching the kind.
  */
-function ProviderStrip({
+function PromptInputProvider({
   provider,
   onProviderChange,
   keys,
+  locked,
+  cliProviders,
 }: {
   provider: string
   onProviderChange: (value: string) => void
   keys: ProviderKey[]
+  /**
+   * Whether the provider is pinned by the thread that is open.
+   *
+   * A thread that has been talked to is about one provider, so the control
+   * is disabled and says why. The model is still free.
+   */
+  locked?: boolean
+  /** The CLI providers on this machine. */
+  cliProviders: CliProviderState[]
 }) {
-  const reachable = (id: string) =>
-    keys.some((key) => key.active && key.provider === id)
+  const context = usePromptInput("PromptInputProvider")
+  const [open, setOpen] = React.useState(false)
+  /**
+   * Which of the two lists is open beside the menu.
+   *
+   * One at a time, and it follows the pointer: the row under the pointer is
+   * the one whose list opens, which is what a menu of submenus does.
+   */
+  const [level, setLevel] = React.useState<"api" | "cli" | null>(null)
+
+  /* The ones the app can reach: installed, and turned on. A program that is
+     not here cannot answer, and one the user has turned off is not to be
+     offered. */
+  const offeredCli = offeredCliProviders(cliProviders)
+
+  const current = providerChoice(provider, cliProviders)
+
+  /* The providers the app can reach: the ones the user has a key for. */
+  const apiProviders = PROVIDERS.filter((entry) =>
+    keys.some((key) => key.provider === entry.id),
+  )
+
+  const row = (
+    label: string,
+    kind: "api" | "cli",
+    icon: React.ReactNode,
+  ) => (
+    <Popover
+      open={level === kind}
+      onOpenChange={(next) => setLevel(next ? kind : null)}
+    >
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm outline-none select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+            onPointerEnter={() => setLevel(kind)}
+          />
+        }
+      >
+        <span className="flex items-center gap-2">
+          {icon}
+          {label}
+        </span>
+        <ChevronRightIcon className="ml-auto size-4 shrink-0 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={4}
+        className="w-64 p-0"
+      >
+        {kind === "api" ? (
+          <Command label="API provider">
+            <CommandInput placeholder="Search providers…" />
+            <CommandList>
+              <CommandGroup heading="API providers">
+                {apiProviders.map((entry) => (
+                  <CommandItem
+                    key={entry.id}
+                    value={entry.id + " " + entry.label}
+                    onSelect={() => {
+                      onProviderChange(entry.id)
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <ProviderLogo
+                        provider={entry.id}
+                        providerLabel={entry.label}
+                        className="size-4"
+                      />
+                      {entry.label}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              {apiProviders.length === 0 ? (
+                <CommandEmpty>
+                  No provider key yet. Add one in Settings.
+                </CommandEmpty>
+              ) : null}
+            </CommandList>
+          </Command>
+        ) : (
+          <Command label="CLI provider">
+            <CommandInput placeholder="Search programs…" />
+            <CommandList>
+              <CommandGroup heading="CLI providers">
+                {offeredCli.map((entry) => (
+                  <CommandItem
+                    key={entry.id}
+                    value={entry.id + " " + entry.label}
+                    onSelect={() => {
+                      onProviderChange(cliProviderId(entry.id))
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <ProviderLogo
+                        provider={entry.id}
+                        providerLabel={entry.label}
+                        className="size-4"
+                      />
+                      {entry.label}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              {offeredCli.length === 0 ? (
+                <CommandEmpty>
+                  No CLI provider is installed. Add one in Settings.
+                </CommandEmpty>
+              ) : null}
+            </CommandList>
+          </Command>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
 
   return (
-    <div
-      role="radiogroup"
-      aria-label="Provider"
-      className="flex items-center gap-1 overflow-x-auto overscroll-contain pb-2"
+    <Popover
+      open={open && !locked}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          setLevel(null)
+          refocus(context.textareaRef.current)
+        }
+      }}
     >
-      {PROVIDERS.map((entry) => {
-        const selected = entry.id === provider
-        const hasKey = reachable(entry.id)
-        return (
-          <button
-            key={entry.id}
+      <PopoverTrigger
+        render={
+          <Button
             type="button"
-            role="radio"
-            aria-checked={selected}
-            aria-label={entry.label}
-            title={
-              hasKey
-                ? entry.label
-                : "No " + entry.label + " key is set. Add one in Settings."
+            size="xs"
+            variant="ghost"
+            aria-label={
+              current ? "Provider: " + current.label : "Select a provider"
             }
-            onClick={() => {
-              if (!selected) haptic("tick")
-              onProviderChange(entry.id)
-            }}
-            className={cn(
-              "flex min-h-8 shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-sm outline-none select-none",
-              "focus-visible:ring-ring focus-visible:ring-2",
-              selected
-                ? "border-border bg-accent text-accent-foreground"
-                : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              !hasKey && !selected && "opacity-50",
-            )}
-          >
+            disabled={context.disabled}
+            title={
+              locked
+                ? "This conversation is about one provider. Start a new one to use another."
+                : undefined
+            }
+          />
+        }
+      >
+        {current ? (
+          <>
             <ProviderLogo
-              provider={entry.id}
-              providerLabel={entry.label}
+              provider={current.id}
+              providerLabel={current.label}
               className="size-4"
             />
-            {selected ? <span className="truncate">{entry.label}</span> : null}
-          </button>
+            <span className="min-w-0 truncate">{current.label}</span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate">Select a provider</span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start" side="top">
+        {row(
+          "API provider",
+          "api",
+          <PlugIcon className="size-4 shrink-0" />,
+        )}
+        {row(
+          "CLI provider",
+          "cli",
+          <TerminalIcon className="size-4 shrink-0" />,
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * The tools an agent used.
+ *
+ * A row for each tool, small and quiet: this is activity, and it should not
+ * compete with the prose it sits above. The label is in words rather than the
+ * program's own name — "Running a command" rather than "shell" — because the
+ * name is the tool's, and the row is the person's.
+ *
+ * A tool that failed is marked, because a run that stopped halfway is not
+ * the same as one that finished.
+ */
+export function ToolActivityList({ tools }: { tools: ToolActivity[] }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {tools.map((tool, index) => {
+        const failed = toolFailed(tool)
+        const detail = toolDetail(tool)
+        return (
+          <div
+            key={`${tool.name}-${index}`}
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
+            {failed ? (
+              <TriangleAlertIcon className="size-3.5 shrink-0 text-destructive" />
+            ) : (
+              <CircleCheckIcon className="size-3.5 shrink-0" />
+            )}
+            <span className="shrink-0 text-foreground/80">
+              {toolLabel(tool)}
+            </span>
+            {detail ? (
+              <span className="min-w-0 truncate">{detail}</span>
+            ) : null}
+          </div>
         )
       })}
     </div>
@@ -812,8 +1021,6 @@ function PromptInputModel({
   effort,
   onEffortChange,
   provider,
-  onProviderChange,
-  providerKeys,
   noKey,
   error,
   catalogue,
@@ -825,16 +1032,21 @@ function PromptInputModel({
   effort: string
   onEffortChange: (value: string) => void
   /**
-   * The provider in use, and the way to change it.
+   * The provider in use.
    *
-   * Everything else in this picker belongs to that provider: the models that
-   * are listed, the effort levels that are offered, and the key the request
-   * goes out with.
+   * Everything in this picker belongs to it: the models listed, the effort
+   * levels offered, and the key the request goes out with. It is named at the
+   * top of the picker, so the user can see whose models they are choosing.
    */
   provider: string
-  onProviderChange: (value: string) => void
-  /** The keys the app holds, so a provider with none can be said so. */
-  providerKeys: ProviderKey[]
+  /**
+   * The provider's name, whichever kind it is.
+   *
+   * It is passed rather than looked up, because a CLI provider is not in the
+   * API provider's table, and a picker with no name at the top of it does not
+   * say whose models are being chosen.
+   */
+  providerLabel?: string
   /**
    * Whether there is no provider key at all.
    *
@@ -912,7 +1124,7 @@ function PromptInputModel({
             size="xs"
             variant="ghost"
             aria-label={`Model: ${current?.label ?? "No model selected"}, effort: ${level?.label ?? "none"}`}
-            disabled={context.disabled}
+            disabled={context.disabled || !provider}
           />
         }
       >
@@ -956,11 +1168,16 @@ function PromptInputModel({
         {/* The search field is hidden when there is nothing to search: a search
             box over an empty list is noise, and the list is empty because
             there is no key. */}
-        <ProviderStrip
-          provider={provider}
-          onProviderChange={onProviderChange}
-          keys={providerKeys}
-        />
+        {props.providerLabel ? (
+          <div className="text-muted-foreground flex items-center gap-2 border-b pb-2 text-xs">
+            <ProviderLogo
+              provider={provider}
+              providerLabel={props.providerLabel}
+              className="size-3.5"
+            />
+            <span className="truncate">{props.providerLabel}</span>
+          </div>
+        ) : null}
 
         {noKey ? null : (
           <div className="flex items-center gap-2 pb-2">
@@ -1030,7 +1247,7 @@ function PromptInputModel({
             })
           ) : noKey ? (
             <NoKeyState
-              providerLabel={providerFor(provider)?.label}
+              providerLabel={props.providerLabel}
               onAddKey={() => {
                 setOpen(false)
                 openSettings("api-keys")
@@ -2507,6 +2724,7 @@ export {
   PromptInputMeter,
   PromptInputModel,
   PromptInputModelSelect,
+  PromptInputProvider,
   PromptInputSelect,
   PromptInputSuggestions,
   PromptInputTool,

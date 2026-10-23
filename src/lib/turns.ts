@@ -15,6 +15,7 @@
 
 import type { PromptMessage } from "@/blocks/prompt-input/prompt-input"
 import type { PromptFile } from "@/blocks/prompt-input/use-prompt-files"
+import type { ToolActivity } from "./api.ts"
 import type { StoredTurn } from "./threads.ts"
 import type { WorkspaceFile } from "./workspace.ts"
 
@@ -27,7 +28,16 @@ export type Turn =
       text: string
       streaming: boolean
       stopped?: boolean
+      /** It did not finish — the app died, or was closed, while it was being written. */
       incomplete?: boolean
+      /**
+       * The tools the agent used.
+       *
+       * Only a CLI provider has tools, so only a CLI provider's turns carry
+       * them. What an agent did is part of what it said: the answer alone
+       * does not say which files were read or which commands ran.
+       */
+      tools?: ToolActivity[]
     }
   /** A model-written summary of everything above it; sent with later requests. */
   | { id: string; role: "summary"; text: string }
@@ -72,6 +82,7 @@ export const toStoredTurns = async (
           text: turn.text,
           ...(turn.stopped ? { stopped: true } : {}),
           ...(turn.incomplete ? { incomplete: true } : {}),
+          ...(turn.tools && turn.tools.length > 0 ? { tools: turn.tools } : {}),
         }
       }
       const files = await Promise.all(
@@ -110,6 +121,7 @@ export const fromStoredTurns = (list: StoredTurn[]): Turn[] =>
         streaming: false,
         ...(turn.stopped ? { stopped: true } : {}),
         ...(turn.incomplete ? { incomplete: true } : {}),
+        ...(turn.tools && turn.tools.length > 0 ? { tools: turn.tools } : {}),
       }
     }
     return {

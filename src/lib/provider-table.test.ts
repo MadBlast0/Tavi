@@ -18,9 +18,9 @@ import { DEFAULT_PROVIDER_ID, PROVIDERS } from "./providers.ts";
  * test reads both. It is the same technique `src/lib/commands.test.ts` uses
  * for the command list.
  *
- * The Rust table holds what Rust needs, so the two are compared on the
- * fields they both have. The addresses and the documentation links are the
- * pane's business, and the pane reads them from the TypeScript table.
+ * The Rust table holds what Rust needs, so the two are compared on the fields
+ * they both have. The addresses and the documentation links are the pane's
+ * business, and the pane reads them from the TypeScript table.
  */
 
 const RUST = join(
@@ -40,8 +40,9 @@ type RustProvider = {
   auth: string;
   base_url: string;
   wire: string;
-  query: [string, string] | null;
-  extra_headers: [string, string] | null;
+  reasoning_field: string;
+  models_path: string | null;
+  chat_path: string | null;
   reports_usage: boolean;
   validation: string;
   identity_reports_account: boolean;
@@ -70,11 +71,11 @@ const rustProviders = (): RustProvider[] => {
       assert.ok(match, `the Rust provider should name its ${name}`);
       return match[1];
     };
-    const pair = (name: string): [string, string] | null => {
+    const optional = (name: string): string | null => {
       const match = body.match(
-        new RegExp(`${name}: Some\\(\\("([^"]*)", "([^"]*)"\\)\\)`),
+        new RegExp(`${name}: Some\\("([^"]*)"\\)`),
       );
-      return match ? [match[1], match[2]] : null;
+      return match ? match[1] : null;
     };
     providers.push({
       id: read("id"),
@@ -83,8 +84,9 @@ const rustProviders = (): RustProvider[] => {
       auth: body.match(/auth:\s*Auth::(\w+)/)![1],
       base_url: read("base_url"),
       wire: body.match(/wire:\s*Wire::(\w+)/)![1],
-      query: pair("query"),
-      extra_headers: pair("extra_headers"),
+      reasoning_field: read("reasoning_field"),
+      models_path: optional("models_path"),
+      chat_path: optional("chat_path"),
       reports_usage: body.match(/reports_usage:\s*(true|false)/)![1] === "true",
       validation: body.match(/validation:\s*Validation::(\w+)/)![1],
       identity_reports_account:
@@ -99,8 +101,6 @@ const rustProviders = (): RustProvider[] => {
 const AUTH: Record<string, string> = {
   Bearer: "bearer",
   Header: "header",
-  AwsBearer: "aws-bearer",
-  GoogleOAuth: "google-oauth",
   None: "none",
 };
 
@@ -114,8 +114,6 @@ const WIRE: Record<string, string> = {
   AnthropicMessages: "anthropic-messages",
   GoogleGenerativeAi: "google-generative-ai",
   CohereChat: "cohere-chat",
-  AwsBedrock: "aws-bedrock",
-  GoogleVertex: "google-vertex",
 };
 
 test("the two provider tables hold the same providers", () => {
@@ -151,6 +149,21 @@ test("the two provider tables agree about every provider", () => {
       `${provider.id}: the request shapes differ`,
     );
     assert.equal(
+      other.reasoning_field,
+      provider.reasoningField,
+      `${provider.id}: the reasoning fields differ`,
+    );
+    assert.equal(
+      other.models_path,
+      provider.modelsPath ?? null,
+      `${provider.id}: the catalogue paths differ`,
+    );
+    assert.equal(
+      other.chat_path,
+      provider.chatPath ?? null,
+      `${provider.id}: the chat paths differ`,
+    );
+    assert.equal(
       other.reports_usage,
       provider.reportsUsage,
       `${provider.id}: the accounts they report differ`,
@@ -169,6 +182,34 @@ test("the two provider tables agree about every provider", () => {
       other.keyless,
       Boolean(provider.keyless),
       `${provider.id}: the ones that need no key differ`,
+    );
+  }
+});
+
+test("the two provider tables agree about how a key is sent", () => {
+  const rust = rustProviders();
+
+  for (const provider of PROVIDERS) {
+    const other = rust.find((candidate) => candidate.id === provider.id);
+    assert.ok(other, `the Rust table should hold ${provider.id}`);
+
+    /* The Rust side names the header it puts the key in, and the TypeScript
+       side names the kind of key it is. They are two names for one fact, so
+       they are compared by kind rather than by spelling. */
+    const rustKind = (auth: string): string => {
+      if (auth === "Bearer") return "bearer"
+      if (auth === "None") return "none"
+      return "header"
+    };
+    const typeKind = (auth: string): string => {
+      if (auth === "bearer") return "bearer"
+      if (auth === "none") return "none"
+      return "header"
+    };
+    assert.equal(
+      rustKind(other.auth),
+      typeKind(provider.auth),
+      `${provider.id}: the ways of sending a key differ`,
     );
   }
 });
@@ -206,4 +247,19 @@ test("no two providers share an id", () => {
     ids.length,
     "two providers with the same id would fight over one key",
   );
+});
+
+test("every provider that takes a reasoning level says which field it takes it in", () => {
+  const FIELDS = new Set([
+    "reasoning.effort",
+    "reasoning_effort",
+    "output_config.effort",
+    "none",
+  ]);
+  for (const provider of PROVIDERS) {
+    assert.ok(
+      FIELDS.has(provider.reasoningField),
+      `${provider.id} names a reasoning field the app does not know`,
+    );
+  }
 });

@@ -34,6 +34,10 @@ import type {
   ChatRequest,
   CloneProgress,
   CloneResult,
+  GitBranches,
+  GitIdentity,
+  GitOutcome,
+  GitStatus,
   KeyStandingReport,
   NotificationPermission,
   PartialJournal,
@@ -43,6 +47,12 @@ import type {
   WorkspaceEntry,
   WorkspaceFile,
 } from "./api.ts"
+import type {
+  CliLifecycleAction,
+  CliProviderChanges,
+  CliProviderState,
+} from "./cli-providers.ts"
+import type { AcpConfigResult, CliTerminalEvent } from "./api.ts"
 import type { ProviderKey } from "./secret.ts"
 
 export { isDesktopApp }
@@ -149,8 +159,14 @@ export const checkProviderKey = async (
   provider: string,
   key: string,
   spend: boolean,
+  baseUrl?: string,
 ): Promise<KeyStandingReport> =>
-  invoke<KeyStandingReport>("check_provider_key", { provider, key, spend })
+  invoke<KeyStandingReport>("check_provider_key", {
+    provider,
+    key,
+    spend,
+    baseUrl: baseUrl ?? null,
+  })
 
 export const recheckProviderKey = async (id: string): Promise<void> => {
   await invoke("recheck_provider_key", { id })
@@ -211,6 +227,178 @@ export const streamChat = async (
 }
 
 /* -------------------------------------------------------------------------- */
+/* The CLI providers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Every CLI provider the app knows about, and what state it is in. */
+export const listCliProviders = async (): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("list_cli_providers")
+}
+
+/** Looks again, for a provider that has just been installed or removed. */
+export const scanCliProviders = async (): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("scan_cli_providers")
+}
+
+/** Changes what the app remembers about a CLI provider. */
+export const setCliProviderState = async (
+  id: string,
+  changes: CliProviderChanges,
+): Promise<CliProviderState[]> => {
+  requireDesktop()
+  return invoke<CliProviderState[]>("set_cli_provider_state", {
+    id,
+    enabled: changes.enabled ?? null,
+    autoUpdate: changes.autoUpdate ?? null,
+    autoUpdateAll: changes.autoUpdateAll ?? null,
+    path: changes.path ?? null,
+  })
+}
+
+/**
+ * Installs, updates or removes a CLI provider.
+ *
+ * The operation is run by the tool's own means, and what it says comes back
+ * as it says it.
+ */
+export const runCliLifecycle = async (
+  id: string,
+  action: CliLifecycleAction,
+  onLog?: (message: string) => void,
+): Promise<void> => {
+  requireDesktop()
+  const channel = new Channel<{ type: string; message?: string }>()
+  channel.onmessage = (event) => {
+    if (event.type === "log" && event.message) onLog?.(event.message)
+  }
+  await invoke("run_cli_lifecycle", { id, action, onEvent: channel })
+}
+
+/** Stops an install, an update or a removal that is in flight. */
+export const cancelCliLifecycle = async (): Promise<void> => {
+  requireDesktop()
+  await invoke("cancel_cli_lifecycle")
+}
+
+/** Starts a program in a real terminal. */
+export const startCliTerminal = async (
+  program: string,
+  args: string[],
+  workingDir: string | undefined,
+  onEvent: (event: CliTerminalEvent) => void,
+): Promise<string> => {
+  requireDesktop()
+  const channel = new Channel<CliTerminalEvent>()
+  channel.onmessage = onEvent
+  return invoke<string>("start_cli_terminal", {
+    program,
+    args,
+    workingDir: workingDir || null,
+    onEvent: channel,
+  })
+}
+
+/** Writes to a terminal, as if the person had typed it. */
+export const writeCliTerminal = async (
+  id: string,
+  data: string,
+): Promise<void> => {
+  requireDesktop()
+  await invoke("write_cli_terminal", { id, data })
+}
+
+/** Tells a terminal it is a different size, so the program redraws. */
+export const resizeCliTerminal = async (
+  id: string,
+  rows: number,
+  cols: number,
+): Promise<void> => {
+  requireDesktop()
+  await invoke("resize_cli_terminal", { id, rows, cols })
+}
+
+/** Stops a terminal and lets go of it. */
+export const stopCliTerminal = async (id: string): Promise<void> => {
+  requireDesktop()
+  await invoke("stop_cli_terminal", { id })
+}
+
+/** The models and configuration an agent offers. */
+export const listAcpModels = async (
+  provider: string,
+): Promise<AcpConfigResult> => {
+  requireDesktop()
+  return invoke<AcpConfigResult>("acp_list_models", {
+    provider,
+    cwd: null,
+  })
+}
+
+/** Stops the agent for a provider. */
+export const stopAcpAgent = async (provider: string): Promise<void> => {
+  requireDesktop()
+  await invoke("acp_stop_agent", { provider })
+}
+
+/** A report about one CLI provider, for a person to paste somewhere. */
+export const cliProviderDiagnostics = async (id: string): Promise<string> => {
+  requireDesktop()
+  return invoke<string>("cli_provider_diagnostics", { id })
+}
+
+/** The models a CLI provider publishes. */
+export const listCliModels = async (id: string): Promise<string[]> => {
+  requireDesktop()
+  return invoke<string[]>("list_cli_models", { id })
+}
+
+/**
+ * Sends a message to a CLI provider.
+ *
+ * The program is started in Rust and read there, so nothing about it — not
+ * its path, not its arguments, not the message — is ever in this side's
+ * hands. What comes back is the same events the API path sends.
+ */
+export const streamCliChat = async (
+  request: ChatRequest,
+  onEvent: (event: ChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> => {
+  requireDesktop()
+  const requestId = `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const channel = new Channel<ChatEvent>()
+  channel.onmessage = onEvent
+
+  const cancel = () => {
+    void invoke("cancel_chat", { requestId }).catch(() => {})
+  }
+  signal?.addEventListener("abort", cancel)
+
+  try {
+    /* A CLI provider speaks either a documented headless mode or a protocol.
+       The app tries the protocol first, because it is the richer one — models
+       with friendly names, effort levels, tool calls, permissions — and falls
+       back to the headless mode when the program has no protocol. */
+    const providerId = request.config?.providerId ?? ""
+    try {
+      await invoke("acp_chat", {
+        request: { ...request, requestId },
+        onEvent: channel,
+      })
+    } catch {
+      await invoke("run_cli_chat", {
+        request: { ...request, requestId },
+        onEvent: channel,
+      })
+    }
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* The folders                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -222,6 +410,72 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
 export const grantWorkspace = async (path: string): Promise<Workspace> => {
   requireDesktop()
   return invoke<Workspace>("grant_workspace", { path })
+}
+
+/* -------------------------------------------------------------------------- */
+/* Git                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a repository looks like right now.
+ *
+ * The command is the app's own, and it runs git with an argument array and
+ * no shell. The reader's repository is never given to the model.
+ */
+export const gitStatus = async (path: string): Promise<GitStatus> => {
+  requireDesktop()
+  return invoke<GitStatus>("git_status", { path })
+}
+
+/** The branches the repository has, and which one is checked out. */
+export const gitBranches = async (path: string): Promise<GitBranches> => {
+  requireDesktop()
+  return invoke<GitBranches>("git_branches", { path })
+}
+
+/**
+ * Commits everything that is changed, staged or not.
+ *
+ * The identity is passed to git for this one commit and is not written into
+ * the repository or into the machine's configuration.
+ */
+export const gitCommit = async (
+  path: string,
+  message: string,
+  identity?: GitIdentity,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_commit", { path, message, identity })
+}
+
+/** Fetches from the remote and merges what it fetched. */
+export const gitPull = async (path: string): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_pull", { path })
+}
+
+/** Sends the branch to the remote it tracks. */
+export const gitPush = async (path: string): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_push", { path })
+}
+
+/** Checks out a branch that is already there. */
+export const gitSwitchBranch = async (
+  path: string,
+  branch: string,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_switch_branch", { path, branch })
+}
+
+/** Makes a branch and checks it out. */
+export const gitCreateBranch = async (
+  path: string,
+  branch: string,
+): Promise<GitOutcome> => {
+  requireDesktop()
+  return invoke<GitOutcome>("git_create_branch", { path, branch })
 }
 
 export const relinkWorkspace = async (
@@ -457,6 +711,24 @@ export const pickOpenPath = async (): Promise<string | null> => {
     multiple: false,
     directory: false,
     filters: [{ name: "Tavi conversations", extensions: ["json"] }],
+  })
+  if (!path || Array.isArray(path)) return null
+  return path
+}
+
+/**
+ * Asks the system which program to use.
+ *
+ * A program the app could not find can be pointed at by hand, which is the
+ * remedy when a tool lives somewhere the app does not look.
+ */
+export const chooseCliProgram = async (): Promise<string | null> => {
+  requireDesktop()
+  const { open } = await import("@tauri-apps/plugin-dialog")
+  const path = await open({
+    multiple: false,
+    directory: false,
+    title: "Choose the program",
   })
   if (!path || Array.isArray(path)) return null
   return path

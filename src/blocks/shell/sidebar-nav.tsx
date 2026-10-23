@@ -639,6 +639,10 @@ export function SidebarNav() {
     setSortByMode((current) => ({ ...current, [variant]: next }))
   }
 
+  /* What the list is called. Chat and Code lead somewhere different, and the
+     archived switch is a third place again. */
+  const listLabel = archived ? "Archived" : variant === "code" ? "Sessions" : "Chats"
+
   return (
     <>
       <SidebarGroup className={GROUP}>
@@ -672,13 +676,7 @@ export function SidebarNav() {
 
       <SidebarGroup className={GROUP}>
         <ThreadListHeading
-          label={
-            archived
-              ? "Archived"
-              : variant === "code"
-                ? "Sessions"
-                : "Chats"
-          }
+          label={listLabel}
           sortLabel={variant === "code" ? "sessions" : "chats"}
           sort={sort}
           onSortChange={onSortChange}

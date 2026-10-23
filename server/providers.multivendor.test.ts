@@ -143,7 +143,7 @@ test("Anthropic: provider default omits both fields", async () => {
   assert.deepEqual(anthropicAdapter.serializeReasoning(c, defaultPrefs), { kind: "omit" });
 });
 
-test("Anthropic: effort serialises to output_config.effort, unmodified", async () => {
+test("Anthropic: effort serialises to the SDK's own effort option", async () => {
   const c = await cap(anthropicAdapter, anthropicConnection, "claude-opus-5-5", anthropicFull);
   const out = anthropicAdapter.serializeReasoning(c, {
     effort: { mode: "explicit", value: "max" },
@@ -151,7 +151,7 @@ test("Anthropic: effort serialises to output_config.effort, unmodified", async (
   });
   assert.deepEqual(out, {
     kind: "payload",
-    fields: { output_config: { effort: "max" } },
+    fields: { effort: "max" },
   });
 });
 
@@ -227,10 +227,11 @@ test("OpenAI: provider default omits; an explicit value is sent verbatim", async
       effort: { mode: "explicit", value: "none" },
       thinkingMode: { mode: "provider_default" },
     }),
-    // The Chat Completions surface takes `reasoning_effort` at the top level.
-    // The nested `reasoning: { effort }` shape belongs to the Responses
-    // surface, and sending it here is a request the provider refuses.
-    { kind: "payload", fields: { reasoning_effort: "none" } },
+    // The SDK's name for the Chat Completions surface's top-level
+    // `reasoning_effort`. The nested `reasoning: { effort }` shape belongs
+    // to the Responses surface, and sending it here is a request the provider
+    // refuses.
+    { kind: "payload", fields: { reasoningEffort: "none" } },
   );
 });
 
@@ -243,7 +244,7 @@ test("OpenAI: `none` is a level, not a thinking-off switch", async () => {
     thinkingMode: { mode: "provider_default" },
   });
   // It serialises as an effort value and does not fabricate a thinking field.
-  assert.deepEqual(out, { kind: "payload", fields: { reasoning_effort: "none" } });
+  assert.deepEqual(out, { kind: "payload", fields: { reasoningEffort: "none" } });
 });
 
 test("OpenAI: `max` is a documented effort value", () => {

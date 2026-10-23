@@ -65,6 +65,53 @@ is shown the same files on each.
 workspace and a path inside it. A path the model names is not a permission, so
 there is no default root and no fallback to the home directory.
 
+**A provider is one of two kinds.** An **API provider** is an address and a
+key, and it is what the app has always had. A **CLI provider** is a program
+the user has already installed on this computer — OpenCode, Claude Code,
+Codex and the rest — and the app starts it and reads what it says. The two
+are told apart by the id: a CLI provider's id carries a `cli:` prefix, so one
+string says both what kind of provider it is and which one it is, and the
+composer has one place to read the choice from.
+
+**The CLI catalogue belongs to the desktop app.** `src-tauri/src/cli.rs` holds
+the nineteen tools the app knows about, what each one is called, how to find
+it, how to install it, and how to talk to it. The website's server has no
+programs to look at, so the browser's list is empty and the pane says so —
+it shows no count, because a count of zero would be a claim that there are
+no CLI providers anywhere, and the app knows of nineteen.
+
+**A program with the right name is not necessarily the right program.** VS
+Code puts a `copilot` on the machine that is not the GitHub Copilot CLI, and
+one that says so when it is asked its version is not the tool the app was
+looking for. So a program has to answer with a version before it counts as
+installed, and one that does not is reported as what it is.
+
+**The message goes in on standard input, never on the command line.** The
+program is started with a fixed argument list and the message is written to
+its input, so nothing the user typed is ever part of a command line. On
+Windows the program npm installed is a `.cmd` beside the real `.exe`, and the
+name of the program is read out of the shim, so the app runs the program
+rather than a script a command interpreter has to interpret. The two tools
+whose own documentation takes the message as an argument get it as one
+argument — the program is started directly, with no command interpreter in
+between, so a message full of punctuation is still data and not a command.
+
+**A conversation carries on in the program's own session.** A CLI provider
+that keeps a session of its own is told to carry on in it, and the session
+id is kept with the thread. The thread and the program's session are the
+same conversation rather than two copies of it, so the program remembers
+what it was told rather than being told again.
+
+**A program that insists on a terminal gets one.** Most of them do not, and
+for those the app uses the program's own headless mode — a conversation
+rather than a screen of escape sequences. For the ones that do,
+`src-tauri/src/pty.rs` opens a real pseudo-terminal: the program is started
+in it, what it draws is read as it draws it, what is typed at it is written
+to it, it can be resized, and it is waited for so that its own exit code is
+reported. **What comes out of a terminal is meant to be drawn, not read**,
+and nothing in the app draws one yet — the terminal is a capability, and a
+surface that shows it is separate work.
+
 ---
 
 ## 2. The storage layer
@@ -77,6 +124,7 @@ there is no default root and no fallback to the home directory.
 | Composer drafts | `localStorage` | `prompt-draft:<side>` (not namespaced) |
 | Folder handles | IndexedDB `tavi-fs` | stores `handles`, `recent-folders` |
 | Workspace grants | the app's own file | `workspaces.json` |
+| CLI provider preferences | the app's own file | `cli-providers.json` |
 | API key | OS credential store | service `tavi`, user `api-key:<provider>`. A development build also reads `.env.local` |
 | Window geometry | app-data file | `window-state.json` |
 
@@ -114,6 +162,11 @@ proposals or from what the code already does.
 | B8 | **Export and import are both in.** JSON, covering both sides. | The plan lists export/import as needed once the app owns its storage. |
 | B9 | **The clone destination is visible and configurable**, defaulting to the projects folder. A clone never overwrites. | The plan's Step 5, and what the current code already half-does. |
 | B10 | **The system prompt is written in one place and read by both paths.** The Rust and Node implementations read the same instructions, so the two cannot say different things to the model. | The plan's "server-authored system prompts" rule, applied to two implementations. |
+| B11 | **A CLI provider is a program, and only the desktop app can run one.** The catalogue, the detection and the process all live in Rust. | A browser tab has no programs to start, and the website's server must not become a command-execution service for a page. |
+| B12 | **The provider is pinned once a thread has been talked to.** The model may still change; the provider may not, until a new thread is started. | The models in a thread came from one provider, and the answer still coming is that provider's. A thread may be carried from one model of a provider to another, but not from one provider to another. |
+| B13 | **The app only installs what it has been told how to install.** Each tool declares the package manager or the command its own documentation names, and a tool with no declaration is not installed by the app — the pane shows where to read about it instead. | Running a script fetched from the internet, or guessing at a package name, is how the wrong thing gets installed. The npm package called `@cline/cli` installs a different program, and the one called `crush` is a media tool. |
+| B14 | **Installing and removing are asked about first.** The question says what will happen, and a removal says what is left behind. | Installing software and removing it are the two things the app does that change the machine. A question on its own says nothing about what is about to be done. |
+| B15 | **A program's own answer is the only authority on what it is.** A program that will not say which version it is is reported as something else, not as the tool. | VS Code puts a `copilot` on the machine that is not the Copilot CLI, and it says so when it is asked. |
 
 ---
 
@@ -305,7 +358,41 @@ announced would be a second place for a conversation to be.
 
 ---
 
-## 9. What is deliberately not being built
+## 9. Git
+
+A repository is a folder the reader has given the app, and git is the thing
+that knows what is in it.
+
+**The app runs git itself**, with an argument array and no shell, so a branch
+name or a commit message reaches git as data and never as a command line. The
+model cannot run git: it cannot choose an argument, and it cannot name a path
+the app has not been given.
+
+**The app never stores credentials.** The prompt is turned off, so git never
+waits for a password on a terminal the app does not have — it fails instead,
+and the failure is reported. A push works with whatever the machine already
+has.
+
+**The app does not write the reader's git configuration.** An identity, if
+there is one, is passed to git with `-c` for that one commit.
+
+**The front end names the grant, not the path.** The grant is the permission
+and the path is what the permission resolves to, and the app's own half has no
+business carrying a path around.
+
+**The status is read from git's machine-readable form**, one call, and the
+lines are read by field count because a path may contain spaces and the
+fields before it never do.
+
+**Git is a desktop thing.** A browser cannot run a program on the machine, so
+every call in the website refuses and says why.
+
+The whole of it, and where it came from, is in
+[`plan/git.md`](plan/git.md).
+
+---
+
+## 10. What is deliberately not being built
 
 - **Writing files.** B3. The app reads a folder and talks about it.
 - **Shell commands.** Not built, not planned, and not in the model's hands.
@@ -313,3 +400,13 @@ announced would be a second place for a conversation to be.
 - **Several provider connections.** OpenRouter only, for now; the other adapters stay in the web path.
 - **A database.** B6.
 - **The assistant-ui surface.** `src/assistant.tsx`, `src/components/thread.aui.tsx` and the toolkit beside it are not mounted. They are the second chat path, kept for the toolkit and its native tools, and the app does not take them.
+- **Running every CLI.** The catalogue knows nineteen tools, and one of them —
+  OpenCode — has a run recipe that has been checked against the program
+  itself. The other eighteen can be found, enabled, installed, updated and
+  removed, and the pane says plainly that the app cannot run them yet. A
+  recipe per tool is written when the tool's own documentation and its
+  actual output have been read, not before.
+- **A terminal pane.** A CLI that needs a real terminal is not run yet. The
+  mode is in the model — the app knows a tool can want one — but there is no
+  terminal to put it in, and one built without a tool to try it on would be
+  an untested claim. See `docs/plan/later-on.md`.

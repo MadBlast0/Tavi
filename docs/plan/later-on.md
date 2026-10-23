@@ -7,6 +7,54 @@ Ordered roughly by how much depends on it.
 
 ---
 
+## 0. The rest of the CLI providers
+
+**Status:** partly built. The catalogue, the detection, the settings pane, the
+enablement, the install and update machinery and one working integration are in
+place. The rest is not.
+
+**What is built.** `src-tauri/src/cli.rs` knows nineteen tools and can find
+them, ask them their version, say whether they are the tool the app was
+looking for, ask whether they are signed in, and install, update or remove
+the ones whose own documentation says how. The settings pane lists all
+nineteen with their real state. The composer offers the ones that are
+installed and turned on. OpenCode answers a message, through the whole path:
+found, run, read, shown — and a second message carries on in the program's
+own session, so the conversation continues where it left off rather than in a
+summary of it.
+
+**What is not built.**
+
+- **A recipe for fifteen of the nineteen.** A tool can be found, enabled,
+  installed, updated and removed, and the pane says plainly that the app
+  cannot run it yet. Claude Code and Gemini CLI have recipes written from
+  their own documentation and are marked as not having been checked against
+  the program; a recipe is finished when the program has been run, and the
+  other fifteen have not been. Codex's documented interface exists and its
+  event shape has not been confirmed, so it has no recipe yet.
+- **A terminal pane.** The terminal itself **is** built: `src-tauri/src/pty.rs`
+  opens a real pseudo-terminal, runs a program in it, reads what it draws,
+  takes what is typed at it, resizes it, and reports the program's own exit
+  code. What there is not is a **surface** — nothing in the app draws a
+  terminal, because there is no terminal widget in the app to draw one in.
+  A terminal surface needs a terminal emulator on the front end (xterm.js and
+  its fit addon) and a place in the thread for it, and that is a piece of
+  work of its own.
+- **The agent protocol.** OpenCode speaks one, and the mode is declared for
+  it, but nothing reads it yet. The structured mode is what the app uses
+  today.
+- **A sign-in the app can drive.** The app can ask OpenCode whether it has
+  an account saved, because the tool documents a way to ask. The other
+  eighteen sign in themselves and there is no way to ask without asking the
+  person to do something, so the app says *may need sign-in* and leaves it
+  there.
+
+**Why it is waiting.** A recipe written from the documentation alone would be
+a claim about a program nobody has run. The one that is written was written
+against the program's own output.
+
+---
+
 ## 1. Create the projects folder at install time
 
 **Status:** not built. `server/projects.ts` creates the folder lazily, the first
@@ -166,19 +214,33 @@ work in item 1.
 
 ## 6. Multiple provider connections
 
-**Status:** adapters exist for OpenRouter, Anthropic, OpenAI and NVIDIA NIM, but
-there is exactly one hardcoded connection — `defaultConnection()` in
-`server/models.ts`, which is OpenRouter.
+**Status:** **built.** The app talks to twenty-eight providers and to any
+OpenAI-compatible endpoint of your own, and the provider in use is a per-side
+preference that the catalogue, the model list, the key and the request all
+follow.
 
-**What it needs.** A connections list the user can add to, credentials per
-connection read from the environment (or the OS keychain), a provider picker, and
-cache keys that already account for the connection — `ModelTarget` carries
-`connectionId`, `providerId` and `apiProtocol` precisely so this does not
-collapse into "the model string".
+The list is one table in `src/lib/providers.ts` — the address each provider
+lives at, how its key is sent, the shape of a request, and the field a
+reasoning level goes in — and the same table is read by the website's server
+and by the desktop's Rust, with a test that says the two agree. Four request
+shapes have clients: the OpenAI chat-completions one, Anthropic's Messages,
+Google's generate-content and Cohere's chat.
 
-**Also needed.** Anthropic and OpenAI have had no live run yet, because this
-checkout has no key for either. Their parsing is fixture-tested only. Adding the
-keys to `.env.local` would let both be verified against real capability data.
+A **custom endpoint** covers the rest: a gateway, a proxy, or a model on this
+machine, at an address the key carries.
+
+**What is still not built.** A **connections list** the user can add to, with
+credentials per connection, rather than one provider chosen from a fixed
+list. The current design is one connection per provider, which is what
+twenty-eight providers of the “one key, one provider” kind need; a gateway
+that fronts several providers under one name is a different shape.
+
+**Also not verified live.** Only OpenRouter has had a live run, because this
+checkout has no key for any other provider. Everything else is
+fixture-tested, and **every address in the table was checked against the
+provider itself** — a right address with no key answers 401, and a wrong one
+answers 404. Adding keys to `.env.local` would let the rest be verified
+against real capability data.
 
 ---
 

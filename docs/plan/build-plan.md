@@ -22,6 +22,7 @@ front-end and back-end work, and what it unblocks.
 | [`../storage.md`](../storage.md) | Where every piece of data lives, on each platform |
 | [`later-on.md`](later-on.md) | What was deliberately deferred, and why |
 | [`api-keys-and-parity.md`](api-keys-and-parity.md) | The API keys screen and the desktop/web parity audit |
+| [`git.md`](git.md) | The Git layer: what the reference does, the decisions, the cleanup policy, and how it meets the workspace plan |
 | **This one** | **What to build next, bottom-up** |
 
 ## Where the ideas come from
@@ -268,14 +269,15 @@ repository.
 
 | | Task | Side | Notes |
 |---|---|---|---|
-| ⬜ | **Status** — clean or dirty, current branch, ahead or behind | Code | the cheapest and most useful of these |
-| ⬜ | **Pull** | Code | needs an authenticated fetch, same as clone |
-| ⬜ | **Switch or create a branch** | Code | |
-| ⬜ | **Commit** | Code | needs a message editor and `user.name` / `user.email` identity configuration |
-| ⬜ | **Push** | Code | needs credentials the app should never store |
-| ⬜ | **Private repositories** | Code | SSH works only if the host was configured outside the app; there is no token flow |
-| ⬜ | **An isolated copy of the repository per conversation** | Code | allocate by name, **never reuse an idle directory** |
-| ⬜ | **The cleanup policy for that copy** | Code | clean and unnamed → remove it and its branch; named or dirty → ask first; never fall back to a destructive delete |
+| ✅ | **Status** — clean or dirty, current branch, ahead or behind | Code | the cheapest and most useful of these. Read from git's machine-readable form, in `src-tauri/src/git.rs` |
+| ✅ | **Pull** | Code | needs an authenticated fetch, same as clone |
+| ✅ | **Switch or create a branch** | Code | |
+| ✅ | **Commit** | Code | needs a message editor and `user.name` / `user.email` identity configuration |
+| ✅ | **Push** | Code | needs credentials the app should never store |
+| ⬜ | The surface — the branch, the changed files, and the four actions | Code | **built** — `src/blocks/prompt-input/git-panel.tsx`, in the Code side's row under the prompt box. The design is in [`git.md`](git.md) §4 |
+| ⬜ | **Private repositories** | Code | SSH works only if the host was configured outside the app; there is no token flow, and the app will not add one |
+| ⬜ | **An isolated copy of the repository per conversation** | Code | allocate by name, **never reuse an idle directory**. **Gated on the write path** — a copy isolates *writes*, and the app cannot write |
+| ⬜ | **The cleanup policy for that copy** | Code | clean and unnamed → remove it and its branch; named or dirty → ask first; never fall back to a destructive delete. Designed in [`git.md`](git.md) §4.2 |
 | ⬜ | **A settings control for the projects folder** | Code | the location is currently resolved in one place |
 | ⬜ | **The write path** | Code | **deliberately not built** — see below |
 
@@ -283,6 +285,13 @@ repository.
 change; it does not write. An isolated copy of a repository exists to isolate
 *writes*, so building one before the write path would be infrastructure for a
 feature that is not there.
+
+**The design is in [`git.md`](git.md)**: what the reference does, what we take
+from it and what we do not, the decisions, and how this meets the workspace
+plan — which is the important part, because the workspace's diff viewer is
+**sample** content and the two must not be wired together.
+
+**The back end is built and tested.** The surface is not.
 
 ---
 

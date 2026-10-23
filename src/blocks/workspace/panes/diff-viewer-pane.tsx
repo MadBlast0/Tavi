@@ -136,7 +136,7 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
           </div>
         )
       default: {
-        const selected = SAMPLE_FILES.find((f) => f.path === selectedFile) ?? null
+        const selected = SAMPLE_FILES.find((f) => f.path === selectedFile)
         const filteredFiles = SAMPLE_FILES.filter((f) => {
           if (filter !== "all" && f.status !== filter) return false
           if (search && !f.path.toLowerCase().includes(search.toLowerCase())) return false
@@ -203,13 +203,23 @@ export function DiffViewerPane({ paneId }: { paneId: string }) {
                       No files match the filter
                     </div>
                   ) : (
-                    fileButtons
+                    SAMPLE_FILES.map((file) => {
+                      const isSelected = selectedFile === file.path
+                      return (
+                        <FileRow
+                          key={file.path}
+                          file={file}
+                          isSelected={selectedFile === file.path}
+                          onClick={() => setSelectedFile(isSelected ? null : file.path)}
+                        />
+                      )
+                    })
                   )}
                 </div>
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1">
-                  <DiffContent selected={SAMPLE_FILES.find((f) => f.path === selectedFile) ?? null} />
+                  <DiffContent selected={selected ?? null} />
                 </div>
               </div>
             </div>

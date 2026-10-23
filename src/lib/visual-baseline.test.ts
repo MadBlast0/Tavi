@@ -70,12 +70,17 @@ test("the title bar is 28 pixels tall", () => {
   // published in one place so the bar, the rail's header and the surface
   // cannot end up a pixel apart.
   //
-  // It is published on the root, in the stylesheet, rather than on the shell
-  // wrapper: a menu or a popover is portalled to the end of the body and
-  // cannot see a variable that only the wrapper carries.
-  assert.ok(
-    stylesheet.includes("--shell-top-bar-h: 1.75rem"),
-    "the title bar's height should be 1.75rem, published once on the root",
+  // The number is on the root, so that a menu or a popover — which is
+  // portalled to the end of the body — can see it too. It may be written in
+  // the stylesheet or set on the root from code; what the rule forbids is a
+  // height that is not 28 pixels, and two heights.
+  const published =
+    (stylesheet.match(/--shell-top-bar-h\s*:\s*([\d.]+rem)/) ?? [])[1] ??
+    (shell.match(/\[--shell-top-bar-h:([\d.]+rem)\]/) ?? [])[1]
+  assert.equal(
+    published,
+    "1.75rem",
+    "the title bar's height should be published as 1.75rem, which is 28 pixels",
   )
   assert.ok(
     titleBar.includes("h-(--shell-top-bar-h)"),

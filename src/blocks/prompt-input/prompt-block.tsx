@@ -90,20 +90,28 @@ import {
   cancelClone,
   cloneRepository,
   fetchModels,
+  listAcpModels,
+  listCliProviders,
   listProjects,
   listProviderKeys,
   streamChat,
   type ChatRequest,
   type ProviderKey,
+  type ToolActivity,
 } from "@/lib/api"
+import {
+  cliIdOf,
+  isCliProviderId,
+  providerChoice,
+  type CliProviderState,
+} from "@/lib/cli-providers"
 import { SETTINGS_CLOSED } from "@/lib/open-settings"
 import {
   MODES as MODE_DEFINITIONS,
   type AgentMode,
 } from "@/lib/modes"
 import { SIDES, type Side } from "@/lib/sides"
-import { DEFAULT_PROVIDER_ID } from "@/lib/providers"
-import { serializeReasoning } from "@/lib/provider-reasoning"
+import { checkReasoning } from "@/lib/provider-reasoning"
 import { unknownCapabilities } from "@/lib/reasoning"
 import { duration, easeOut, prefersReducedMotion } from "@/lib/motion"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
@@ -239,6 +247,7 @@ import {
 
 import { StreamingText } from "./streaming-text"
 import { useComposerVariant } from "./composer-variant"
+import { GitPanel } from "./git-panel"
 import { useThreadBridge } from "./thread-bridge"
 import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
 import { useWorkspace } from "@/lib/workspace-state"
@@ -257,8 +266,10 @@ import {
   PromptInputMeta,
   PromptInputMeter,
   PromptInputModel,
+  PromptInputProvider,
   PromptInputSelect,
   PromptInputSuggestions,
+  ToolActivityList,
   type PromptEffort,
   type PromptModel,
   type PromptOption,
@@ -574,6 +585,10 @@ type WriteState = RunFacts & {
    * with the same conversation in it.
    */
   id: string | null
+  /** The provider the request went to. */
+  provider: string
+  /** The program's own session, when it has one. */
+  sessionId: string | undefined
   /** The provider's accounting for the turn that just finished. */
   usage: PromptTokenUsage | null
 }
@@ -769,12 +784,26 @@ export function PromptBlock() {
    * request goes out with, and the provider the request is sent to. That is
    * what makes the list and the request about the same provider by
    * construction, rather than by agreeing to.
+   *
+   * It starts unset, because the user chooses it: the model picker is not
+   * usable until a provider is chosen, since the models belong to one.
    */
   const [providerBySide, setProviderBySide] = React.useState<Record<Side, string>>(
     () => ({
-      chat: readPref(sidePref(PREF.provider, "chat")) ?? DEFAULT_PROVIDER_ID,
-      code: readPref(sidePref(PREF.provider, "code")) ?? DEFAULT_PROVIDER_ID,
+      chat: readPref(sidePref(PREF.provider, "chat")) ?? "",
+      code: readPref(sidePref(PREF.provider, "code")) ?? "",
     }),
+  )
+  /**
+   * The program's own session, per side.
+   *
+   * A CLI provider keeps its own memory of a conversation, and this is which
+   * one. It belongs to the thread rather than to the side, so it is restored
+   * with the thread and written with it — a thread and a program's session
+   * are the same conversation rather than two copies of it.
+   */
+  const [cliSessionBySide, setCliSessionBySide] = React.useState<Record<Side, string>>(
+    () => ({ chat: "", code: "" }),
   )
   const model = modelBySide[variant]
   const effort = effortBySide[variant]
@@ -806,20 +835,53 @@ export function PromptBlock() {
     },
     [variant],
   )
-  const setProvider = React.useCallback(
-    (next: string | ((current: string) => string)) => {
-      setProviderBySide((current) => {
-        const resolved =
-          typeof next === "function" ? next(current[variant]) : next
-        return { ...current, [variant]: resolved }
-      })
-    },
-    [variant],
-  )
-
   /** The agent mode. Code only — a chat has no repository to be careful in. */
   const [mode, setMode] = React.useState(() => readPref(PREF.mode) ?? "edit")
   const [realModels, setRealModels] = React.useState<PromptModel[]>([])
+
+  /* The models a CLI provider publishes.
+   *
+   * `null` means "not a CLI provider, or not read yet". An empty list means
+   * the CLI has no list of its own, and the app shows no model picker for it
+   * rather than an empty one. */
+  const [cliModels, setCliModels] = React.useState<PromptModel[] | null>(null)
+  /* The effort levels a CLI provider's models accept.
+   *
+   * They are the program's own, so they are shown as the program names them,
+   * and an effort the program does not publish is not offered. */
+  const [cliEfforts, setCliEfforts] = React.useState<PromptEffort[]>([])
+  /* Why the list could not be read, when it could not be.
+   *
+   * A CLI that manages its own model has no list, and the picker is hidden for
+   * it. A CLI whose list could not be read is a different thing, and it says
+   * so rather than leaving a person to wonder where the model control went. */
+  const [cliModelsError, setCliModelsError] = React.useState<string | null>(null)
+  /* The lists that have been read, so that switching back to a provider does
+   * not ask the program for its models again. */
+  const cliModelLists = React.useRef(new Map<string, PromptModel[]>())
+  const cliEffortLists = React.useRef(new Map<string, PromptEffort[]>())
+
+  /* The CLI providers on this machine.
+   *
+   * They are read here, once, because two things need them: the menu that
+   * chooses one, and the model picker that says whose models are being
+   * chosen. */
+  const [cliProviders, setCliProviders] = React.useState<CliProviderState[]>([])
+  React.useEffect(() => {
+    let alive = true
+    void listCliProviders()
+      .then((states) => {
+        if (alive) setCliProviders(states)
+      })
+      .catch(() => {
+        /* A browser has no CLI providers, and a machine whose list could not
+           be read offers none rather than offering a broken one. */
+        if (alive) setCliProviders([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
   /** Every model's display name, including ones outside the free pool. */
   const [realNames, setRealNames] = React.useState<Record<string, string>>({})
   const [realSpecs, setRealSpecs] = React.useState<
@@ -925,6 +987,35 @@ export function PromptBlock() {
     if (live.some((turn) => turn.id === sent.turn.id)) return live
     return [...live, sent.turn]
   }, [shown?.turns, sent, variant, shownId])
+  /**
+   * Whether the provider is pinned for this side.
+   *
+   * A thread that has been talked to is about one provider: the models in it
+   * came from that provider, and the answer that is still coming is that
+   * provider's. So once a message has been sent, the provider belongs to
+   * the thread and cannot be swapped underneath it.
+   *
+   * The model is still free. A thread may be carried from one model of a
+   * provider to another; it may not be carried from one provider to another.
+   *
+   * A new thread has no turns, so the provider is free again — which is what
+   * makes "New chat" a way out rather than a dead end.
+   */
+  const providerLocked = turns.length > 0
+  const setProvider = React.useCallback(
+    (next: string | ((current: string) => string)) => {
+      /* The thread's provider is not the user's to change once the thread
+         has started. The control is disabled and says so; this is the same
+         rule, so a change that arrives another way is refused as well. */
+      if (providerLocked) return
+      setProviderBySide((current) => {
+        const resolved =
+          typeof next === "function" ? next(current[variant]) : next
+        return { ...current, [variant]: resolved }
+      })
+    },
+    [variant, providerLocked],
+  )
   const status: PromptStatus =
     !shown || shown.status === "idle" ? "ready" : shown.status
   const usage = shown?.usage ?? null
@@ -1158,6 +1249,15 @@ export function PromptBlock() {
         if (side === variant) setShownConversation(id)
         if (chat.model) setModelBySide((current) => ({ ...current, [side]: chat.model! }))
         if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
+        /* The provider the thread is about, the same way. */
+        if (chat.provider)
+          setProviderBySide((current) => ({ ...current, [side]: chat.provider! }))
+        /* And the program's own session, so the conversation carries on where
+           it left off rather than in a summary of it. */
+        setCliSessionBySide((current) => ({
+          ...current,
+          [side]: chat.sessionId ?? "",
+        }))
         return
       }
       const session = findSession(id)
@@ -1175,6 +1275,15 @@ export function PromptBlock() {
       if (side === variant) setShownConversation(id)
       if (session.model) setModelBySide((current) => ({ ...current, [side]: session.model! }))
       if (session.effort) setEffortBySide((current) => ({ ...current, [side]: session.effort! }))
+      /* The provider the session is about, the same way. */
+      if (session.provider)
+        setProviderBySide((current) => ({ ...current, [side]: session.provider! }))
+      /* And the program's own session, so the conversation carries on where
+         it left off rather than in a summary of it. */
+      setCliSessionBySide((current) => ({
+        ...current,
+        [side]: session.sessionId ?? "",
+      }))
       if (session.mode) setMode(session.mode)
       setFolderId(
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
@@ -1215,14 +1324,22 @@ export function PromptBlock() {
   /* The selected model is added to the visible list when it is not already there.
      A saved preference may name a paid model while the picker lists only the free
      pool; without this the trigger fell back to the first free entry and showed
-     one model's name while another model's reasoning controls were in effect. */
+     one model's name while another model's reasoning controls were in effect.
+
+     A CLI provider brings its own list. A CLI that publishes models is asked
+     for them and shows them; a CLI that chooses its own model is asked for
+     nothing and shows no picker at all, because a picker with nothing in it
+     is a claim that there is a choice. */
   const modelOptions = React.useMemo(() => {
-    if (!model) return realModels;
-    if (realModels.some((entry) => entry.value === model)) return realModels;
-    const label = realNames[model];
-    if (!label) return realModels;
-    return [...realModels, { value: model, label }]
-  }, [realModels, realNames, model])
+    const list = isCliProviderId(provider) ? (cliModels ?? []) : realModels
+    if (!model) return list
+    if (list.some((entry) => entry.value === model)) return list
+    const label = isCliProviderId(provider)
+      ? model
+      : realNames[model]
+    if (!label) return list
+    return [...list, { value: model, label }]
+  }, [realModels, realNames, model, cliModels, provider])
   const lastUser = turns.findLast((turn) => turn.role === "user")
 
   /* The effort levels offered are exactly the ones this model's capability profile
@@ -1492,6 +1609,77 @@ export function PromptBlock() {
     }
   }, [keys, provider])
 
+  /* The models of a CLI provider.
+   *
+   * A CLI is not a model, and most of them do not publish a list: they
+   * choose their own. One that does is asked for the list, and the list is
+   * what the picker shows. One that does not is asked for nothing, and the
+   * picker is not shown at all.
+   *
+   * The list comes from the program's own protocol, so it carries the names
+   * the program gives its models and the effort levels they accept. That is
+   * the point of using the protocol rather than the headless mode: a headless
+   * mode does not publish them.
+   *
+   * A list that has been read is kept, so that coming back to a provider
+   * does not ask the program for its models again. */
+  React.useEffect(() => {
+    if (!isCliProviderId(provider)) {
+      setCliModels(null)
+      setCliEfforts([])
+      setCliModelsError(null)
+      return
+    }
+    const wanted = cliIdOf(provider);
+    const known = cliModelLists.current.get(wanted);
+    if (known) {
+      setCliModels(known)
+      setCliEfforts(cliEffortLists.current.get(wanted) ?? [])
+      setCliModelsError(null)
+      return
+    }
+    let current = true
+    void listAcpModels(provider)
+      .then((result) => {
+        if (!current) return
+        const modelOption = result.configOptions.find(
+          (option) => option.id === "model",
+        )
+        const effortOption = result.configOptions.find(
+          (option) => option.id === "effort",
+        )
+        const list = (modelOption?.options ?? []).map((option) => ({
+          value: option.value,
+          label: option.name,
+        }))
+        const efforts = (effortOption?.options ?? []).map((option) => ({
+          value: option.value,
+          label: option.name,
+        }))
+        cliModelLists.current.set(wanted, list)
+        cliEffortLists.current.set(wanted, efforts)
+        setCliModels(list)
+        setCliEfforts(efforts)
+        setCliModelsError(null)
+      })
+      .catch((problem: unknown) => {
+        /* A CLI that will not say what models it has has no list to show.
+           A CLI whose list could not be *read* is a different thing, and it
+           says so rather than leaving the picker to vanish. */
+        if (!current) return
+        setCliModels([])
+        setCliEfforts([])
+        setCliModelsError(
+          problem instanceof Error
+            ? problem.message
+            : "The models could not be read.",
+        )
+      })
+    return () => {
+      current = false
+    }
+  }, [provider])
+
   /**
    * The side you are on always has a model.
    *
@@ -1622,7 +1810,6 @@ export function PromptBlock() {
     write: WriteState,
     threadId: string,
   ) => {
-
     try {
       /* Resolve every file the thread points at before the request goes out, so
          the model receives contents rather than filenames. */
@@ -1689,20 +1876,28 @@ export function PromptBlock() {
         })
       }
 
-      /* The reasoning preference, written the provider's way.
+      /* The reasoning preference, checked against the model.
        *
        * A level the model does not publish is refused, and the refusal says
        * why. It is the shared rule, so the desktop app and the website's
-       * server answer the same question the same way. */
-      const reasoning =
-        effort && model
-          ? serializeReasoning(provider, realCapabilities[model] ?? unknownFor(model), {
-              effort: { mode: "explicit", value: effort },
-              thinkingMode: { mode: "provider_default" },
-            })
+       * server answer the same question the same way. The level itself goes
+       * out as it is, and the app that makes the request writes it in the
+       * field its provider takes it in.
+       *
+       * A CLI provider has none of this. It has its own way of being told
+       * how hard to think, and the app does not second-guess it. */
+      const verdict =
+        effort && model && !isCliProviderId(provider)
+          ? checkReasoning(
+              realCapabilities[model] ?? unknownFor(model),
+              {
+                effort: { mode: "explicit", value: effort },
+                thinkingMode: { mode: "provider_default" },
+              },
+            )
           : null;
-      if (reasoning && reasoning.kind === "reject") {
-        failConversation(threadId, id, reasoning.message)
+      if (verdict && !verdict.ok) {
+        failConversation(threadId, id, verdict.message)
         return
       }
 
@@ -1720,32 +1915,44 @@ export function PromptBlock() {
              that what a chat is told is a rule the client cannot ignore. */
           variant: write.side,
           ...(write.side === "code"
-            ? { mode: write.mode, folder: write.folderName }
+            ? {
+                mode: write.mode,
+                folder: write.folderName,
+                /* The id as well as the name: a CLI provider is started in
+                   the folder, and two folders can have the same name. */
+                folderId: write.folderId,
+              }
             : {}),
           config: {
             ...(model ? { modelName: model } : {}),
             /* The provider the model list was fetched for. The request and
                the list are about the same provider by construction. */
             ...(provider ? { providerId: provider } : {}),
+            /* The program's own session, so the conversation continues where
+               it left off rather than in a summary of it. */
+            ...(write.sessionId ? { sessionId: write.sessionId } : {}),
             /* One dial: `none` is the "do not reason" position on it, not a
                separate switch. The level is validated against the model's
                capability and refused rather than downgraded — and the
                provider's own fields travel with the request, because the
                desktop app makes the provider request itself. */
             ...(effort ? { reasoningEffort: effort } : {}),
-            ...(reasoning && reasoning.kind === "payload"
-              ? { reasoning: reasoning.fields }
-              : {}),
           },
         },
         write: {
           side: write.side,
           model: write.model,
           effort: write.effort,
+          provider: write.provider,
+          sessionId: write.sessionId,
           mode: write.mode,
           folderId: write.folderId,
           folderName: write.folderName,
         },
+        /* The program may hand back a session to continue in. It belongs to
+           the side that asked, and the next turn from that side carries it. */
+        onSession: (session) =>
+          setCliSessionBySide((current) => ({ ...current, [write.side]: session })),
         /* The folder's files as they were when the turn was sent, because a
            mention is recorded as a path only when the file still resolves. */
         known: projectFiles,
@@ -1786,6 +1993,12 @@ export function PromptBlock() {
       turns: await toStoredTurns(next, projectFiles),
       model: write.model || undefined,
       effort: write.effort || undefined,
+      /* The provider the thread is about. It is recorded, not enforced: the
+         conversation is text and the tools are the same whichever provider
+         answers, so the thread remembers where it began without refusing to
+         go somewhere else. */
+      provider: write.provider || undefined,
+      sessionId: write.sessionId,
       usage: write.usage ?? undefined,
     }
     /* The thread the turn was asked about, before the write. */
@@ -1828,6 +2041,8 @@ export function PromptBlock() {
     id: activeBySide[variant],
     model,
     effort,
+    provider,
+    sessionId: cliSessionBySide[variant] || undefined,
     mode,
     folderId: folder?.id,
     folderName: folder?.name,
@@ -2041,21 +2256,39 @@ export function PromptBlock() {
    * One definition keeps both homes identical.
    */
   const composerModel = (
-    <PromptInputModel
-      models={modelOptions}
-      model={model}
-      onModelChange={setModel}
-      provider={provider}
-      onProviderChange={setProvider}
-      providerKeys={keys ?? []}
-      levels={efforts}
-      effort={effort}
-      onEffortChange={setEffort}
-      recommended="medium"
-      noKey={keys !== null && !hasKey(keys, provider)}
-      error={modelsError}
-      catalogue={catalogueFreshness}
-    />
+    <>
+      <PromptInputProvider
+        provider={provider}
+        onProviderChange={setProvider}
+        keys={keys ?? []}
+        locked={providerLocked}
+        cliProviders={cliProviders}
+      />
+      {/* A CLI that chooses its own model has no model picker: an empty
+          picker is a claim that there is a choice, and there is not one. A
+          CLI whose model list could not be read keeps its picker, and says
+          what went wrong. */}
+      {isCliProviderId(provider) &&
+      (cliModels ?? []).length === 0 &&
+      !cliModelsError ? null : (
+        <PromptInputModel
+          models={modelOptions}
+          model={model}
+          onModelChange={setModel}
+          provider={provider}
+          providerLabel={providerChoice(provider, cliProviders)?.label}
+          levels={isCliProviderId(provider) ? cliEfforts : efforts}
+          effort={effort}
+          onEffortChange={setEffort}
+          recommended="medium"
+          noKey={
+            !isCliProviderId(provider) && keys !== null && !hasKey(keys, provider)
+          }
+          error={cliModelsError ?? modelsError}
+          catalogue={catalogueFreshness}
+        />
+      )}
+    </>
   )
 
   /**
@@ -2240,6 +2473,9 @@ export function PromptBlock() {
                           <UserTurn message={turn.message} />
                         ) : (
                           <div className="flex flex-col gap-2">
+                            {turn.tools && turn.tools.length > 0 ? (
+                              <ToolActivityList tools={turn.tools} />
+                            ) : null}
                             <StreamingText
                               text={turn.text}
                               streaming={turn.streaming}
@@ -2382,6 +2618,10 @@ export function PromptBlock() {
                         Folder access needs a Chromium-based browser
                       </span>
                     )}
+                    {/* The branch is the fourth fact about a conversation
+                        about a repository, and it belongs in this row beside
+                        the folder it is in. */}
+                    <GitPanel id={folder?.id} />
                   </PromptInputFooter>
                 </PromptInputInset>
               </VariantRegion>

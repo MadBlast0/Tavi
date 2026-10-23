@@ -11,10 +11,10 @@
  * ever read, which is a key the user paid for and the app ignored — so a
  * provider is here because the app can do something with it.
  *
- * Two of them are here for the other half of that: **Amazon Bedrock** and
- * **Google Vertex AI** are signed with AWS credentials and with Google's own,
- * not with a key, and the app has no client for either yet. The keys pane
- * says so plainly rather than taking a credential it cannot use.
+ * One of them is not a company at all: **Custom endpoint** is the
+ * OpenAI chat-completions shape at an address the user gives — a gateway, a
+ * proxy, or a model running on this machine. The key carries the address, and
+ * the address wins over any default.
  *
  * ## What a provider is made of
  *
@@ -61,9 +61,7 @@ export type ProviderWire =
   | "openai-chat-completions"
   | "anthropic-messages"
   | "google-generative-ai"
-  | "cohere-chat"
-  | "aws-bedrock"
-  | "google-vertex";
+  | "cohere-chat";
 
 /**
  * How a provider's key can be checked.
@@ -78,6 +76,19 @@ export type ProviderWire =
  *   ever run when the user asks for it.
  */
 export type ProviderValidation = "identity-endpoint" | "inference-probe";
+
+/**
+ * How a provider takes a reasoning level.
+ *
+ * The name is the field on the wire, because that is what the request has to
+ * carry, and a level that is sent in the wrong field is one the provider
+ * ignores.
+ */
+export type ProviderReasoningField =
+  | "reasoning.effort"
+  | "reasoning_effort"
+  | "output_config.effort"
+  | "none";
 
 export type Provider = {
   id: string;
@@ -104,6 +115,28 @@ export type Provider = {
   baseUrl: string;
   /** The shape of a chat request for this provider. */
   wire: ProviderWire;
+  /**
+   * How the provider takes a reasoning level, on the wire.
+   *
+   * The field is not the same everywhere: OpenRouter takes `reasoning: {
+   * effort }`, OpenAI and the OpenAI-compatible providers take a top-level
+   * `reasoning_effort`, and Anthropic takes `output_config: { effort }`.
+   * A provider that publishes no reasoning levels takes none, and says so.
+   */
+  reasoningField: ProviderReasoningField;
+  /**
+   * The path of the model listing, when it is not `/models`.
+   *
+   * Most providers put their catalogue at the root of their version. A few do
+   * not: Perplexity's models are under `/v1` and its chat is not.
+   */
+  modelsPath?: string;
+  /**
+   * The path of the chat request, when it is not the one the shape implies.
+   *
+   * `{model}` is the model's own name.
+   */
+  chatPath?: string;
   /**
    * A query parameter every request needs.
    *
@@ -147,6 +180,23 @@ export type Provider = {
 
 export const PROVIDERS: readonly Provider[] = [
   {
+    id: "custom",
+    label: "Custom endpoint",
+    /* An endpoint of the user's own: a gateway, a proxy, a model running on
+       this machine. It has no address of its own and no page to make a key
+       on, and the key says where it is. */
+    keysUrl: "",
+    docsUrl: "",
+    envVar: "CUSTOM_API_KEY",
+    auth: "bearer",
+    baseUrl: "",
+    wire: "openai-chat-completions",
+    reasoningField: "reasoning_effort",
+    reportsUsage: false,
+    validation: "identity-endpoint",
+    identityReportsAccount: false,
+  },
+  {
     id: "openai",
     label: "OpenAI",
     keysUrl: "https://platform.openai.com/api-keys",
@@ -157,6 +207,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.openai.com/v1",
     wire: "openai-chat-completions",
+    reasoningField: "reasoning_effort",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -172,8 +223,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "x-api-key",
     baseUrl: "https://api.anthropic.com/v1",
     wire: "anthropic-messages",
-    /* Anthropic's API requires a version header, and a request without it is
-       refused. */
+    reasoningField: "output_config.effort",
     extraHeaders: { "anthropic-version": "2023-06-01" },
     reportsUsage: false,
     validation: "identity-endpoint",
@@ -188,6 +238,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "x-goog-api-key",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     wire: "google-generative-ai",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -203,6 +254,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://openrouter.ai/api/v1",
     wire: "openai-chat-completions",
+    reasoningField: "reasoning.effort",
     reportsUsage: true,
     validation: "identity-endpoint",
     identityReportsAccount: true,
@@ -216,6 +268,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.deepseek.com",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -229,6 +282,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.x.ai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -242,6 +296,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.mistral.ai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -255,6 +310,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.groq.com/openai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -268,6 +324,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.together.xyz/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -281,6 +338,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.fireworks.ai/inference/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -294,6 +352,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.cerebras.ai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -307,10 +366,8 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://integrate.api.nvidia.com/v1",
     wire: "openai-chat-completions",
+    reasoningField: "reasoning_effort",
     reportsUsage: false,
-    /* Public. `GET /v1/models` answers 200 with the whole catalogue to any
-       caller, with a bad key and with no key at all, so it cannot tell a good
-       key from a bad one and must not be used as a check. */
     validation: "inference-probe",
     identityReportsAccount: false,
   },
@@ -323,6 +380,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://router.huggingface.co/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -334,37 +392,10 @@ export const PROVIDERS: readonly Provider[] = [
     docsUrl: "https://deepinfra.com/models",
     envVar: "DEEPINFRA_API_KEY",
     auth: "bearer",
-    baseUrl: "https://api.deepinfra.com/v1/openai",
+    baseUrl: "https://api.deepinfra.com/v1",
     wire: "openai-chat-completions",
-    reportsUsage: false,
-    validation: "identity-endpoint",
-    identityReportsAccount: false,
-  },
-  {
-    id: "amazon-bedrock",
-    label: "Amazon Bedrock",
-    keysUrl: "https://console.aws.amazon.com/iam/home#/security_credentials",
-    docsUrl: "https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html",
-    /* Bedrock is signed with AWS credentials, not a key of its own. The bearer
-       token is the one of those credentials that is a single string. */
-    envVar: "AWS_BEARER_TOKEN_BEDROCK",
-    auth: "aws-bearer",
-    baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
-    wire: "aws-bedrock",
-    reportsUsage: false,
-    validation: "identity-endpoint",
-    identityReportsAccount: false,
-  },
-  {
-    id: "google-vertex",
-    label: "Google Vertex AI",
-    keysUrl: "https://console.cloud.google.com/apis/credentials",
-    docsUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs",
-    /* Vertex is signed with Google's own credentials, not with a key. */
-    envVar: "GOOGLE_APPLICATION_CREDENTIALS",
-    auth: "google-oauth",
-    baseUrl: "https://us-central1-aiplatform.googleapis.com/v1",
-    wire: "google-vertex",
+    reasoningField: "none",
+    chatPath: "/openai/chat/completions",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -375,11 +406,10 @@ export const PROVIDERS: readonly Provider[] = [
     keysUrl: "https://learn.microsoft.com/azure/ai-services/openai/how-to/create-resource",
     docsUrl: "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models",
     envVar: "AZURE_API_KEY",
-    /* The key goes in the `api-key` header, not in an authorization one. */
     auth: "api-key",
     baseUrl: "https://YOUR-RESOURCE.openai.azure.com/openai/v1",
     wire: "openai-chat-completions",
-    /* Azure takes its API version as a query parameter, and has no default. */
+    reasoningField: "none",
     query: { "api-version": "2024-10-21" },
     reportsUsage: false,
     validation: "identity-endpoint",
@@ -394,6 +424,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.moonshot.ai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -407,6 +438,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.z.ai/api/paas/v4",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -420,6 +452,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -433,6 +466,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.minimax.io/anthropic/v1",
     wire: "anthropic-messages",
+    reasoningField: "output_config.effort",
     extraHeaders: { "anthropic-version": "2023-06-01" },
     reportsUsage: false,
     validation: "identity-endpoint",
@@ -447,6 +481,9 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.perplexity.ai",
     wire: "openai-chat-completions",
+    reasoningField: "none",
+    modelsPath: "/v1/models",
+    chatPath: "/chat/completions",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -456,11 +493,11 @@ export const PROVIDERS: readonly Provider[] = [
     label: "Ollama",
     keysUrl: "https://ollama.com/settings/keys",
     docsUrl: "https://docs.ollama.com/api/openai-compatibility",
-    /* A model running on this machine does not need a key. */
     envVar: "",
     auth: "none",
     baseUrl: "http://localhost:11434/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -475,6 +512,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "none",
     baseUrl: "http://localhost:8000/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -489,6 +527,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.replicate.com/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -502,6 +541,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.sambanova.ai/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -515,6 +555,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://api.cohere.com/v2",
     wire: "cohere-chat",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -528,6 +569,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://gateway.ai.cloudflare.com/v1/YOUR-ACCOUNT/YOUR-GATEWAY",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -541,6 +583,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://us-south.ml.cloud.ibm.com/ml/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -554,6 +597,7 @@ export const PROVIDERS: readonly Provider[] = [
     auth: "bearer",
     baseUrl: "https://YOUR-WORKSPACE.cloud.databricks.com/ai-gateway/mlflow/v1",
     wire: "openai-chat-completions",
+    reasoningField: "none",
     reportsUsage: false,
     validation: "identity-endpoint",
     identityReportsAccount: false,
@@ -567,10 +611,15 @@ export const PROVIDERS: readonly Provider[] = [
  * have a model listing, which answers yes or no and nothing more. Which one
  * it is comes from the provider's own row, not from its name.
  */
-export const identityUrlFor = (provider: Provider): string =>
-  provider.identityReportsAccount
-    ? `${provider.baseUrl}/key`
-    : `${provider.baseUrl}/models`;
+export const identityUrlFor = (
+  provider: Provider,
+  baseUrl?: string,
+): string => {
+  const base = (baseUrl?.trim() || provider.baseUrl).replace(/\/+$/, "");
+  return provider.identityReportsAccount
+    ? `${base}/key`
+    : `${base}${provider.modelsPath ?? "/models"}`;
+};
 
 /**
  * Where a request that costs one goes.
@@ -593,6 +642,39 @@ export const inferenceUrlFor = (provider: Provider): string => {
 };
 
 /** The provider with this id, if there is one. */
+/**
+ * The providers that speak the OpenAI chat-completions shape.
+ *
+ * They are the same shape as OpenAI's own, and they are not the same as
+ * OpenAI's own: the OpenAI package's default is the Responses API, which only
+ * OpenAI has. So these go through the OpenAI-compatible package, which speaks
+ * chat completions and nothing else.
+ */
+export const OPENAI_COMPATIBLE_PROVIDERS: readonly string[] = [
+  "deepseek",
+  "xai",
+  "mistral",
+  "groq",
+  "together",
+  "fireworks",
+  "cerebras",
+  "nvidia-nim",
+  "huggingface",
+  "deepinfra",
+  "azure",
+  "moonshot",
+  "zai",
+  "alibaba",
+  "perplexity",
+  "ollama",
+  "vllm",
+  "replicate",
+  "sambanova",
+  "cloudflare",
+  "watsonx",
+  "databricks",
+];
+
 export const providerFor = (id: string): Provider | undefined =>
   PROVIDERS.find((provider) => provider.id === id);
 

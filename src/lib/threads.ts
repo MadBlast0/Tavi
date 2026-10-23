@@ -2,7 +2,8 @@
  * The vocabulary both thread stores share.
  *
  * A chat and a code session are the same kind of thing at this level — a
- * conversation, with turns, a model, an effort level and a pin — and they
+ * conversation, with turns, a model, an effort level, a provider and a
+ * pin — and they
  * differ in what else they carry. A chat has no folder and no agent mode; a
  * session has both. Everything common lives here so the two stores cannot
  * drift apart, and the difference stays a difference rather than becoming a
@@ -28,6 +29,26 @@ export type StoredMention = {
   path?: string
 }
 
+/**
+ * A tool the agent used.
+ *
+ * Only a CLI provider has tools, so only a CLI provider's turns carry these.
+ * They are kept because what an agent did is part of what it said: the
+ * answer alone does not say which files were read or which commands ran.
+ */
+export type StoredTool = {
+  /** The name the program calls the tool by. */
+  name: string
+  /** What it was doing, in words. */
+  title: string
+  /** How far it got: running, completed or failed. */
+  status: string
+  /** What it was given. */
+  input?: unknown
+  /** What it said. */
+  output?: string
+}
+
 export type StoredTurn =
   | { id: string; role: "user"; text: string; files: StoredFile[]; mentions: StoredMention[] }
   | {
@@ -38,6 +59,8 @@ export type StoredTurn =
       stopped?: boolean
       /** It did not finish — the app died, or was closed, while it was being written. */
       incomplete?: boolean
+      /** The tools a CLI provider's agent used. */
+      tools?: StoredTool[]
     }
   /** Carries the summary it stands for, so it can be sent with later turns. */
   | { id: string; role: "summary"; text: string }
@@ -76,6 +99,28 @@ export type ThreadBase = {
   turns: StoredTurn[]
   model?: string
   effort?: string
+  /**
+   * The provider the thread is about.
+   *
+   * It is what the models came from, and it is the provider the thread is
+   * about: opening it shows that provider's models, and the picker names it.
+   *
+   * It is a rule as well as a record. A thread that has been talked to is
+   * about one provider — the models in it came from that provider, and the
+   * answer that is still coming is that provider's — so the provider is
+   * pinned once a message has been sent. The model is still free: a thread
+   * may be carried from one model of a provider to another, but not from one
+   * provider to another.
+   */
+  provider?: string
+  /**
+   * The program's own session, when the thread was run through one.
+   *
+   * A CLI provider keeps its own memory of a conversation, and this is which
+   * one. It is the thread's own, so a thread and a program's session are the
+   * same conversation rather than two copies of it.
+   */
+  sessionId?: string
   usage?: StoredUsage
   /**
    * When the thread was pinned, or absent if it is not.
@@ -125,6 +170,8 @@ export type ThreadDraft<E extends object> = {
   turns: StoredTurn[]
   model?: string
   effort?: string
+  provider?: string
+  sessionId?: string
   usage?: StoredUsage
 } & E
 

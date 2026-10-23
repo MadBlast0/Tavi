@@ -173,8 +173,8 @@ test("the title bar's height is one number", () => {
   // measure against it. Consumers of one number cannot end up a pixel apart.
   //
   // Where it is published is not what the rule is about. It can be a class on
-  // the shell wrapper, a property set on the root, or a rule in the
-  // stylesheet — and the stylesheet is the best place for it, because a menu
+  // the shell wrapper, a property set on the root from code, or a rule in
+  // the stylesheet — and the root is the better place for it, because a menu
   // or a popover is portalled to the end of the body and cannot see a
   // variable that only the wrapper carries. What the rule forbids is two
   // numbers, and a number that nothing publishes.

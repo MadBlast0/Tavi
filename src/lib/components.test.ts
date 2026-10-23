@@ -58,9 +58,14 @@ type Target =
 
 /** Where an import points. */
 const resolveImport = (from: string, specifier: string): Target => {
+  /* A specifier may carry a query — `?raw`, `?url`, `?inline`. The query
+     says how the file is to be loaded, not which file it is, so it is
+     dropped before the file is looked for. A mark imported as `?raw` is a
+     file that is there. */
+  const target = specifier.split("?")[0]
   let base: string
-  if (specifier.startsWith("@/")) base = join(SRC, specifier.slice(2))
-  else if (specifier.startsWith(".")) base = resolve(dirname(join(SRC, from)), specifier)
+  if (target.startsWith("@/")) base = join(SRC, target.slice(2))
+  else if (target.startsWith(".")) base = resolve(dirname(join(SRC, from)), target)
   else return { kind: "asset" }
   for (const candidate of [
     base,

@@ -20,6 +20,7 @@
     "@ai-sdk/cohere": "^4.0.66",
     "@ai-sdk/google": "^4.0.102",
     "@ai-sdk/openai": "^4.0.99",
+    "@ai-sdk/openai-compatible": "^3.0.75",
     "@ai-sdk/react": "^4.0.146",
     "@assistant-ui/ai-sdk": "^0.0.13",
     "@assistant-ui/react": "^0.15.29",
