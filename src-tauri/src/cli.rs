@@ -780,7 +780,7 @@ fn find_by_names(names: &[&str]) -> Option<PathBuf> {
 ///
 /// The path a user has pointed at is tried first: they know where their
 /// program is, and the app does not.
-fn resolve(info: &CliProviderInfo, chosen: Option<&str>) -> Option<PathBuf> {
+pub(crate) fn resolve(info: &CliProviderInfo, chosen: Option<&str>) -> Option<PathBuf> {
     if let Some(chosen) = chosen {
         let path = PathBuf::from(chosen.trim());
         if path.is_file() {
@@ -796,7 +796,7 @@ fn resolve(info: &CliProviderInfo, chosen: Option<&str>) -> Option<PathBuf> {
 /// and the `.cmd` names the `.exe` it stands for. That name is read out of
 /// the shim, so the app runs the program itself rather than a script that
 /// a command interpreter has to interpret.
-fn real_program(path: &Path) -> PathBuf {
+pub(crate) fn real_program(path: &Path) -> PathBuf {
     let extension = path
         .extension()
         .and_then(|e| e.to_str())

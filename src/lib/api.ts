@@ -222,6 +222,22 @@ export type ToolActivity = {
   output?: string
 }
 
+/** The models and configuration an agent offers. */
+export type AcpConfigResult = {
+  sessionId: string
+  configOptions: AcpConfigOption[]
+}
+
+/** A configuration option an agent exposes. */
+export type AcpConfigOption = {
+  id: string
+  name: string
+  category?: string
+  type: string
+  currentValue: unknown
+  options?: { value: string; name: string; description?: string }[]
+}
+
 /**
  * The model catalogue, and how old the copy is.
  *
@@ -347,6 +363,34 @@ export const fetchModels = async (providerId: string): Promise<ModelCatalogue> =
  */
 export const listCliProviders = (): Promise<CliProviderState[]> =>
   isDesktopApp() ? desktop.listCliProviders() : Promise.resolve([])
+
+/**
+ * The models and configuration an agent offers.
+ *
+ * The agent is asked, and it says what it has: a model list with friendly
+ * names, and the effort levels its models accept. They are the agent's own,
+ * so the picker shows what the agent offers rather than a guess at it.
+ */
+export const listAcpModels = (
+  provider: string,
+): Promise<AcpConfigResult> =>
+  isDesktopApp()
+    ? desktop.listAcpModels(provider)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
+
+/** Stops the agent for a provider. */
+export const stopAcpAgent = (provider: string): Promise<void> =>
+  isDesktopApp()
+    ? desktop.stopAcpAgent(provider)
+    : Promise.reject(
+        new Error(
+          "CLI providers are on this computer. Open the desktop app to use them.",
+        ),
+      )
 
 /**
  * Looks again, for a provider that has just been installed or removed.

@@ -48,7 +48,7 @@ import type {
   CliProviderChanges,
   CliProviderState,
 } from "./cli-providers.ts"
-import type { CliTerminalEvent } from "./api.ts"
+import type { AcpConfigResult, CliTerminalEvent } from "./api.ts"
 import type { ProviderKey } from "./secret.ts"
 
 export { isDesktopApp }
@@ -321,6 +321,23 @@ export const stopCliTerminal = async (id: string): Promise<void> => {
   await invoke("stop_cli_terminal", { id })
 }
 
+/** The models and configuration an agent offers. */
+export const listAcpModels = async (
+  provider: string,
+): Promise<AcpConfigResult> => {
+  requireDesktop()
+  return invoke<AcpConfigResult>("acp_list_models", {
+    provider,
+    cwd: null,
+  })
+}
+
+/** Stops the agent for a provider. */
+export const stopAcpAgent = async (provider: string): Promise<void> => {
+  requireDesktop()
+  await invoke("acp_stop_agent", { provider })
+}
+
 /** A report about one CLI provider, for a person to paste somewhere. */
 export const cliProviderDiagnostics = async (id: string): Promise<string> => {
   requireDesktop()
@@ -356,10 +373,22 @@ export const streamCliChat = async (
   signal?.addEventListener("abort", cancel)
 
   try {
-    await invoke("run_cli_chat", {
-      request: { ...request, requestId },
-      onEvent: channel,
-    })
+    /* A CLI provider speaks either a documented headless mode or a protocol.
+       The app tries the protocol first, because it is the richer one — models
+       with friendly names, effort levels, tool calls, permissions — and falls
+       back to the headless mode when the program has no protocol. */
+    const providerId = request.config?.providerId ?? ""
+    try {
+      await invoke("acp_chat", {
+        request: { ...request, requestId },
+        onEvent: channel,
+      })
+    } catch {
+      await invoke("run_cli_chat", {
+        request: { ...request, requestId },
+        onEvent: channel,
+      })
+    }
   } finally {
     signal?.removeEventListener("abort", cancel)
   }
