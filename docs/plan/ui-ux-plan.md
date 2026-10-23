@@ -1678,6 +1678,30 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 **What this task found.** The primitives already existed — the empty component, the skeleton, the progress indicator, the toast — and the pane needed slots that use them rather than re-inventing them. The slots are `PaneEmpty`, `PaneLoading`, `PaneError`, `PaneUnavailable` and `PaneSpinner`, and each takes its own text, so a pane supplies the words that fit it rather than inheriting a sentence written for a different one. The header stays visible while the content changes state, because the slots are content and not frames — they do not draw a header, so the pane's header is the one that stays.
 
 The empty slot offers at most one action, and the error slot offers a retry only when one can actually be retried. The unavailable slot is drawn as a fact about what the app can do, not as an error, because the two are different things and a person who sees one should not think the other.
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The slots | `src/blocks/workspace/pane-states.tsx` — PaneEmpty, PaneLoading, PaneError, PaneUnavailable, PaneSkeletonText |
+| The check | `src/lib/pane-states.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The primitives already existed — the empty
+component, the skeleton, the alert, the button — and what was missing was
+the shared slots that put them inside a pane. The four slots are
+`PaneEmpty`, `PaneLoading`, `PaneError` and `PaneUnavailable`, plus
+`PaneSkeletonText` for the common case of a line of text. The header
+stays put while the content changes state, because the slot is the content
+and not the frame.
+
+The copy and the icon are the pane's own, because a Terminal's empty
+state and a Diff Viewer's empty state are different things. The error
+slot offers a retry only when one is given, and the unavailable slot has
+no retry and no alert role, because nothing went wrong and there is
+nothing to retry. The distinction matters: a retry button on an
+unavailable pane is a button that does nothing.
 ## Task 5.1 — Chat pane
 
 **Prompt to the coding AI:**

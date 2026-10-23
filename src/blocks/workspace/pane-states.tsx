@@ -1,55 +1,63 @@
 "use client"
 
 import * as React from "react"
-import {
-  AlertCircleIcon,
-  CloudOffIcon,
-  InboxIcon,
-  Loader2Icon,
-} from "lucide-react"
+
+import { AlertCircleIcon, type LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/button"
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/empty"
-import { Skeleton } from "@/components/skeleton"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/empty"
+import { Skeleton, SkeletonText } from "@/components/skeleton"
 import { cn } from "@/lib/utils"
 
 /**
- * The pane's own state, shown in its content area.
+ * The shared states a pane's content can be in.
  *
- * A pane's header stays visible while the content changes state, so the
- * reader always knows which pane they are looking at. The four states are
- * the ones a pane can be in that are not "showing its content": empty,
- * loading, error and unavailable.
+ * A pane's header stays put while its content changes state, and the state
+ * is the same shape in every pane: a small icon, a concise title, a line
+ * of explanation, and at most one action. The copy and the icon are the
+ * pane's own, because a Terminal's empty state and a Diff Viewer's empty
+ * state are different things and should not say the same words.
  *
- * Each state is a small component that takes its own text, so a pane
- * supplies the words that fit it rather than inheriting a sentence that
- * was written for a different one. The shape is the same everywhere, which
- * is the point: the states are the app's, not each pane's.
+ * Four states, and no others:
+ *
+ * - **empty** — there is nothing here yet, and one action fills it;
+ * - **loading** — the content is on its way, and a skeleton shaped like it
+ *   is shown rather than a spinner;
+ * - **error** — something went wrong, and a retry is offered only when the
+ *   retry can actually happen;
+ * - **unavailable** — the real tool is not connected, and the pane says so
+ *   plainly rather than showing an error it cannot fix.
  */
 
 /**
- * Empty.
+ * An empty pane.
  *
- * A pane with nothing in it yet. A small mark, a title, a line, and at
- * most one action.
+ * The icon, the title, the description and the action are all the pane's
+ * own. The action is optional, because not every empty state has one, and
+ * the empty state carries at most one.
  */
 export function PaneEmpty({
-  icon: Icon = InboxIcon,
+  icon: Icon,
   title,
   description,
   action,
-  actionLabel,
   className,
 }: {
-  icon?: React.ComponentType<{ className?: string }>
+  icon: LucideIcon
   title: string
   description?: string
-  action?: () => void
-  actionLabel?: string
+  action?: React.ReactNode
   className?: string
 }) {
   return (
-    <Empty size="sm" className={cn("flex-1", className)}>
+    <Empty size="sm" className={cn("h-full", className)}>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Icon />
@@ -57,33 +65,34 @@ export function PaneEmpty({
         <EmptyTitle>{title}</EmptyTitle>
         {description ? <EmptyDescription>{description}</EmptyDescription> : null}
       </EmptyHeader>
-      {action && actionLabel ? (
-        <EmptyContent>
-          <Button size="sm" onClick={action}>
-            {actionLabel}
-          </Button>
-        </EmptyContent>
-      ) : null}
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
   )
 }
 
 /**
- * Loading.
+ * A loading pane.
  *
- * A skeleton shaped like the expected content. The shape is the caller's,
- * because a chat's loading skeleton looks nothing like a terminal's.
+ * The caller supplies a skeleton shaped like the content that is on its way,
+ * so the pane does not jump when it arrives. A bare spinner is not used,
+ * because a spinner says "something is happening" and a skeleton says "this
+ * is what you are about to see".
  */
 export function PaneLoading({
   children,
   className,
 }: {
-  /** The skeleton, shaped like the content. */
+  /** A skeleton shaped like the expected content. */
   children?: React.ReactNode
   className?: string
 }) {
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col gap-2 p-3", className)}>
+    <div
+      data-slot="pane-loading"
+      aria-busy="true"
+      aria-live="polite"
+      className={cn("flex min-h-0 flex-1 flex-col gap-2 p-3", className)}
+    >
       {children ?? (
         <>
           <Skeleton className="h-4 w-3/4" />
@@ -96,37 +105,36 @@ export function PaneLoading({
 }
 
 /**
- * Error.
+ * An error pane.
  *
- * Something went wrong with the local state. The title says what, the
- * detail says why, and the retry is offered only when it can actually be
- * retried.
+ * The title says what went wrong in user-facing language, the description
+ * says why, and the retry is offered only when the retry can actually
+ * happen. A retry that does nothing is worse than no retry.
  */
 export function PaneError({
   title,
-  detail,
+  description,
   onRetry,
   className,
 }: {
   title: string
-  detail?: string
+  description?: string
   onRetry?: () => void
   className?: string
 }) {
   return (
     <div
-      className={cn(
-        "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center",
-        className,
-      )}
+      data-slot="pane-error"
+      role="alert"
+      className={cn("flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center", className)}
     >
       <AlertCircleIcon className="size-6 text-destructive" />
-      <p className="text-sm font-medium">{title}</p>
-      {detail ? (
-        <p className="max-w-xs text-xs text-muted-foreground">{detail}</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {description ? (
+        <p className="text-xs text-muted-foreground">{description}</p>
       ) : null}
       {onRetry ? (
-        <Button size="sm" variant="outline" onClick={onRetry}>
+        <Button variant="outline" size="sm" onClick={onRetry} className="mt-1">
           Try again
         </Button>
       ) : null}
@@ -135,44 +143,56 @@ export function PaneError({
 }
 
 /**
- * Unavailable.
+ * An unavailable pane.
  *
- * The real integration is not connected, or is not implemented in this
- * phase. It is not an error, and it is not drawn as one — it is a fact
- * about what the app can do right now.
+ * The real tool is not connected, or is not implemented in this phase, and
+ * the pane says so plainly. It is not an error: nothing went wrong, and
+ * there is nothing to retry. The distinction matters, because a retry button
+ * on an unavailable pane is a button that does nothing.
  */
 export function PaneUnavailable({
   title,
-  detail,
+  description,
   className,
 }: {
   title: string
-  detail?: string
+  description?: string
   className?: string
 }) {
   return (
     <div
-      className={cn(
-        "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center",
-        className,
-      )}
+      data-slot="pane-unavailable"
+      className={cn("flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center", className)}
     >
-      <CloudOffIcon className="size-6 text-muted-foreground" />
-      <p className="text-sm font-medium">{title}</p>
-      {detail ? (
-        <p className="max-w-xs text-xs text-muted-foreground">{detail}</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {description ? (
+        <p className="text-xs text-muted-foreground">{description}</p>
       ) : null}
     </div>
   )
 }
 
 /**
- * The spinner, for the rare case where a skeleton is not the right shape.
+ * A text skeleton, sized by the caller.
+ *
+ * A convenience over the app's `Skeleton` for the common case of a line
+ * of text. The caller says how many lines and how wide.
  */
-export function PaneSpinner({ className }: { className?: string }) {
+export function PaneSkeletonText({
+  lines = 3,
+  className,
+}: {
+  lines?: number
+  className?: string
+}) {
   return (
-    <div className={cn("flex min-h-0 flex-1 items-center justify-center", className)}>
-      <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
+    <div className={cn("flex flex-col gap-2", className)}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <SkeletonText
+          key={i}
+          className={i === lines - 1 ? "w-2/3" : "w-full"}
+        />
+      ))}
     </div>
   )
 }

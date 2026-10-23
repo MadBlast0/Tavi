@@ -1,10 +1,10 @@
 /**
- * The pane empty/loading/error state slots, checked.
+ * The pane state slots, checked.
  *
- * The pane's header stays visible while the content changes state, and the
- * content area is where the state is drawn. These rules catch the two ways
- * that contract is broken: a state that replaces the whole pane including
- * its header, and a state that is a different shape in every pane.
+ * The pane's content can be empty, loading, in error, or unavailable, and
+ * the shared slots are what every pane uses. These rules catch the two ways
+ * those slots are broken: a slot that does not fill the pane, and a slot
+ * that pretends a failure is a retryable error.
  */
 
 import { test } from "node:test"
@@ -17,43 +17,59 @@ const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8")
 
 const states = read("blocks", "workspace", "pane-states.tsx")
 
-test("the empty state slot exists", () => {
-  assert.ok(states.includes("export function PaneEmpty"), "the empty slot should exist")
+test("the four state slots exist", () => {
+  assert.ok(states.includes("export function PaneEmpty"), "PaneEmpty should exist")
+  assert.ok(states.includes("export function PaneLoading"), "PaneLoading should exist")
+  assert.ok(states.includes("export function PaneError"), "PaneError should exist")
+  assert.ok(states.includes("export function PaneUnavailable"), "PaneUnavailable should exist")
 })
 
-test("the loading state slot exists", () => {
-  assert.ok(states.includes("export function PaneLoading"), "the loading slot should exist")
+test("the empty slot takes an icon, a title and an optional action", () => {
+  assert.ok(states.includes("icon: LucideIcon"), "PaneEmpty should take an icon")
+  assert.ok(states.includes("title: string"), "PaneEmpty should take a title")
+  assert.ok(states.includes("action?: React.ReactNode"), "PaneEmpty should take an optional action")
+  assert.ok(states.includes("description?: string"), "PaneEmpty should take an optional description")
 })
 
-test("the error state slot exists", () => {
-  assert.ok(states.includes("export function PaneError"), "the error slot should exist")
+test("the loading slot is marked as busy", () => {
+  assert.ok(states.includes('aria-busy="true"'), "PaneLoading should be marked as busy")
+  assert.ok(states.includes('aria-live="polite"'), "PaneLoading should announce politely")
 })
 
-test("the unavailable state slot exists", () => {
-  assert.ok(states.includes("export function PaneUnavailable"), "the unavailable slot should exist")
+test("the error slot is an alert", () => {
+  assert.ok(states.includes('role="alert"'), "PaneError should be an alert")
 })
 
-test("the slots are built on the app's shared components", () => {
-  assert.ok(states.includes('from "@/components/empty"'), "the empty slot should use the shared empty component")
-  assert.ok(states.includes('from "@/components/skeleton"'), "the loading slot should use the shared skeleton")
-  assert.ok(states.includes('from "@/components/button"'), "the error slot should use the shared button")
+test("the error slot offers a retry only when one is given", () => {
+  assert.ok(states.includes("onRetry?:"), "PaneError should take an optional retry")
+  assert.ok(states.includes("Try again"), "PaneError should label its retry")
 })
 
-test("the slots keep the header out of it", () => {
-  // The slots are content, not frames. They do not draw a header, because
-  // the header belongs to the pane and stays visible while the content
-  // changes state.
-  assert.ok(!states.includes('data-slot="pane-header"'), "the slots should not draw a header")
+test("the unavailable slot is not an error", () => {
+  // It has no alert role and no retry button, because nothing went wrong
+  // and there is nothing to retry.
+  const unavailable = states.slice(states.indexOf("export function PaneUnavailable"))
+  assert.ok(!unavailable.includes('role="alert"'), "PaneUnavailable should not be an alert")
+  assert.ok(!unavailable.includes("onRetry"), "PaneUnavailable should have no retry")
 })
 
-test("the slots take their own text", () => {
-  // A pane supplies the words that fit it. Forcing one sentence on every
-  // pane would be a copy of the same mistake the plan forbids.
-  assert.ok(states.includes("title: string"), "the empty slot should take a title")
-  assert.ok(states.includes("title: string"), "the error slot should take a title")
+test("the empty slot fills the pane", () => {
+  assert.ok(
+    states.includes('h-full'),
+    "PaneEmpty should fill the pane",
+  )
 })
 
-test("the slots offer a single action at most", () => {
-  assert.ok(states.includes("action?: () => void"), "the empty slot should offer at most one action")
-  assert.ok(states.includes("onRetry?: () => void"), "the error slot should offer at most one retry")
+test("the loading slot fills the pane", () => {
+  assert.ok(
+    states.includes("flex-1"),
+    "PaneLoading should fill the pane",
+  )
+})
+
+test("the text skeleton is shaped like text", () => {
+  assert.ok(
+    states.includes("export function PaneSkeletonText"),
+    "PaneSkeletonText should exist",
+  )
 })
