@@ -122,8 +122,8 @@ decision is made by somebody who can see it.
 
 ## Merging by hand
 
-A merge into `main` is done in the `main` worktree, and the gate is run
-against the merged tree before the merge is committed:
+A merge into `main` is done in the checkout at `C:\Storage\Coding\Tavi`, and
+the gate is run against the merged tree before the merge is committed:
 
 ```bash
 git fetch origin
@@ -152,22 +152,14 @@ A merge that needs judgement needs somebody who can read both sides and
 decide what the app should be — which is not a thing a YAML workflow can be
 told.
 
-## The `main` worktree
+## The checkout
 
-A merge is done in a checkout of `main` that is its own, so that it never
-happens in a tree somebody is working in. It is a git worktree, beside the
-repository rather than inside it:
-
-```
-C:\Storage\Coding\Tavi-merge        ← the main worktree, on the main branch
-C:\Storage\Coding\Tavi              ← the ordinary checkout, on local
-```
+The repository is checked out at `C:\Storage\Coding\Tavi`, on `main`. Merges
+are done there. There is no separate `main` worktree.
 
 ```powershell
 git worktree list
 ```
-
-Merges are done in the first of those and do not touch the second.
 
 ## Known limitations
 
