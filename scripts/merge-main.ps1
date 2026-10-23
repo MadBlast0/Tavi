@@ -369,14 +369,25 @@ function Reset-Main {
   #>
   param([string[]]$Touched)
 
-  git -C $Worktree merge --abort 2>&1 | Out-Null
+  # Undoing a merge is exactly when git is most likely to write to stderr,
+  # and a native command's stderr becomes a terminating error while
+  # $ErrorActionPreference is "Stop". Relax it here and put it back, so a
+  # failed merge is reported instead of killing the run before it can say
+  # what went wrong.
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+
+  & git -C $Worktree merge --abort 2>&1 | Out-Null
 
   if ($Touched -and $Touched.Count -gt 0) {
-    $paths = $Touched -join " "
-    git -C $Worktree restore --source=HEAD --staged --worktree -- $paths 2>&1 | Out-Null
+    # Pass each path as its own argument. Joined into one string, a path
+    # with a space in it is one pathspec that matches nothing.
+    & git -C $Worktree restore --source=HEAD --staged --worktree -- @Touched 2>&1 | Out-Null
   } else {
-    git -C $Worktree reset --hard $MainBranch 2>&1 | Out-Null
+    & git -C $Worktree reset --hard $MainBranch 2>&1 | Out-Null
   }
+
+  $ErrorActionPreference = $previous
 }
 
 # ---------------------------------------------------------------------------
