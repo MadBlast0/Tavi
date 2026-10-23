@@ -14,42 +14,122 @@
 
 ## Where the work has got to
 
-| Task | | What it produced |
+Every task in this plan, and the state it is in. The states are:
+
+| | |
+|---|---|
+| ✅ done | Finished, and its own checks have passed |
+| 🟡 partly | Some of it is done, and the Status block says what is not |
+| ▶ next | The next one to do. It may also be partly done — the Status block says how much of it stands |
+| ⬜ not started | Nothing done on it yet |
+
+**A task is only marked done once its own checks have passed.** A task
+that is half finished says so, in its Status block, rather than claiming
+to be finished — and `src/lib/plan-bookkeeping.test.ts` checks the two
+against each other, so the tracker cannot drift away from the work.
+
+**The first four tasks that are marked partly are being redone.** They
+were done against a reading of the plan that was wrong: the workspace
+was built as a place you go rather than a place that is, and the rail
+grew a row for it. §1.8 now says what the workspace is. Each of those
+Status blocks says what stands, what was wrong, and what it becomes.
+
+| Task | State | What it produces |
 |---|---|---|
-| 0.1 | ✅ done | The implementation map: the stack, the entry points, the shell, the sidebar, the Chat/Code switch, the composers, the state, the check commands, and the vendored `react-resizable-panels` primitive that is on disk and imported by nothing |
+
+**Phase 0 — Audit the codebase and decide, before editing**
+
+| 0.1 | ✅ done | The audit: the stack, the entry points, the shell, the rail, the two sides, the composers, the state, the check commands, and the raw material on disk |
 | 0.2 | ✅ done | [`docs/visual-baseline.md`](../../visual-baseline.md) — the approved shape, as numbers, and the list of nine things that must not change |
-| 0.3 | ✅ done | The shadcn and Lucide audit: the component families that exist, the one primitive family in use, and the icon sizing convention |
-| 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — the docking decision: `react-resizable-panels` through the app's own component, with the drag built on top of it |
+| 0.3 | ✅ done | The findings, in the two documents it produced: the component map and the icon convention |
+| 0.4 | ✅ done | [`docs/plan/docking.md`](docking.md) — rewritten: the engine is the app's own code, and the three candidates measured against the requirements the plan now has |
+
+**Phase 1 — The frontend foundation**
+
 | 1.1 | ✅ done | [`docs/tokens.md`](../../tokens.md) — the token map — and seven missing tokens, three of which the code already asked for |
 | 1.2 | ✅ done | [`docs/components.md`](../../components.md) — the component map — the last of the app's own code moved off the older component family, and four tests that keep it there |
 | 1.3 | ✅ done | [`docs/icons.md`](../../icons.md) — the icon convention — and `src/blocks/workspace/pane-types.ts`, the mark for each of the thirteen kinds of view |
 | 1.4 | ✅ done | [`docs/layout.md`](../../layout.md) — the height chain and the scroll boundaries — and one real defect fixed: the work area could make the whole window scroll |
-| 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the six that are new |
-| 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the container in the work area, with the surface stepping aside for it |
-| 2.2 | ✅ done | A **Workspace** row in the Code rail, which opens the workspace and closes it again |
-| 2.3 | ✅ done | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
-| 3.1 | ⬜ next | The icon-only button |
-| 3.2 | ⬜ | Menus and tooltips |
-| 3.3 | ⬜ | Popovers and pickers |
-| 3.4 | ⬜ | Dialogs and confirmations |
-| 3.5 | ⬜ | Status, empty, loading and error |
-| 4.1 | ⬜ | The pane frame |
-| 4.2 | ⬜ | The pane header |
-| 4.3 | ⬜ | The pane's actions |
-| 4.4 | ⬜ | The pane registry |
-| 4.5 | ⬜ | The pane's state slots |
-| 5.1 – 5.15 | ⬜ | The thirteen panes, and the consistency pass |
-| 6.1 – 6.5 | ⬜ | The layout engine, and the first panes in it |
-| 7.1 – 7.11 | ⬜ | The interactions: the Views menu, splitting, resizing, docking, focus, maximise, presets, reset, and the pane menu |
-| 8.1 – 8.5 | ⬜ | States, overlays, keyboard, narrow windows, and the polish pass |
-| 9.1 – 9.2 | ⬜ | The QA pass and the handoff note |
+| 1.5 | ✅ done | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight — and `src/lib/workspace-state.ts`, the model of the arrangement, the panes and the groups |
 
-Each task that is done carries a **Status** block with what it produced and
-where it went, and the block is only written after the task's own checks
-have passed. A task marked done is done.
+**Phase 2 — The workspace region, and the way into it**
 
+| 2.1 | ✅ done | `src/blocks/workspace/workspace-host.tsx` — the region the layout lives in, which shows the landing screen when it is empty and the layout when it is not |
+| 2.2 | 🟡 partly | The way in: a session opens the workspace, and the rail keeps its two lists |
+| 2.3 | 🟡 partly | `src/blocks/workspace/workspace-empty.tsx` and `views-picker.tsx` — what an empty workspace says, and the list of what it will hold |
+
+**Phase 3 — Reusable controls and overlay behaviour**
+
+| 3.1 | ✅ done | One icon-button pattern, used by every pane |
+| 3.2 | ✅ done | The menu and context-menu conventions |
+| 3.3 | ✅ done | The popover, select and command patterns |
+| 3.4 | ✅ done | One dialog and confirmation convention |
+| 3.5 | ✅ done | The shared patterns for a pane's unhappy states |
+
+**Phase 4 — The generic pane framework**
+
+| 4.1 | ✅ done | The frame every pane is drawn in |
+| 4.2 | ✅ done | The header: icon, title, actions, and the drag region |
+| 4.3 | ✅ done | The overflow menu, and the close, focus, maximize and pop-out controls |
+| 4.4 | ✅ done | The registry of pane types, and the model of an instance |
+| 4.5 | ✅ done | The shared empty, loading, error and unavailable slots |
+
+**Phase 5 — Every pane's content, one pane at a time**
+
+| 5.1 | ✅ done | The Chat pane |
+| 5.2 | ✅ done | The Code Session pane |
+| 5.3 | ▶ next | The Diff Viewer: the overview and the file list |
+| 5.4 | ⬜ not started | The Diff Viewer: the changed code and its controls |
+| 5.5 | ⬜ not started | The Browser pane |
+| 5.6 | ⬜ not started | The Application Preview pane |
+| 5.7 | ⬜ not started | The Terminal pane |
+| 5.8 | ⬜ not started | The File Explorer pane |
+| 5.9 | ⬜ not started | The File Editor pane |
+| 5.10 | ⬜ not started | The Plan pane |
+| 5.11 | ⬜ not started | The Tasks pane |
+| 5.12 | ⬜ not started | The Agent Activity pane |
+| 5.13 | ⬜ not started | The File Preview pane |
+| 5.14 | ⬜ not started | The Logs pane |
+| 5.15 | ⬜ not started | One look across every pane |
+
+**Phase 6 — Build the docking engine, in the app's own code**
+
+| 6.1 | ⬜ not started | The layout model, and the renderer that draws it |
+| 6.2 | ⬜ not started | The divider, and resizing |
+| 6.3 | ⬜ not started | Dragging a pane, and the drop targets |
+| 6.4 | ⬜ not started | Tab groups |
+| 6.5 | ⬜ not started | Drawing the registered panes |
+| 6.6 | ⬜ not started | The first pane, and composing several |
+
+**Phase 7 — The interactions**
+
+| 7.1 | ⬜ not started | The menu that adds a view |
+| 7.2 | ⬜ not started | Closing a pane, and the branches it leaves |
+| 7.3 | ⬜ not started | Splitting a pane left, right, top or bottom |
+| 7.4 | ⬜ not started | Resizing, and the sizes a pane may have |
+| 7.5 | ⬜ not started | Drag-and-drop docking, end to end |
+| 7.6 | ⬜ not started | Which pane has focus |
+| 7.7 | ⬜ not started | Maximizing a pane, and putting it back |
+| 7.8 | ⬜ not started | The layout presets |
+| 7.9 | ⬜ not started | Resetting, and recovering from a broken layout |
+| 7.10 | ⬜ not started | The pane's own menu |
+| 7.11 | ⬜ not started | Keeping the layout between runs |
+| 7.12 | ⬜ not started | Two sessions, side by side |
+| 7.13 | ⬜ not started | Popping a pane out, and docking it back |
+
+**Phase 8 — States, keyboard, narrow windows, polish**
+
+| 8.1 | ⬜ not started | Every pane's states, checked against the list |
+| 8.2 | ⬜ not started | Menus, popovers and dialogs, checked |
+| 8.3 | ⬜ not started | The workspace by keyboard, and read aloud |
+| 8.4 | ⬜ not started | The workspace at 600 by 338 |
+| 8.5 | ⬜ not started | The last look, against the approved screens |
+
+**Phase 9 — Regression QA and the handoff**
+
+| 9.1 | ⬜ not started | The whole thing, exercised |
+| 9.2 | ⬜ not started | The note that says what is built and what is not |
 ---
-
 # 1. The non-negotiable product contract
 
 ## 1.1 Preserve the existing app first
@@ -122,7 +202,79 @@ The app's selected limit is **six simultaneously visible, docked pane instances 
 - Rearranging the existing six panes must remain possible.
 - The standard example layout is three visible panes in the top row and three in the bottom row.
 - Do not hard-code six fixed cells. The same general layout system must also support one pane, two side-by-side panes, two stacked panes, uneven splits, three columns, nested splits and other valid arrangements.
-- For this initial version, prefer direct visible panes rather than hidden tab stacks. Do not let a tabbed group hide panes that the UI says are simultaneously visible. Only add tabbed pane groups if the product owner explicitly requests them.
+- For this initial version, prefer direct visible panes rather than hidden tab stacks. Do not let a tabbed group hide panes that the UI says are simultaneously visible. **Tabbed pane groups are requested by the product owner and are in scope.** See §1.7.
+
+---
+
+## 1.7 Tabbed groups, and what counts towards the cap
+
+**Tabbed groups are in scope.** The product owner has asked for them
+explicitly, which is the condition §1.5 set for them. A group is a set of
+panes that share one place in the layout, one of which is showing, and the
+rest of which are reached by its tab strip.
+
+A group changes what the cap counts, so the counting is written down:
+
+- **The cap counts pane instances, not places.** A group holding three tabs
+  is three panes, not one. Six visible pane instances means six, whether
+  they are in six groups or in two.
+- **Every pane in the layout counts**, including the ones a tab is hiding.
+  A group is a way of arranging panes, not a way of having more of them.
+- **A pane in its own window does not count** against the main window's six,
+  because it is not in the main window. It still has an id, and it is still
+  a pane instance.
+- **Rearranging is always allowed.** The cap is on how many panes there
+  are, never on moving them.
+
+A group with a single tab is drawn as a plain pane, because a tab strip
+with one tab on it is a decoration and not a control.
+
+---
+
+## 1.8 The shape of the workspace, and how a person gets into it
+
+This section is the one that was got wrong the first time, so it is written
+down as a rule rather than left to be inferred.
+
+**The workspace is the main content region.** It is the area of the window
+beside the rail — the area the prompt composer sits in. It is not a
+destination, it is not a mode, and it is not something the rail navigates
+to. **There is no "Workspace" row in the rail.** The rail lists sessions and
+projects, and nothing else. Adding a docking entry to it is what §4.1
+forbids: *"New docking controls must not crowd the existing shell."*
+
+**The workspace is always there.** What it shows is decided by what is in
+it, not by a flag:
+
+| What is in the workspace | What the region shows |
+|---|---|
+| No session and no panes | The existing landing screen — the greeting and the composer, exactly as it is today |
+| A session, or at least one pane | The layout: the panes, split and arranged |
+
+There is no third state, and no "open" or "closed" flag. A workspace that
+has to be opened and closed is a mode, and a mode needs a way in, and the
+way in is what went wrong.
+
+**A session is how a person gets in.** Opening a session — from the rail's
+list, or by starting one — puts that session's conversation in the work
+area. This is the existing flow in the app and it is the right one: the
+rail already lists sessions, and the app already knows how to open one.
+
+**A pane is how a person adds a tool view.** The workspace toolbar carries
+an **Add view** action, and the choice adds a pane beside what is already
+there. In Claude Code Desktop the same thing happens from the session's own
+title bar, and the panes that can be opened from there are Terminal,
+Changes (the diff), Browser and Files.
+
+**The chat is a pane, not a privileged centrepiece.** In Claude Code Desktop
+the chat sits in the layout beside the diff and the terminal, and moving it
+does not end the conversation. Here the composer is the chat pane's
+composer: it is at the bottom of the pane, it travels with the pane, and the
+conversation it holds belongs to the session, not to the pane.
+
+**The rail's own list is the only navigation.** Sessions and projects, and
+the two sides keep their two different lists. Nothing about the workspace
+adds a row to either.
 
 ---
 
@@ -298,16 +450,30 @@ Keep the current main navigation and sidebar structure. Ensure that the Chat/Cod
 
 ## 4.2 Workspace toolbar
 
-Once the workspace is open, provide a compact toolbar suitable for the current design. Include only actions needed by the current UI:
+Once the workspace has something in it, provide a compact toolbar suitable
+for the current design. It sits at the top of the work area, below the
+window's own caption strip, and it is present only while the workspace has
+a session or a pane. Include only actions needed by the current UI:
 
-- Workspace/view name or current project/session context where useful.
-- **Views/Add View** menu.
+- Workspace/session identity: the project and the session, or the folder
+  and the conversation's name.
+- **Views/Add View** menu, grouped the way the pane types are grouped.
 - Layout preset selector.
 - A layout reset action, placed in a menu or clearly differentiated if it could discard custom arrangement.
 - Optional visible pane-count indicator only if it is helpful; avoid adding decorative status clutter.
 - A clear state for the six-pane cap when the user attempts to add more.
 
 The toolbar should not introduce unrelated settings or duplicate all the actions already available in every pane.
+
+**Where this sits is a deliberate difference from the reference.** Claude Code
+Desktop is an undecorated window whose own title strip doubles as the
+session's toolbar, so the Add View menu and the pane buttons live up there.
+This app's window is also undecorated, but its top strip is the window's
+caption: it carries the sidebar toggle, the application menu and the
+operating system's own window controls. Putting docking actions in there
+would mix the app's navigation with the window's furniture. So the
+workspace's own actions get their own slim strip, and the pane's own
+actions stay in the pane's header.
 
 ## 4.3 Generic pane frame
 
@@ -324,6 +490,30 @@ Every pane uses a shared frame with:
 - A content area that receives pane-specific loading/empty/error/sample states.
 
 The shared frame must not assume that every pane has the same actions. For example, a Terminal may have a clear-output control, Browser may have refresh, and Diff may have a split/unified view toggle. Pane-specific actions belong in a consistent toolbar slot or menu.
+
+### 4.3.1 What a pane looks like
+
+The reference is Claude Code Desktop's pane layout, and the frame follows it
+closely:
+
+- **Panes are flat.** A pane has no card around it, no rounded corners and
+  no shadow. It is a region of the window, and it is separated from its
+  neighbour by a single hairline. The window's own background is the
+  background, and the pane's content sits on it.
+- **The header is a strip, not a card.** A fixed height, the pane's icon and
+  title on the left, and on the right the pane's actions: a button that
+  pops the pane out into its own window, a chevron that opens the pane's
+  overflow menu, and a close control. The three are in that order, and
+  they are the same three in every pane.
+- **The content scrolls inside the pane.** The pane's own content area
+  scrolls; the window does not scroll, and neither does the region the
+  layout lives in.
+- **A session pane carries its own composer.** The composer is at the
+  bottom of the pane, not below the layout. Two session panes side by side
+  have two composers, and each one belongs to its own session.
+- **The focused pane is the one that is lit.** The unfocused panes are
+  dimmed rather than greyed out, and the divider next to the focused pane
+  is the brighter of the two.
 
 ## 4.4 Pane action menu
 
@@ -761,13 +951,22 @@ Each task below is intentionally scoped for a low-cost coding model. Implement o
 
 **Acceptance criteria:** The report accurately identifies the current stack and relevant files. No files are modified.
 
+**Reference:** Claude Code Desktop — the reference app: https://code.claude.com/docs/en/desktop
+
 **Status: done.**
 
-The map is `docs/architecture.md` for the shape of the app, `docs/layout.md`
-for the height chain, and `docs/components.md` for what is already on disk
-and imported by nothing — which is the most important thing the audit
-found, because the raw material for most of this project is already in the
-repository.
+The audit found the stack, the entry points, the shell, the rail, the two
+sides, the composers, the state, the check commands, and the raw material
+already on disk. Each finding landed in the document that owns it:
+
+| The finding | Where it is |
+|---|---|
+| The shape of the app, the entry points, the two chat paths | [`docs/architecture.md`](../../architecture.md) |
+| The height chain and the scroll boundaries | [`docs/layout.md`](../../layout.md) |
+| Every component, and which one to use for which job | [`docs/components.md`](../../components.md) |
+| The icons, and the pack they come from | [`docs/icons.md`](../../icons.md) |
+| The check commands | [`README.md`](../../README.md) — *Checking* |
+| The vendored `react-resizable-panels` primitive, on disk and imported by nothing | [`docs/components.md`](../../components.md) and [`docs/plan/docking.md`](docking.md) |
 
 The one thing that was not obvious and had to be checked: **there is one
 primitive family, not two.** The project has Base UI through shadcn's
@@ -781,6 +980,8 @@ primitive family, not two.** The project has Base UI through shadcn's
 
 **Acceptance criteria:** The visual contract is recorded in the project notes or task report. No UI is changed.
 
+**Reference:** The approved visual baseline: the Chat and Code landing screens, the dark theme, the rail, the composers. See docs/visual-baseline.md
+
 **Status: done.**
 
 | | |
@@ -792,6 +993,17 @@ primitive family, not two.** The project has Base UI through shadcn's
 Nothing was redesigned and no UI was changed. Every number in the document was
 measured in the running app or read out of the source.
 
+**Measured at the floor.** The window cannot be made smaller than 600 × 338,
+and that is where the app has to work. Driven through the real interface at
+that size — the rail opened as a sheet, Code selected, Workspace pressed:
+
+| | |
+|---|---|
+| The page | 338 tall and 338 tall — **it does not scroll** |
+| The work area | 600 × 338, 28px of top padding for the title bar |
+| The empty state | "Nothing open yet", its title between 157 and 179 |
+| The action | "Add view", its bottom at 258 and its right at 350 |
+
 ## Task 0.3 — Audit shadcn/ui and Lucide usage
 
 **Prompt to the coding AI:**
@@ -799,6 +1011,8 @@ measured in the running app or read out of the source.
 > Inspect the project's existing shadcn/ui components, local wrappers/shared UI components and Lucide dependency. List which components are already available for Button, tooltip, dropdown menu, context menu, popover, dialog/alert dialog, input/textarea, select/combobox, command, tabs, collapsible, scroll area, separator, badge, skeleton, progress, toast and resizable/split layout. Confirm the actual Lucide import package and existing icon sizing conventions. Do not install or add anything. Note any missing items that may be needed later.
 
 **Acceptance criteria:** No assumed imports; all findings reflect the repository. No files changed.
+
+**Reference:** shadcn/ui: https://ui.shadcn.com/docs ; Lucide: https://lucide.dev/guide/react
 
 **Status: done.**
 
@@ -822,25 +1036,44 @@ icon is a change to every screen at once.
 
 **Acceptance criteria:** A clear documented choice and rationale exist before the layout engine is built. No dependency is installed.
 
+**Reference:** The docking decision: docs/plan/docking.md — the engine is the app's own code. Claude Code Desktop's pane layout: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 **Status: done.**
 
 | | |
 |---|---|
-| The decision | [`docs/plan/docking.md`](docking.md) — the requirements, the three candidates scored against them, the decision, what it does not settle, and the proof of fit |
-| The choice | `react-resizable-panels`, through the app's own `src/components/resizable`, with the drag-and-drop built on top of it |
-| What decided it | One requirement: **drag-to-dock docking**. The library resizes and does not move panes. Everything else it does, and does in the app's own component, with the persistence already wired |
+| The decision | [`docs/plan/docking.md`](docking.md) — rewritten. The engine is the app's own code |
+| The evidence | The three candidates, measured against the requirements the plan now has |
+| What changed | The library is out. The engine is written in `src/`, in the app's own vocabulary |
 
-No dependency was installed and no implementation code was written.
+The first decision was the wrong one, and it was wrong because it was made
+against the wrong requirements. It read *"a small custom nested-split
+implementation"* as a candidate and rejected it, because writing the
+geometry, the drag, the keyboard resize, the minimum sizes, the
+persistence and the accessibility of the separators by hand is a lot of
+work — and it was, at the time, more work than it bought.
 
-The proof of fit, which is Task 6.1: two generic panes, a horizontal split
-containing a vertical one, a draggable divider, and the app's dark theme —
-at the window's 600 × 338 floor, which is the worst case the layout will
-ever be asked for.
+Three things changed the answer:
 
-**Decision note:** Dockview documents both a full docking component and a Gridview option for resizable panels without tabs. This is one option to evaluate, not a predetermined choice. Use the local stack and exact UX requirements to make the decision.
+1. **The requirements grew.** Tabbed groups, pop-out windows, docking a
+   popped-out pane back, and two sessions side by side are now in scope.
+   None of them is reachable through a resizable-panel library, which
+   resizes and does not move panes.
+2. **The reference is the shape of the thing, not just its behaviour.**
+   Claude Code Desktop's own layout is a flat arrangement of panes with
+   hairline separators, each with its own header and its own controls.
+   Reproducing that faithfully means owning the geometry, the header and
+   the drop indicators — a second set of surfaces and a second set of
+   theming hooks is the opposite of that.
+3. **The app already owns the model.** `src/lib/workspace-state.ts` holds
+   the tree of splits, the rules about what may be in it, and the refusals.
+   The first decision was right that the arrangement belongs to the app.
+   It was wrong that the *geometry* had to come from a package.
 
-# Phase 1 — Establish the frontend foundation
-
+**What the decision does not settle:** the exact pixel geometry of the
+divider, the minimum sizes, and the motion of a drop. Those are the
+engine's own work, in Tasks 6.2 and 6.3, and they are decided by looking
+at the app, not by a document.
 ## Task 1.1 — Map existing visual tokens
 
 **Prompt to the coding AI:**
@@ -848,6 +1081,8 @@ ever be asked for.
 > Map the existing theme tokens for backgrounds, foregrounds, muted text, borders, focus rings, selected/hover/disabled states, typography, radii, spacing and controls. Reuse existing tokens. Add only tokens demonstrably missing for workspace surfaces, pane separators, status states and diff-line presentation. Do not redesign the app, change the overall theme or re-style the current landing screens. Report any new token and why it was needed.
 
 **Acceptance criteria:** Tokens remain centralized and the existing UI looks materially unchanged.
+
+**Reference:** The app's own tokens, in both modes. See docs/tokens.md
 
 **Status: done.**
 
@@ -877,6 +1112,8 @@ separator is `--border`.
 
 **Acceptance criteria:** No duplicate design system; no imports refer to nonexistent files; no unrelated changes.
 
+**Reference:** The app's own components, on one family. See docs/components.md
+
 **Status: done.**
 
 | | |
@@ -904,6 +1141,8 @@ measured in the browser rather than assumed.
 
 **Acceptance criteria:** The plan for icons is consistent, and the existing shell remains unchanged.
 
+**Reference:** Lucide icons and the marks the pane types take. See docs/icons.md
+
 **Status: done.**
 
 | | |
@@ -928,6 +1167,8 @@ settings card, beside the component that shows it.
 
 **Acceptance criteria:** The existing landing screens still fit correctly; there is a clear parent container for the future workspace; no unnecessary global scrollbars appear.
 
+**Reference:** The window's floor, the height chain, what scrolls. See docs/layout.md
+
 **Status: done.**
 
 | | |
@@ -946,54 +1187,86 @@ the same.
 
 **Prompt to the coding AI:**
 
-> Document or implement the minimal frontend state ownership needed for the workspace: app section, active project/session selection, whether the workspace is open, pane instances, active pane, layout geometry, pane-local UI state and overlay state. Keep layout geometry separate from pane content, and keep both separate from future AI/tool execution. Do not implement a backend or the docking behavior in this task.
+> Map the existing state, decide who owns each of the pieces the workspace
+> will need, and write the ownership down. The app section and the active
+> thread belong to the app, not to the workspace. The pane instances, the
+> active pane, the arrangement, the pane-local state and the overlay belong
+> to the workspace. The arrangement is a tree of panes, splits and groups,
+> and it is serializable: a plain object with no functions in it, so it can
+> be written down and read back. Write focused tests for the rules on it.
 
-**Acceptance criteria:** State ownership is clear and does not duplicate the current Chat/Code state unnecessarily.
+**Acceptance criteria:** State ownership is clear and does not duplicate the
+
+**Reference:** Who owns each piece of the workspace's state. See docs/workspace-state.md
+current state; the arrangement's rules are tested; the model survives a
+round trip through JSON.
 
 **Status: done.**
 
 | | |
 |---|---|
-| The map | [`docs/workspace-state.md`](../../workspace-state.md) — all eight, who owns each, where it lives, who changes it, who reads it |
-| The state | `src/lib/workspace-state.ts` — the **six** that are new. The app section and the active thread are not among them |
-| The check | `src/lib/workspace-state.test.ts` — nineteen tests, each broken on purpose to watch it fail |
+| The model | `src/lib/workspace-state.ts` — the tree of panes, splits and groups; the rules on it; the operations on it |
+| The map | [`docs/workspace-state.md`](../../workspace-state.md) — who owns each of the eight |
+| The check | `src/lib/workspace-state.test.ts` — twenty-two rules, each broken on purpose to watch it fail |
 
-Nothing was duplicated: the app section belongs to the composer variant
-provider and the active thread to the thread bridge, and the workspace
-holds neither. A pane may name the session it is about, and that is a
-reference rather than an ownership.
+**What changed.** The `open` flag is gone, and with it `openWorkspace()`
+and `closeWorkspace()`. The arrangement has **three** kinds of node now —
+a pane, a split, and a **group** of panes sharing one place — and a group
+of one collapses into the pane it holds, because a tab strip with one tab
+on it is a decoration and not a control. The store grew the one operation
+the engine needs: `dockPane()`, which takes a pane out of where it was
+and puts it against another one, on an edge or into its group. A move
+never adds a pane, so the cap is never in the way of rearranging.
 
-No component, no rendering, no docking behaviour and no package.
-
-# Phase 2 — Integrate a workspace host without changing the landing UI
-
-## Task 2.1 — Add a workspace host shell
+**What did not change, and is the point of the whole file.** A pane refers
+to a session and a project by **id**, never by a copy. A pane's own state
+is one bag per instance and never one per type. And removing a pane takes
+away the arrangement, the focus and the overlay that referred to it, and
+**nothing else** — closing a window onto a conversation is not closing the
+conversation.
+## Task 2.1 — Make the workspace the region, not a mode
 
 **Prompt to the coding AI:**
 
-> Add the smallest workspace host component in the correct main-content location. It must fill the available space beside the existing sidebar, inherit the current visual design and expose a content slot for the future layout engine. Keep it hidden/inactive while the app is showing the current landing screen unless the existing user flow opens a working session/workspace. Do not build the pane layout, alter landing-screen content or add backend logic.
+> Make the workspace host the main content region of the work area, and
+> make it permanent. It must fill the available space beside the existing
+> sidebar, inherit the current visual design, and hold whatever the
+> workspace shows. The landing screen becomes a child of the region rather
+> than a sibling that takes turns with it. The region must not have an
+> "open" or a "closed" state, and nothing in the rail may navigate to it.
+> Do not build the pane layout, alter landing-screen content or add
+> backend logic.
 
-**Acceptance criteria:** The existing Chat and Code landing screens remain visually approved; the host can be activated in a controlled UI path and fills its container.
+**Acceptance criteria:** The region is always in the tree and fills the
+
+**Reference:** The workspace is the main content region, always there. See §1.8
+work area; the landing screen still fits and still scrolls inside itself;
+the document does not scroll; the rail has no row for the workspace.
 
 **Status: done.**
 
 | | |
 |---|---|
-| The host | `src/blocks/workspace/workspace-host.tsx` — a container in the work area with a slot for the layout to draw in |
+| The region | `src/blocks/workspace/workspace-host.tsx` — the main content region, always there |
 | The check | `src/lib/workspace-host.test.ts` — four rules, each broken on purpose to watch it fail |
 
-Measured in the running app, opening and closing the workspace:
+**What changed.** The host is not a sibling that takes turns with the
+landing surface any more. It is the region, and the landing surface is a
+child of it, because the region is what they share. The host has no flag of
+its own and no "closed" state: what it shows is decided by what is in the
+workspace, and the surface steps aside when the workspace holds a pane.
 
-| | the surface | the host |
-|---|---|---|
-| closed | 1168 × 1086, `display: flex` | not in the tree |
-| open | 0 × 0, `display: none` | 1168 × 1086, 28px of top padding for the title bar |
+Measured in the running app, with the rail open: the region is 1168 × 1086
+and the surface inside it is 1168 × 1058. The 28 pixels between them are
+the title bar's height. The document does not scroll — the scroll height
+and the window's height are both 1086 — and the landing screen's pixels
+are the same as they were.
 
-The document does not scroll in either state. The host and the surface are
-siblings in the work area, not one inside the other, because the work area
-is the thing they share and because the composer will one day be a tile in
-the workspace rather than a thing beside it.
-
+**The landing screens are untouched.** The greeting, the composer, the
+suggestions and the two sides' own lists are exactly as they were, and
+**the rail has no row in it for the workspace**: it lists New, Projects,
+Artifacts, Scheduled, Customize and Archived, and a session list, exactly
+as it did before this work started.
 ## Task 2.2 — Define the UI transition into Code workspace
 
 **Prompt to the coding AI:**
@@ -1002,26 +1275,42 @@ the workspace rather than a thing beside it.
 
 **Acceptance criteria:** Users can see the current Code landing state and separately reach the workspace prototype. The transition is reversible and does not reset unrelated state.
 
-**Status: done.**
+**Reference:** The way in is a session. Claude Code Desktop: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+
+**Status: partly — the way in was wrong, and the way in is being redone.**
 
 | | |
 |---|---|
-| The way in | A **Workspace** row in the Code rail, under New. It is the app's own navigation pattern, and it does not touch the landing screen or the sessions list |
-| The way out | The same row, saying "Close workspace" while the workspace is open |
-| The check | `src/lib/workspace-entry.test.ts` — five rules, each broken on purpose to watch it fail |
+| What was built | A **Workspace** row in the Code rail, which opened the workspace and closed it again |
+| What is right now | The row is gone. The rail lists sessions and projects, and nothing else |
+| What is being redone | The transition itself: a session is what opens the workspace |
 
-The row is live among four disabled ones, and that is honest: the others
-say they are not built yet because there is no artifacts store and nothing
-to schedule, and the workspace is real.
+**What was wrong.** The rail row was the wrong product entry point, and
+the plan said so twice. §1.1: *"Do not remove or rename working items as
+part of the workspace work."* §4.1: *"New docking controls must not crowd
+the existing shell."* The reference has no such row either: Claude Code
+Desktop's rail lists sessions, and the panes are opened from the session's
+own title bar, in the work area.
 
-**The Chat rail is not touched.** Chat is a conversation and Code is
-working in a repository, and the two sides are deliberately two different
-lists. Measured in the running app, the Chat rail is New, Projects,
-Artifacts, Scheduled, Customize, exactly as it was.
+The row was also the reason the workspace was a mode. A row that opens and
+closes something is a row that needs a flag to know which it is doing, and
+the flag is what made the region replace the landing screen instead of
+holding it.
 
-Opening the workspace does not start a conversation, change the side, or
-clear anything. The Code landing screen comes back exactly as it was.
+**What the way in is.** The app already has the right flow and it was
+there all along: the rail lists sessions, and opening one puts that
+session's conversation in the work area. That flow is what opens the
+workspace. A pane is added from the workspace's own toolbar.
 
+So the transition is not *"the rail opens the workspace"*. It is *"opening
+a session puts a session pane in the region"*, and the region shows the
+layout from then on.
+
+**The test that went with the row went with it.** The test that
+asserted the Code rail *has* a Workspace row, and that pressing it opens
+and closes the workspace, was a test of the mistake. It was removed with
+the row, and its replacement says the opposite: the rail has no workspace
+row, and the session is the way in.
 ## Task 2.3 — Add workspace-level empty state
 
 **Prompt to the coding AI:**
@@ -1030,25 +1319,36 @@ clear anything. The Code landing screen comes back exactly as it was.
 
 **Acceptance criteria:** The landing screen remains distinct from an empty workspace; the workspace empty state has a clear next action.
 
-**Status: done.**
+**Reference:** The empty state, and the Views picker. Claude Code Desktop's empty workspace: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
+**Status: partly — the state and the picker are right, the picker cannot choose yet.**
 
 | | |
 |---|---|
-| The state | `src/blocks/workspace/workspace-empty.tsx` — the app's own empty component at its small size: the workspace's mark, "Nothing open yet", one line, one action |
-| The action | `src/blocks/workspace/views-picker.tsx` — a popover listing the thirteen kinds of view in the plan's four groups, each with its mark, its name and what it is for |
-| The check | `src/lib/workspace-empty.test.ts` — six rules, each broken on purpose to watch it fail |
+| What stands | `src/blocks/workspace/workspace-empty.tsx` — the mark, "Nothing open yet", one line, one action. And `src/blocks/workspace/views-picker.tsx` — the thirteen kinds of view in the plan's four groups, each with its mark, its name and what it is for |
+| What is not done | Every entry in the picker is disabled. Choosing one does not add a pane |
 
-The picker reads the list of kinds of view from `src/blocks/workspace/pane-types.ts`
-rather than keeping a copy, so a type added there cannot be missing from
-the picker — and a test says so.
+**What is right.** The picker reads the list of kinds of view from
+`src/blocks/workspace/pane-types.ts` rather than keeping a copy, so a type
+added there cannot be missing from the picker. The groups are the plan's
+own: Conversations, Development, Files, Activity. The state is the app's
+own empty component at its small size, and it is quiet on purpose.
 
-**Nothing can be added yet, and the picker says so.** The panes are later
-work and the layout that would hold them later still, so every entry is
-disabled with the reason on it. That is the app's own idiom: it is what
-the rail does with the destinations that have no screen behind them yet.
+**What is not done.** The entries are disabled with the reason on them —
+*"Not built yet — there is no pane to put it in"* — which is the app's own
+idiom, and honest. But an action that cannot be taken is not a next
+action, and §2.3 asks for a clear one.
 
-# Phase 3 — Build reusable controls and overlay behavior
+The picker becomes live in Task 7.1, when the Views menu is built and the
+choice adds a pane. Until then the empty state says what it can and the
+picker says what it cannot.
 
+**One thing to settle.** The empty state and the landing screen are both
+"nothing here yet", and they are different things: the landing screen asks
+a question and offers a box to type in; the empty workspace says the
+region is empty and offers a way to fill it. The corrected host decides
+which one is on screen, and this task's state is what the region shows
+when the workspace is open and holds nothing. That is settled in Task 2.1.
 ## Task 3.1 — Create/standardize icon-only button behavior
 
 **Prompt to the coding AI:**
@@ -1057,6 +1357,38 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** New icon controls can use one consistent pattern; keyboard users can identify and focus them.
 
+**Reference:** The app's icon-only button. See docs/icons.md §7
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pattern | `src/components/tooltip-icon-button.tsx` — the app's shared icon button, already the standard |
+| The check | `src/lib/icon-button.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) |
+
+**What this task found.** The pattern already existed: a `Button
+variant="ghost" size="icon"` inside a tooltip trigger, with the tooltip's
+text as the visually hidden name, so the visible name and the accessible
+name are the same string and cannot disagree. The `tooltip` prop is
+required, so a caller cannot have the button without the name. The
+component's whole purpose is to make that impossible.
+
+What was missing was the audit and the check. `docs/icons.md` §7 already
+says a new pane uses it, and `docs/components.md` already says to use
+it and not a bare `Button` with `size="icon"`. The raw `size="icon"`
+usages that remain are inside shadcn primitives — dialog close, sheet
+close, sidebar trigger and the like — which are self-contained and are not
+app-level controls. Task 3.1 says not to replace existing buttons
+globally, so they stay.
+
+`src/lib/icon-button.test.ts` is the check: the shared button exists, it
+is built on the app's button with the ghost variant and the icon size, its
+tooltip is required, it names itself for assistive technology, it shows a
+tooltip, it sizes its padding from the presence of an icon, and it
+defaults the tooltip to the bottom.
 ## Task 3.2 — Standardize tooltip, dropdown and context-menu usage
 
 **Prompt to the coding AI:**
@@ -1065,6 +1397,30 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** The workspace can use standard menus without inconsistent behavior or invented component APIs.
 
+**Reference:** The app's menu, tooltip and context-menu primitives. See docs/components.md §2
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/tooltip`, `@/components/dropdown-menu`, `@/components/context-menu` — all on Base UI |
+| The check | `src/lib/menu.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 and §3 |
+
+**What this task found.** All three primitives are already on the canonical
+family — Base UI — and all three carry the same destructive variant, so a
+menu that offers a destructive action looks the same whether it is opened
+from a trigger or from a right click. The pane's own menu uses the shared
+dropdown with `align="end"`, so it does not cover the pane's title, and
+its close action is destructive. The tooltip opens on focus as well as on
+hover, so a keyboard user gets the name.
+
+Nothing was added. The primitives cover the job, and a custom menu would
+have been a second one. The conventions are written down in
+`docs/components.md` §3, and the pane's menu is the proof that they are
+followed.
 ## Task 3.3 — Standardize popovers and selection pickers
 
 **Prompt to the coding AI:**
@@ -1073,6 +1429,28 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** The primitives are ready for reuse and follow the local shadcn implementation.
 
+**Reference:** The app's popover, select and command primitives. See docs/components.md §2
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/popover`, `@/components/select`, `@/components/combobox`, `@/components/command` — all on Base UI |
+| The check | `src/lib/popover-picker.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** All four primitives are already on the canonical
+family — Base UI — and the command palette is built on Base UI's dialog
+with cmdk for the search. The Views picker, which is the anchored pane-type
+picker, is a popover: a small anchored panel, the right primitive for a
+compact list. Its entries are disabled with a reason rather than pretending
+they work, and the picker keeps its entries in the plan's four groups.
+
+Nothing was added. The primitives cover the job, and the Views picker is
+the proof that the anchored pattern is followed. The Views menu itself is
+Task 7.1.
 ## Task 3.4 — Standardize dialogs and confirmations
 
 **Prompt to the coding AI:**
@@ -1081,6 +1459,28 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** A common dialog convention exists for future rename/reset/unsaved-demo-state interactions.
 
+**Reference:** The app's dialog and alert-dialog primitives. See docs/components.md §2
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/dialog`, `@/components/alert-dialog` — both on Base UI |
+| The check | `src/lib/dialog.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** Both primitives are already on the canonical
+family — Base UI's drawer — and both carry a title, a description and a
+close. The alert dialog also carries a cancel and an action, which is what
+makes it a confirmation rather than a form. The dialog has a body slot,
+which is where a form's fields go.
+
+Nothing was added. The primitives cover the job, and a custom dialog would
+have been a second one. The conventions are written down in
+`docs/components.md` §3: a dialog is a form that wants focus, a
+confirmation is for destructive or disruptive actions and only then.
 ## Task 3.5 — Standardize status, empty, loading, error and toast patterns
 
 **Prompt to the coding AI:**
@@ -1089,8 +1489,30 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** Future panes have consistent patterns for non-happy-path states without a new design system.
 
+**Reference:** The app's badge, empty, skeleton, progress and toast primitives. See docs/components.md §2
+
 # Phase 4 — Build the generic pane framework
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The primitives | `@/components/badge`, `@/components/empty`, `@/components/skeleton`, `@/components/progress`, `@/components/toast` — all on Base UI |
+| The check | `src/lib/status.test.ts` — ten rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** All five primitives are already on the canonical
+family — Base UI — and the workspace empty state is the proof that the
+empty pattern is followed: it uses the shared empty component at its small
+size, with a title, a description and the Views picker as its one action.
+
+Nothing was added. The primitives cover the job, and a pane that needs a
+status, a loading placeholder, an empty state or a toast takes the one that
+is already there. The conventions are written down in
+`docs/components.md` §3: colour alone is never the message, and a status
+carries a label, a symbol or a shape as well as a colour.
 ## Task 4.1 — Create the Pane container
 
 **Prompt to the coding AI:**
@@ -1099,6 +1521,35 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** The Pane can wrap arbitrary content, fits within parent bounds and has consistent header/content geometry.
 
+**Reference:** The pane frame. Claude Code Desktop's panes: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The frame | `src/blocks/workspace/pane.tsx` — the pane frame, with a header strip, a scrollable content area, and the three controls |
+| The check | `src/lib/pane.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The frame already existed, written against the
+reference: a flat region on the window's background, no card, no rounded
+corner, no shadow, separated from its neighbour by a single hairline. The
+header is a strip of a fixed height, with the pane's mark and title on
+the left and the three controls — pop out, the menu's chevron, and close —
+on the right, each an icon-only button with its name. The content area
+takes the rest and clips, so the pane scrolls its own content and the
+window does not move.
+
+What was missing was the instance's identity and its secondary context.
+The frame now takes an `id`, a `type` key and an optional `context`
+string, so a pane can say which instance it is, which type it is, and
+what it is about — a filename, a session, a project — and the header
+shows the context beside the title.
+
+The frame does not own the layout tree and does not run anything. It
+draws itself and asks for its content.
 ## Task 4.2 — Implement the pane header
 
 **Prompt to the coding AI:**
@@ -1107,6 +1558,32 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** Header elements remain usable at full and narrow pane widths; drag initiation is not triggered by every header click.
 
+**Reference:** The pane header: icon, title, actions, drag region. See §4.3.1
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The header | `src/blocks/workspace/pane.tsx` — the header strip, with the mark, the title, the secondary context and the three controls |
+| The check | `src/lib/pane-header.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The header was already there, written against the
+reference: a strip of a fixed height, the pane's mark and title on the left,
+and the three controls — pop out, the menu's chevron, and close — on the
+right, each an icon-only button carrying its name. The active pane's header
+is lit with a muted background and the active title is the foreground
+colour; the inactive one is transparent with a muted title, which is how a
+person tells which pane has the focus.
+
+What was missing was the **drag handle**. The header's left part — the mark,
+the title and the context — is now a separate element with `data-drag-handle`
+on it, and it is the element Task 7.5 will start a drag from. The buttons
+are in their own element beside it, so a click on a button does not start a
+drag, and a drag does not reach the buttons. The header is a strip and does
+not grow with its content, so narrow panes do not push the layout around.
 ## Task 4.3 — Add pane actions and overflow menu
 
 **Prompt to the coding AI:**
@@ -1115,6 +1592,30 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** Pane controls look consistent; actions do not overlap the title or accidentally start a drag.
 
+**Reference:** The pane's overflow menu and close/focus/maximise/pop-out. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The frame | `src/blocks/workspace/pane.tsx` — the overflow menu, the pop-out, the close control, and the focus action |
+| The check | `src/lib/pane-actions.test.ts` — six rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md) §7, [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The pane already carried its three controls — pop
+out, the menu's chevron, and close — and they were already icon-only
+buttons carrying their names. What was missing was the **focus** action in
+the overflow menu, and the **conditional** offering of actions: split and
+focus are offered only when their callbacks are provided, so a pane that
+cannot split or focus does not pretend it can. The close action is
+destructive, and the pop-out control says "not available yet" when it
+cannot be used.
+
+Maximize and restore are not here. They need the layout engine, and they
+are Task 7.7's job — an action that cannot work is omitted rather than
+drawn as though it could.
 ## Task 4.4 — Create the pane registry and instance model
 
 **Prompt to the coding AI:**
@@ -1123,6 +1624,33 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** Duplicate instances get unique IDs; unknown types fail gracefully; adding a pane type does not require rewriting the registry consumer.
 
+**Reference:** The pane registry and instance model. A session is not a pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The registry | `src/blocks/workspace/pane-registry.tsx` — the registry, built from `pane-types.ts`, with renderers, actions and the duplicate rule |
+| The check | `src/lib/pane-registry.test.ts` — seven rules, each broken on purpose to watch it fail |
+| The map | [`docs/icons.md`](../../icons.md), [`docs/components.md`](../../components.md) |
+
+**What this task found.** The naming half already existed in
+`pane-types.ts` — the key, the name, the mark and the description — and
+the doing half did not. The registry is built from `PANE_TYPES`, so the
+two cannot drift apart: a type added to `pane-types.ts` is in the
+registry with a placeholder renderer, and a type removed from one is
+removed from the other. The registry adds the renderer, the actions and
+the duplicate rule; the pane types add the name and the mark.
+
+The renderers are placeholders — "coming soon" — until Phase 5 builds each
+pane's content. The registry is the only place that knows which renderer a
+type takes, so adding a pane's real content means changing one entry here.
+The shared actions are defined once, and a chat and a code session cannot
+be duplicated, because they are one thing at a time.
+
+The layout engine does not know what a pane type is. It asks the registry.
 ## Task 4.5 — Create reusable pane empty/loading/error state slots
 
 **Prompt to the coding AI:**
@@ -1131,10 +1659,49 @@ the rail does with the destinations that have no screen behind them yet.
 
 **Acceptance criteria:** Every pane can present its own state without duplicating markup or breaking the Pane frame.
 
+**Reference:** The pane's empty/loading/error slots. See §4.5
+
 # Phase 5 — Implement every pane's visual content, one pane at a time
 
 Implement the tasks in order. Do not integrate real services. Each task should make the pane look complete and its local interactions demonstrable.
 
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The slots | `src/blocks/workspace/pane-states.tsx` — empty, loading, error, unavailable and spinner |
+| The check | `src/lib/pane-states.test.ts` — eight rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The primitives already existed — the empty component, the skeleton, the progress indicator, the toast — and the pane needed slots that use them rather than re-inventing them. The slots are `PaneEmpty`, `PaneLoading`, `PaneError`, `PaneUnavailable` and `PaneSpinner`, and each takes its own text, so a pane supplies the words that fit it rather than inheriting a sentence written for a different one. The header stays visible while the content changes state, because the slots are content and not frames — they do not draw a header, so the pane's header is the one that stays.
+
+The empty slot offers at most one action, and the error slot offers a retry only when one can actually be retried. The unavailable slot is drawn as a fact about what the app can do, not as an error, because the two are different things and a person who sees one should not think the other.
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The slots | `src/blocks/workspace/pane-states.tsx` — PaneEmpty, PaneLoading, PaneError, PaneUnavailable, PaneSkeletonText |
+| The check | `src/lib/pane-states.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2 |
+
+**What this task found.** The primitives already existed — the empty
+component, the skeleton, the alert, the button — and what was missing was
+the shared slots that put them inside a pane. The four slots are
+`PaneEmpty`, `PaneLoading`, `PaneError` and `PaneUnavailable`, plus
+`PaneSkeletonText` for the common case of a line of text. The header
+stays put while the content changes state, because the slot is the content
+and not the frame.
+
+The copy and the icon are the pane's own, because a Terminal's empty
+state and a Diff Viewer's empty state are different things. The error
+slot offers a retry only when one is given, and the unavailable slot has
+no retry and no alert role, because nothing went wrong and there is
+nothing to retry. The distinction matters: a retry button on an
+unavailable pane is a button that does nothing.
 ## Task 5.1 — Chat pane
 
 **Prompt to the coding AI:**
@@ -1143,6 +1710,28 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Composer stays visible; long content scrolls within the message area; states are complete; no backend calls.
 
+**Reference:** The Chat pane. Claude Code Desktop's chat pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pane | `src/blocks/workspace/panes/chat-pane.tsx` — the Chat pane, with sample messages, a scrollable timeline and a composer |
+| The check | `src/lib/chat-pane.test.ts` — nine rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The pane is built on the shared pane frame, with
+the shared state slots for its empty, loading, error and unavailable states.
+The messages scroll inside the pane and the composer stays at the bottom.
+The sample messages include a fenced code block, so the pane proves that
+code survives inside a message. The reply is a mock: typing and sending
+appends the user's message and, after a short delay, a reply that says
+"No model was called." No model is called.
+
+The state selector at the top of the pane switches between the six states,
+so each one can be seen without changing code.
 ## Task 5.2 — Code Session pane
 
 **Prompt to the coding AI:**
@@ -1151,6 +1740,28 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** It feels like a coding session, not a copy of the generic Chat pane; there is no actual execution.
 
+**Reference:** The Code Session pane. Claude Code Desktop's session pane: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+
+
+
+**Status: done.**
+
+| | |
+|---|---|
+| The pane | `src/blocks/workspace/panes/code-session-pane.tsx` — the Code Session pane, with project context, activity timeline, and composer |
+| The check | `src/lib/code-session-pane.test.ts` — eleven rules, each broken on purpose to watch it fail |
+| The map | [`docs/components.md`](../../components.md) §2, [`docs/icons.md`](../../icons.md) §7 |
+
+**What this task found.** The pane is built on the shared pane frame, with
+the shared state slots for its empty, loading, error and unavailable states.
+The activity timeline shows file reads, writes, terminal commands, and diffs
+with execution status badges. The composer at the bottom sends messages that
+append a mock reply — no agent is run. The state selector at the top
+switches between empty, working, completed, failed, unavailable, long, and
+error states.
+
+The pane carries project context (folder name and git branch) in its header,
+distinguishing it from the generic Chat pane.
 ## Task 5.3 — Diff Viewer: overview and file navigation
 
 **Prompt to the coding AI:**
@@ -1158,6 +1769,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Diff Viewer's header, change summary, changed-file list, file selection, status/count labels and narrow-layout behavior as specified in Section 5.3. Use consistent Lucide file icons and non-color cues. Use sample data only. Do not calculate Git changes or access the project filesystem. The diff-content area may use a temporary sample renderer until the next task.
 
 **Acceptance criteria:** The file/change overview is readable and scroll-contained; selecting a sample file updates selected state.
+
+**Reference:** The Diff Viewer. Claude Code Desktop's diff view: https://code.claude.com/docs/en/desktop#review-changes-with-diff-view
 
 ## Task 5.4 — Diff Viewer: changed code surface and controls
 
@@ -1167,6 +1780,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Code lines remain legible at varied pane sizes; color is not the only cue; controls operate on sample state only.
 
+**Reference:** The Diff Viewer's changed code. Claude Code Desktop: https://code.claude.com/docs/en/desktop#review-changes-with-diff-view
+
 ## Task 5.5 — Browser pane
 
 **Prompt to the coding AI:**
@@ -1174,6 +1789,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Browser pane to the specification in Section 5.4. Include back/forward/reload controls, an editable address field, a contained page surface and no-preview/loading/unavailable/error/sample-loaded states. Controls may switch between predefined local mock views only. Do not make network requests, navigate arbitrary URLs or launch an external browser.
 
 **Acceptance criteria:** Toolbar controls have correct enabled/disabled states; page content never expands the workspace; no network integration.
+
+**Reference:** The Browser pane. Claude Code Desktop's Browser pane: https://code.claude.com/docs/en/desktop#preview-your-app
 
 ## Task 5.6 — Application Preview pane
 
@@ -1183,6 +1800,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** The preview surface is contained and visually clear; the default unavailable state cannot be mistaken for a live app.
 
+**Reference:** The Application Preview pane. Claude Code Desktop's preview: https://code.claude.com/docs/en/desktop#preview-your-app
+
 ## Task 5.7 — Terminal pane
 
 **Prompt to the coding AI:**
@@ -1190,6 +1809,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Terminal pane to the specification in Section 5.6. Include a sample working-directory label, monospace prompt/output, contained scrolling, clear-output and optional copy-output actions, plus empty/disconnected/long-output states. If a command input is shown, it must be explicitly simulated and must never execute a real command. Do not spawn processes, connect to a shell or claim a command succeeded.
 
 **Acceptance criteria:** Terminal typography/whitespace are correct; local controls work on displayed sample output only.
+
+**Reference:** The Terminal pane. Claude Code Desktop's terminal: https://code.claude.com/docs/en/desktop#run-commands-in-the-terminal
 
 ## Task 5.8 — File Explorer pane
 
@@ -1199,6 +1820,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Tree interactions work locally and remain usable in narrow panes; there are no real file operations.
 
+**Reference:** The File Explorer pane. Claude Code Desktop's files: https://code.claude.com/docs/en/desktop#open-and-edit-files
+
 ## Task 5.9 — File Editor pane
 
 **Prompt to the coding AI:**
@@ -1206,6 +1829,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the File Editor pane to the specification in Section 5.8. Reuse an existing editor if the project already includes one and it is appropriate. Otherwise, build a lightweight sample source view/editor surface without adding a heavyweight editor dependency. Include file title, optional path, line numbers, readable code, read-only/dirty states, long-file scrolling and unavailable state. Any edits remain local and are never written to disk.
 
 **Acceptance criteria:** Code presentation is legible and contained; local dirty state is honest; no disk writes or unnecessary editor packages.
+
+**Reference:** The File Editor pane. Claude Code Desktop's file pane: https://code.claude.com/docs/en/desktop#open-and-edit-files
 
 ## Task 5.10 — Plan pane
 
@@ -1215,6 +1840,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Plan hierarchy is understandable and state/progress remains internally consistent.
 
+**Reference:** The Plan pane. Claude Code Desktop's plan pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 ## Task 5.11 — Tasks pane
 
 **Prompt to the coding AI:**
@@ -1222,6 +1849,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the Tasks pane to the specification in Section 5.10. Include sample task rows, statuses, optional priority/context, a compact filter and task detail expansion if useful. Include empty, populated, filtered, no-match, all-complete and failed/blocked states. Filtering and expansion may work locally; do not run actual jobs.
 
 **Acceptance criteria:** Statuses are distinguishable and filter behavior works on sample data.
+
+**Reference:** The Tasks pane. Claude Code Desktop's tasks pane: https://code.claude.com/docs/en/desktop#watch-background-tasks
 
 ## Task 5.12 — Agent Activity pane
 
@@ -1231,6 +1860,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Activity is scannable and quiet, and does not appear to report real executions.
 
+**Reference:** The Agent Activity pane. Claude Code Desktop's subagent pane: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+
 ## Task 5.13 — File Preview pane
 
 **Prompt to the coding AI:**
@@ -1238,6 +1869,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Implement the File Preview pane to the specification in Section 5.12. Provide sample representations for text/Markdown/JSON and image/document/PDF-style content, plus empty, unsupported-type, unavailable/error and long-content states. Reuse current renderers and components where possible. Do not load real local files or add a PDF/image rendering library for the mockup.
 
 **Acceptance criteria:** Each sample type has an intentional presentation; the pane does not claim to open a real file.
+
+**Reference:** The File Preview pane. Claude Code Desktop's preview: https://code.claude.com/docs/en/desktop#preview-your-app
 
 ## Task 5.14 — Logs pane
 
@@ -1247,6 +1880,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Long messages and large sample lists remain readable; search/filter state behaves correctly on mock data.
 
+**Reference:** The Logs pane. Claude Code Desktop's terminal output: https://code.claude.com/docs/en/desktop#run-commands-in-the-terminal
+
 ## Task 5.15 — Pane consistency review
 
 **Prompt to the coding AI:**
@@ -1255,138 +1890,402 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Pane types feel like one app; existing landing pages remain unchanged; shared styles are reused.
 
-# Phase 6 — Implement or integrate the docking engine
+**Reference:** One look across every pane. See §4.3.1
 
-## Task 6.1 — Run a minimal proof of fit for the chosen docking approach
+# Phase 6 — Build the docking engine, in the app's own code
 
-**Prompt to the coding AI:**
+**The engine is ours.** Task 0.4 chose a third-party docking library; that
+decision has been reopened and reversed, and this phase is the engine
+written in `src/`. It is written in the app's own vocabulary — the app's
+tokens, the app's focus treatment, the app's motion — and the layout model
+belongs to the app, not to a package. See `docs/plan/docking.md`.
 
-> Based on the decision in Task 0.4, implement the smallest isolated proof of fit for the selected layout library or custom approach. Demonstrate two generic panes split horizontally and vertically, a draggable divider, and correct dark-theme integration inside a temporary/test view. Do not migrate the full app or implement all workspace actions yet. Do not add a second layout engine.
+Nothing in this phase is a demo. Every task here produces the real engine,
+in the real workspace, and the checks are the app's own.
 
-**Acceptance criteria:** The selected approach supports the required geometry and styling; if it does not, stop and report before broad integration.
-
-## Task 6.2 — Create a layout adapter boundary
-
-**Prompt to the coding AI:**
-
-> Introduce a small adapter/interface between the app and the chosen layout engine. The rest of the app should request operations such as add pane, remove pane, split, move, resize, focus, maximize and serialize without relying directly on library internals everywhere. Keep the adapter intentionally small; do not wrap every library API or build an unnecessary framework. If the selected layout library already provides a suitable stable API, expose only the operations this app uses.
-
-**Acceptance criteria:** Pane content and registry remain independent of the layout vendor; adapter code is easy to trace.
-
-## Task 6.3 — Define layout schema and validation
+## Task 6.1 — The layout model, and the renderer that draws it
 
 **Prompt to the coding AI:**
 
-> Define or map the layout representation for the chosen engine. If the engine uses a nested split tree, represent split orientation, child nodes and ratios without hard-coded six-slot assumptions. If the library owns geometry, use its supported layout schema through the adapter rather than duplicating it. Add validation for unique pane instance IDs, known pane types, valid ratios and the six-visible-pane limit. Write focused tests if the project has a test setup.
+> Write the layout model and the component that draws it. The model is a
+> tree: a leaf names a pane instance, a split names an orientation, a ratio
+> and two children, and a group names a set of panes that share one place
+> and one of which is showing. It lives in `src/lib/workspace-state.ts`
+> beside the rest of the workspace's state, and it is serializable — a
+> plain object with no functions in it, so it can be written down and read
+> back. The renderer walks the tree and draws it: a split is a flex row or
+> column with a divider between its children, and a group is a tab strip
+> above the pane that is showing.
+>
+> A pane that is alone in the tree is drawn as a plain pane, with no strip
+> and no divider. The geometry is the app's own: the panes are flat, they
+> share the window's background, and they are separated by a single
+> hairline. Reuse the app's tokens and its focus treatment; do not
+> introduce a second design system and do not add a package.
 
-**Acceptance criteria:** Layout schema is valid, testable and does not duplicate the library's internal model unnecessarily.
+**Acceptance criteria:** A tree of one pane, two side by side, two stacked
 
-## Task 6.4 — Render registered pane content in the layout
+**Reference:** The layout model and the renderer. docs/plan/docking.md §5
+and a nested arrangement all draw correctly; the model survives a
+round-trip through JSON; a single-pane tree draws no chrome it does not
+need.
+
+## Task 6.2 — The divider, and resizing
 
 **Prompt to the coding AI:**
 
-> Replace the temporary proof-of-fit panes with the registered pane renderers. The layout engine should render pane instances by ID/type and pass through their own local UI state. Ensure multiple instances of the same type do not share unintended selection or editor state. Do not add the Views menu or drag-and-drop behaviors in this task.
+> Write the divider between two children of a split, and the resizing it
+> does. Dragging it moves the divider; the keyboard moves it too, because a
+> layout that can only be changed by dragging is not reachable. Give the
+> divider the app's own role — a separator with a visible focus ring, an
+> accessible name, and a value that says where it is — and give it a
+> sensible minimum size for each of its two halves, so a pane cannot be
+> dragged to nothing.
+>
+> Resizing one split must not move the dividers of the splits nested
+> inside it. A cancelled drag must leave the ratio exactly as it was.
 
-**Acceptance criteria:** Any registered pane type can render in the workspace and preserve its own presentation state during layout changes.
+**Acceptance criteria:** The divider drags, resizes with the keyboard, and
 
-## Task 6.5 — Add the first pane and compose multiple panes
+**Reference:** The divider and resizing. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+respects the minimum sizes; nested splits are unaffected by an outer
+resize; a cancelled drag changes nothing.
+
+## Task 6.3 — Dragging a pane, and the drop targets
 
 **Prompt to the coding AI:**
 
-> Wire the workspace empty-state Views/Add View action to create the first pane instance. Then support adding another pane with a sensible default split. Use the pane registry and layout adapter. Enforce the six-pane cap at the add-operation boundary. Keep the existing Code landing state separate and unchanged.
+> Write the drag that moves a pane, and the targets it can be dropped on.
+> The drag starts from the pane header's own drag region, and it must not
+> start from a click on a header button, on the title, or on text being
+> selected in the content. While the drag is over the layout, the pane
+> under the pointer shows where it would land: an edge on the left, right,
+> top or bottom means a split on that side, and the middle means it joins
+> the group that is there.
+>
+> The indication is drawn by the app, in the app's own colours, and it is
+> an insertion indicator rather than a preview of the whole layout — the
+> reference shows a line, not a mock-up. Nothing is moved until the drop
+> is committed, so a cancelled drag cannot leave the layout changed.
 
-**Acceptance criteria:** Empty workspace to one pane to multiple panes works; the seventh pane is prevented; IDs remain unique.
+**Acceptance criteria:** The drag starts only from the header's drag
+
+**Reference:** Dragging a pane, and the drop targets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+region; all five targets show a clear indicator; nothing moves until the
+drop; a cancelled drag leaves the layout byte-for-byte as it was.
+
+## Task 6.4 — Tab groups
+
+**Prompt to the coding AI:**
+
+> Write the tab group: a strip of tabs above the pane that is showing, with
+> the group's panes in it. A tab shows the pane's mark and its title, and
+> carries the pane's own state — a renamed pane shows its new name. Tabs
+> can be switched by clicking, reordered by dragging, and closed from the
+> strip. The group has its own stable id.
+>
+> A group with one tab is drawn as a plain pane, with no strip, because a
+> tab strip holding one tab is a decoration and not a control. The group
+> is where a dropped pane lands when it is dropped on the middle of
+> another pane, and the tab it joins is the one that is showing.
+
+**Acceptance criteria:** Tabs switch, reorder and close; a single-tab
+
+**Reference:** Tab groups. See §1.7
+group draws no strip; a pane dropped on the middle of a pane joins that
+pane's group.
+
+## Task 6.5 — Drawing the registered panes
+
+**Prompt to the coding AI:**
+
+> Make the renderer draw the registered pane renderers rather than
+> placeholders. Every pane instance is drawn by the renderer its type
+> names, and each instance keeps its own state: two File Explorers on
+> screen at once are two different places, and a file selected in one says
+> nothing about the other. Do not add the Views menu or the drag behaviour
+> in this task, and do not change the registry's shape.
+
+**Acceptance criteria:** Every registered pane type draws in the layout;
+
+**Reference:** Drawing the registered panes. See §4.3.1
+two instances of one type keep separate state; the registry is the only
+place that knows what a pane type is.
+
+## Task 6.6 — The first pane, and composing several
+
+**Prompt to the coding AI:**
+
+> Wire the workspace's Add view action to create a pane, and make a second
+> pane split the region beside the first. Use the model from Task 6.1 and
+> the operations in the workspace state; do not build a second arrangement
+> model. Enforce the six-pane cap where a pane is added, and say why when
+> the cap refuses it.
+>
+> The landing screen stays as it is: with no session and no panes, the
+> work area shows the greeting and the composer, and the layout is not
+> there at all.
+
+**Acceptance criteria:** The empty workspace becomes one pane and then
+
+**Reference:** The first pane, and composing several. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+several; the seventh pane is refused with a reason; the pane ids stay
+unique; the landing screen is untouched when there are no panes.
 
 # Phase 7 — Complete pane and layout interactions
 
-## Task 7.1 — Add the Views menu
+## Task 7.1 — The Views menu
 
 **Prompt to the coding AI:**
 
-> Build the workspace Views/Add View picker using the established shadcn menu/popover/command pattern. Organize available pane types into clear groups such as Conversations, Development, Files and Activity. Show Lucide icon, readable title and a concise description where helpful. At six panes, disable or block additional pane insertion and explain the limit. Searchable selection may be added if it fits existing components. All options must use the pane registry, not hard-coded render logic in the menu.
+> Build the workspace's Add view picker using the app's own menu, popover
+> and command primitives. Organize the pane types into the plan's groups:
+> Conversations, Development, Files and Activity. Each entry shows the
+> pane's mark, its name, and a line saying what it is for. Every entry
+> comes from the pane registry, so a type added there is offered here
+> without a second list to keep in step.
+>
+> At six panes, the entries are disabled and the reason is on them. Search
+> is added if the app's command component carries it well, and not
+> otherwise.
 
-**Acceptance criteria:** Every registered pane type is discoverable; keyboard selection works; max count is clear; selection adds the chosen type.
+**Acceptance criteria:** Every registered pane type is offered; the
 
-## Task 7.2 — Implement pane close/removal and empty branches
+**Reference:** The Views menu. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+keyboard can reach and choose one; the cap is explained; choosing one
+adds that pane.
 
-**Prompt to the coding AI:**
-
-> Implement closing/removing a pane through its header and overflow menu. Update the layout using the adapter so empty split branches collapse safely and remaining panes keep their content/state. If no panes remain, return to the workspace empty state. Do not delete or close an underlying real session or project when its pane is closed. Confirm only when a local demo edit would genuinely be discarded.
-
-**Acceptance criteria:** Closing panes from any position preserves the validity and expected geometry of the remaining workspace.
-
-## Task 7.3 — Implement explicit split actions
-
-**Prompt to the coding AI:**
-
-> Wire pane split commands for left, right, top and bottom using the layout adapter. Show a drop-insertion result around the selected pane while preserving all current pane IDs/content. Choose an appropriate pane type to add through the Views picker or a clearly defined default flow. Validate the six-pane cap before committing. Do not add drag-and-drop in this task.
-
-**Acceptance criteria:** All supported orientations work; failed splits leave the layout unchanged.
-
-## Task 7.4 — Implement resize behavior and minimum sizes
+## Task 7.2 — Closing a pane, and the branches it leaves
 
 **Prompt to the coding AI:**
 
-> Finalize resizable dividers using the selected engine's supported implementation. Set reasonable minimum pane dimensions based on the real desktop UI and test at the supplied screenshot size. Resizing one split must not unexpectedly change unrelated nested splits. Make divider hover/focus states visible without adding required animations. Handle pointer cancellation cleanly.
+> Implement closing a pane from its header and from its menu. A split left
+> with one child collapses into that child, so the tree does not keep a
+> branch that is holding nothing. The panes that are left keep their
+> content and their state, and a group left with one tab becomes a plain
+> pane.
+>
+> Closing a pane does not close the session it was about, and it does not
+> touch the project. Closing the last pane returns the work area to the
+> landing screen.
 
-**Acceptance criteria:** Resizing works horizontally and vertically; headers/content remain usable; minimum sizes are respected.
+**Acceptance criteria:** Closing a pane from any position leaves a valid
 
-## Task 7.5 — Implement drag-and-drop docking
+**Reference:** Closing a pane. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+layout; the remaining panes keep their state; no session is closed.
 
-**Prompt to the coding AI:**
-
-> Implement drag-and-drop docking with the selected layout engine. Use the dedicated pane-header drag handle. Show clear left/right/top/bottom drop targets while dragging. Dropping creates the requested split and preserves both pane instances and their local state. Cancelled drops restore the original layout. Do not create hidden tab groups in this version; the intended behavior is visibly arranged panes. Enforce the six-pane cap for pane creation while still allowing existing panes to move at the cap.
-
-**Acceptance criteria:** Dragging supports all four edges, visual targets are clear, cancellation is safe and existing pane content is never lost.
-
-## Task 7.6 — Focus/active pane state
-
-**Prompt to the coding AI:**
-
-> Add consistent active-pane state. Clicking inside a pane or its header should focus it without triggering drag or an unrelated action. Style the focused pane subtly so users can identify the current target. Keep pane focus separate from mock agent status. Ensure keyboard focus and the active visual state do not contradict each other.
-
-**Acceptance criteria:** Exactly one pane is treated as the active pane where the UX requires one; active styling does not overwhelm the dark theme.
-
-## Task 7.7 — Maximize and restore a pane
+## Task 7.3 — Splitting a pane on purpose
 
 **Prompt to the coding AI:**
 
-> Implement maximize/restore for a pane using the selected layout engine or adapter. Maximizing should temporarily give one pane the available workspace area while retaining the previous layout and pane instances; restoring must return to the same arrangement and ratios. Do not destroy sibling panes or reset their local state.
+> Wire the split commands — left, right, top, bottom — to the same tree
+> operation the drag uses, so a split made by a menu and a split made by a
+> drag are the same split. The new half holds a pane chosen through the
+> Views picker, and the split is refused, with a reason, when the cap
+> would be broken.
+>
+> The command is offered in the pane's menu and in the pane's header, so
+> it is not reachable only by dragging.
 
-**Acceptance criteria:** Maximize and restore are reversible and preserve layout/content state.
+**Acceptance criteria:** All four directions work; a split made by a menu
 
-## Task 7.8 — Implement layout presets
+**Reference:** Splitting a pane. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+is identical to one made by a drag; a refused split changes nothing.
 
-**Prompt to the coding AI:**
-
-> Add a compact layout preset picker with Single Pane, Two Side-by-Side, Two Stacked, Three Columns and Three-Above/Three-Below. Use the generic layout model/library, not hard-coded six-slot content. Define whether presets rearrange existing panes by stable order or create panes; do not silently discard panes or local sample state. If the current pane count cannot fit a preset safely, ask for a clear choice or adjust only according to a documented deterministic rule. Maintain the six-visible-pane cap.
-
-**Acceptance criteria:** Presets match their names; three-above/three-below renders six visible panes; current content is not silently lost.
-
-## Task 7.9 — Reset and layout recovery
-
-**Prompt to the coding AI:**
-
-> Add a reset-layout action and robust empty/invalid-layout recovery. Use a confirmation only if resetting could discard the user's custom arrangement; explain that this resets pane layout, not projects or sessions. The default layout should be valid and usable. Malformed stored metadata must fall back gracefully. Do not delete sessions or file data.
-
-**Acceptance criteria:** Reset and recovery produce a valid workspace; existing project/session records are unaffected.
-
-## Task 7.10 — Pane context menu and action availability
+## Task 7.4 — Resizing, and the sizes a pane may have
 
 **Prompt to the coding AI:**
 
-> Complete pane overflow/context-menu actions using the shared dropdown/context-menu primitives. Ensure actions reflect the selected pane type and current workspace state. Include close, focus/maximize/restore and split directions where supported. Include duplicate/rename only where meaningful and safe. Remove placeholder actions that cannot work; disable them with an explanation only when there is a clear future purpose. Do not make right-click the only way to access essential controls.
+> Give the dividers their final behaviour: a hover and a focus state that
+> can be seen, a pointer drag that updates the ratio live, a keyboard
+> resize, and a minimum size for each half that keeps the pane's header
+> and its content usable. Test at the app's own floor of 600 by 338,
+> where two panes side by side is the worst case the window allows.
+>
+> The drag must be cancelled cleanly — the pointer leaving the window, the
+> pointer being released outside it, or the escape key must all leave the
+> ratio as it was.
 
-**Acceptance criteria:** Menus are compact, consistent, keyboard accessible and do not expose misleading actions.
+**Acceptance criteria:** Resizing works in both directions and from the
 
-## Task 7.11 — Optional local layout persistence
+**Reference:** Resizing. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+keyboard; the minimum sizes hold at the floor; a cancelled drag changes
+nothing.
+
+## Task 7.5 — Drag-and-drop docking, end to end
 
 **Prompt to the coding AI:**
 
-> If the existing app has an appropriate local persistence pattern and the layout engine supports it safely, save and restore layout metadata locally: pane IDs/types/titles needed for reconstruction, arrangement, ratios, active pane and benign pane presentation settings. Version the saved schema and validate it before restore. Do not persist prompts, secrets, sample terminal input, file contents or future execution data. If this is too risky for the current architecture, leave persistence out and report the reason rather than adding a new persistence framework.
+> Join the drag from Task 6.3 to the tree operation from Task 6.1, so a
+> dropped pane lands where the indicator said it would. The pane that was
+> dragged keeps its identity and its state, and so does the pane it was
+> dropped on. Moving a pane never creates a pane, so the cap is not
+> affected by a move.
+>
+> A tab can be dragged out of its group and the group closes behind it
+> when it is left empty.
 
-**Acceptance criteria:** If implemented, reload restores a valid layout and malformed/old data falls back safely. If not implemented, the omission is documented.
+**Acceptance criteria:** A pane can be dragged to each of the four edges
 
+**Reference:** Drag-and-drop docking. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+and to the middle; the pane keeps its identity and its state; no pane is
+created or destroyed by a move.
+
+## Task 7.6 — Which pane has focus
+
+**Prompt to the coding AI:**
+
+> Add the active pane. Clicking in a pane or on its header makes it the
+> active one, without starting a drag and without firing the control that
+> was clicked. The active pane is the lit one and the others are dimmed,
+> as the reference shows; the divider beside the active pane is the
+> brighter of the two. The active pane and the keyboard's focus must never
+> contradict each other.
+>
+> The active pane is not the same thing as a session that is working, and
+> the two must not be confused.
+
+**Acceptance criteria:** Exactly one pane is active; the active styling
+
+**Reference:** Focus. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+is subtle and does not fight the dark theme; clicking a header control
+does not move the focus to the pane.
+
+## Task 7.7 — Maximizing a pane, and putting it back
+
+**Prompt to the coding AI:**
+
+> Implement maximize and restore. Maximizing gives one pane the whole
+> workspace for the moment, and the layout it was part of is kept, so
+> restoring returns to the same arrangement with the same ratios and the
+> same panes. Nothing is destroyed and no pane loses its state.
+
+**Acceptance criteria:** Maximize and restore are reversible and lose
+
+**Reference:** Maximize and restore. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+nothing; the panes that were hidden are the ones that come back.
+
+## Task 7.8 — The layout presets
+
+**Prompt to the coding AI:**
+
+> Add a compact preset picker: Single Pane, Two Side by Side, Two
+> Stacked, Three Columns, and Three Above and Three Below. Each preset is
+> a tree built by the same model as everything else, not a set of fixed
+> cells. A preset rearranges the panes that are already there, in their
+> stable order, and says so when the number of panes does not fit it.
+> Nothing is silently discarded.
+
+**Acceptance criteria:** Each preset draws what its name says; three
+
+**Reference:** Layout presets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+above and three below draws six panes; no pane is lost by choosing one.
+
+## Task 7.9 — Resetting, and recovering from a broken layout
+
+**Prompt to the coding AI:**
+
+> Add a reset action, and make a stored layout that cannot be drawn fall
+> back to a default rather than to a blank screen. The reset says that it
+> resets the layout and not the sessions or the projects, and it asks
+> first, because it throws away an arrangement the reader made. A layout
+> read back from storage is validated before it is drawn, and a malformed
+> one is replaced rather than half-drawn.
+
+**Acceptance criteria:** Reset produces a valid workspace and says what
+
+**Reference:** Reset and recovery. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+it does; a malformed stored layout falls back safely; no session or
+project record is touched.
+
+## Task 7.10 — The pane's own menu
+
+**Prompt to the coding AI:**
+
+> Complete the pane's overflow menu with the app's own menu primitives.
+> The entries are the ones this pane and this workspace can actually do:
+> split left, right, top and bottom; focus, maximize or restore; pop out;
+> duplicate where a second instance of the type means anything; rename
+> where a title is useful; and close. An action that cannot work is left
+> out or disabled with a reason, and is never drawn as if it could.
+>
+> Right-click is never the only way to reach something.
+
+**Acceptance criteria:** The menus are compact and keyboard reachable;
+
+**Reference:** The pane's own menu. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+they offer only actions that work; every essential action is reachable
+without a right-click.
+
+## Task 7.11 — Keeping the layout between runs
+
+**Prompt to the coding AI:**
+
+> Save the layout locally and read it back: the pane instances and their
+> types and titles, the arrangement, the ratios, the groups and their
+> tabs, which pane is active, and which session each pane was about. The
+> saved form is versioned and validated before it is drawn, and a saved
+> layout that names a pane type that no longer exists is repaired rather
+> than refused.
+>
+> Nothing is saved that is a secret or that belongs to a session: no
+> prompt, no key, no sample terminal input, no file content. If the
+> session a pane was about is gone, the pane opens empty and says so.
+
+**Acceptance criteria:** A reload restores the layout that was there; a
+
+**Reference:** Keeping the layout between runs. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+saved layout that is old or malformed falls back safely; the sessions
+themselves are not touched.
+
+## Task 7.12 — Two sessions, side by side
+
+**Prompt to the coding AI:**
+
+> Make a second session openable in the workspace beside the first, the way
+> the reference shows it: two session panes, each with its own
+> conversation, its own composer and its own project. A session pane is
+> bound to a session by a reference, never by a copy, and the two must not
+> be able to see each other's conversation, their state or their context.
+> Moving a session's pane, maximizing it, popping it out, or closing it
+> does not end the session, and closing a session is not something the
+> pane does.
+>
+> The rail's list is still the way a session is chosen, and the two sides
+> keep their two different lists.
+
+**Acceptance criteria:** Two sessions can be shown at once; their
+
+**Reference:** Two sessions side by side. Claude Code Desktop: https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+conversations and their state stay separate; moving or closing a pane does
+not end its session; the rail is still the only navigation.
+
+## Task 7.13 — Popping a pane out, and docking it back
+
+**Prompt to the coding AI:**
+
+> Let a pane leave the main window. The pane's header carries a control
+> that opens the pane in its own window, and the window is a real one: the
+> app is a desktop app, and a browser popup is not the thing the reference
+> does. The session behind the pane keeps running and keeps its state; the
+> pane in the window is a window onto the same thing, not a copy of it.
+>
+> The pane can be docked back into the main window, and where it lands is
+> the reader's choice — the same drop targets the drag uses, with the same
+> indicators. Closing the popped-out window docks the pane back rather
+> than throwing it away, and the layout is left valid either way.
+>
+> This needs work on the desktop side: the capability to create a window,
+> the scope that lets the new window talk to the app, and a close handler
+> that docks back instead of hiding the window the way the main window's
+> does. Do not weaken the main window's own close behaviour to get there.
+
+**Acceptance criteria:** A pane opens in its own window with its state
+
+**Reference:** Popping a pane out, and docking it back. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+intact; the session keeps running; the pane docks back into the main
+window and the layout is valid afterwards; closing the window docks the
+pane back rather than losing it.
 # Phase 8 — Finish states, keyboard behavior, responsive behavior and detail polish
 
 ## Task 8.1 — State coverage audit for every pane
@@ -1397,6 +2296,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Every pane has the states relevant to it; no empty or failure state looks broken or misleading.
 
+**Reference:** Every pane's states. See §3.4 and §4.5
+
 ## Task 8.2 — Overlay and popover audit
 
 **Prompt to the coding AI:**
@@ -1404,6 +2305,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Audit all menus, dropdowns, popovers, tooltips, dialogs, confirmations and toasts introduced by the workspace. Verify correct trigger behavior, alignment, dismissal, focus behavior, z-index, viewport collision and scroll-container clipping. Use existing shadcn components; do not replace them with bespoke overlay code. Fix only real interaction defects.
 
 **Acceptance criteria:** Overlays remain visible, dismiss properly and are consistent across the workspace.
+
+**Reference:** Menus, popovers and dialogs. See §3.5
 
 ## Task 8.3 — Keyboard and accessibility pass
 
@@ -1413,6 +2316,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Primary interactions can be reached and understood using a keyboard; labels and focus indicators are clear.
 
+**Reference:** Keyboard and accessibility. Claude Code Desktop: https://code.claude.com/docs/en/desktop#keyboard-shortcuts
+
 ## Task 8.4 — Narrow-window and overflow behavior
 
 **Prompt to the coding AI:**
@@ -1421,6 +2326,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** Small layouts remain usable; long text/paths/code/logs are contained; the app does not develop unnecessary global scrollbars.
 
+**Reference:** The workspace at 600 by 338. See docs/layout.md
+
 ## Task 8.5 — Visual polish pass
 
 **Prompt to the coding AI:**
@@ -1428,6 +2335,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Compare the completed app against the approved screenshots and the shared pane specifications. Fix only visual defects and inconsistencies: incorrect spacing, pane header alignment, title truncation, icon sizes/strokes, border contrast, scroll regions, menu padding, state colors, inactive/focused states and alignment with the existing shell. Do not add decorative animation or redesign the approved landing screens.
 
 **Acceptance criteria:** New workspace features match the existing visual system and the Chat/Code landing screens remain approved.
+
+**Reference:** The last look. See docs/visual-baseline.md
 
 # Phase 9 — Final regression QA and handoff
 
@@ -1439,6 +2348,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 
 **Acceptance criteria:** The app builds and the tested UI behaviors work; there are no known major regressions.
 
+**Reference:** The whole thing, exercised. See §7
+
 ## Task 9.2 — Produce the frontend handoff note
 
 **Prompt to the coding AI:**
@@ -1446,6 +2357,8 @@ Implement the tasks in order. Do not integrate real services. Each task should m
 > Write a concise handoff note documenting the pane registry, shared component conventions, chosen docking library/approach, layout adapter/data model, how pane instance state is separated from geometry, current local/mock interactions, local layout persistence behavior and known limitations. Explicitly list the real backend integrations that remain unimplemented. Do not modify product code in this task.
 
 **Acceptance criteria:** A later implementation phase can add real services without redesigning the visual workspace or replacing the layout engine.
+
+**Reference:** The handoff note. See §7
 
 ---
 
@@ -1538,10 +2451,12 @@ Use these as documentation references, not as a command to copy their visual des
 - **shadcn/ui skeleton:** https://ui.shadcn.com/docs/components/base/skeleton
 - **Lucide for React:** https://lucide.dev/guide/react/
 - **Lucide icons catalogue:** https://lucide.dev/icons
-- **Dockview introduction:** https://dockview.dev/docs/overview/introduction/
-- **Dockview core concepts:** https://dockview.dev/docs/core/overview/
-- **Dockview theming:** https://dockview.dev/docs/core/theming/
 - **Claude Code Desktop documentation:** https://code.claude.com/docs/en/desktop
+- **Claude Code Desktop — arrange your workspace:** https://code.claude.com/docs/en/desktop#arrange-your-workspace
+- **Claude Code Desktop — work in parallel with sessions:** https://code.claude.com/docs/en/desktop#work-in-parallel-with-sessions
+- **Claude Code Desktop quickstart:** https://code.claude.com/docs/en/desktop-quickstart
+- **Claude Code desktop redesign announcement:** https://claude.com/blog/claude-code-desktop-redesign
+- **Pop-out panes in Claude Code Desktop:** https://aicatchup.com/news/claude-code-desktop-pop-out-panes
 
 ---
 

@@ -4,227 +4,271 @@ Which layout engine the workspace is built on, and why.
 
 This is **Task 0.4** of the UI/UX plan: *"Evaluate the existing app stack and
 determine whether a current layout dependency, an additional docking library,
-or a small custom nested-split implementation is most appropriate."* It is
-the decision the layout engine is built on, so it is written down before any
-of it is built.
+or a small custom nested-split implementation is most appropriate."*
 
-**Nothing is installed by this document, and nothing is written.** The
-smallest experiment that would prove the choice is at the end.
+**It was written once and it was wrong.** The first version of this document
+chose a resizable-panel library, with the drag-to-dock behaviour built on
+top of it. That decision was reasonable against the requirements as they
+stood then, and the requirements have since grown: tabbed groups, pop-out
+windows, docking a popped-out pane back, and two sessions side by side are
+all in scope now, and none of them is reachable through a library that
+resizes and does not move panes.
+
+This is the second version. It says what the engine has to do, what was
+measured, what was chosen, and what the choice does not settle.
 
 ---
 
-## 1. What the workspace has to do
+## 1. What the engine has to do
 
-From the plan, and only the parts that bear on the choice:
-
-| | Requirement |
-|---|---|
-| R1 | Up to **six** panes visible at once, and a seventh refused with a clear reason |
-| R2 | **Nested** horizontal and vertical splits, and arrangements that are not a fixed grid of six |
-| R3 | **Left / right / top / bottom drag-and-drop docking** — dropping a pane against another creates that split |
-| R4 | Resizable dividers, with sensible minimum sizes |
-| R5 | **Per-pane headers under the app's control** — the header is the app's, not the library's |
-| R6 | **No hidden tab stack.** A tabbed group must not hide a pane the UI says is visible |
-| R7 | Layout metadata can be **saved and restored** |
-| R8 | Theme compatibility — the app's own tokens, in both modes |
-| R9 | Maintainability, and no second design system |
+| | Requirement | Where it comes from |
+|---|---|---|
+| **R1** | Up to **six** visible pane instances, and a seventh refused with a clear reason | §1.5 |
+| **R2** | **Nested** horizontal and vertical splits, and arrangements that are not a fixed grid of six | §1.5 |
+| **R3** | **Drag-and-drop docking** — dropping a pane against another creates that split, on any of the four edges or into the middle | The reference |
+| **R4** | Resizable dividers, with sensible minimum sizes | The reference |
+| **R5** | **Per-pane headers under the app's control** — the header is the app's, not the library's | §4.3 |
+| **R6** | **Tabbed groups**, in which several panes share one place and one of them shows | §1.7 |
+| **R7** | **Pop-out windows**, and **dock-back** into the main window | The reference |
+| **R8** | **Two sessions side by side**, each with its own conversation, state and project | The reference |
+| **R9** | Layout metadata can be **saved and restored** | Task 7.11 |
+| **R10** | Theme compatibility — the app's own tokens, in both modes | §3.1 |
+| **R11** | Maintainability, and no second design system | §3.1 |
+| **R12** | **Drag-and-drop feedback**: a clear insertion indicator before the drop | The reference |
 
 R2 says the layout must not be six fixed cells. So one pane, two side by
-side, two stacked, three columns, three above and three below, and
-anything else must all be expressible.
+side, two stacked, three columns, three above and three below, and anything
+else must all be expressible.
 
----
+## 2. What the reference actually looks like
 
-## 2. The three candidates
+The reference is Claude Code Desktop's pane layout, and it is worth being
+precise about it, because the engine is built to reproduce it rather than
+to resemble it.
 
-### The one already in the project
+- **The panes are flat.** No card, no rounded corner, no shadow. A pane is
+  a region of the window, separated from its neighbour by a single
+  hairline, on the window's own background.
+- **Each pane carries its own header** — a fixed-height strip with the
+  pane's mark and title on the left, and on the right the pane's three
+  controls: pop out, a chevron that opens the pane's menu, and close. The
+  three are the same three in every pane.
+- **Each pane scrolls its own content.** The window does not scroll, and
+  neither does the region the layout lives in.
+- **A session pane carries its own composer**, at the bottom of the pane.
+  Two session panes side by side have two composers.
+- **The focused pane is lit and the others are dimmed**, and the divider
+  next to the focused pane is the brighter of the two.
+- **The top strip of the window belongs to the window**, and it shows the
+  focused pane's context. In that app the window is undecorated and that
+  strip is its title bar, so the session's own toolbar lives there.
+
+This app's window is also undecorated, but its top strip carries the
+sidebar toggle, the application menu and the operating system's own window
+controls, so the workspace's actions get their own slim strip instead.
+That is a deliberate difference, and it is recorded in §4.2.
+
+**Sessions and panes are different things.** A session is a conversation
+with its own history and its own project. A pane is a view. A session is
+*displayed in* a pane. Two sessions side by side are two panes that happen
+to be showing two different conversations, and the arrangement of the panes
+has no opinion about either conversation.
+
+## 3. The candidates
+
+### `react-resizable-panels` — the one already in the project
 
 `react-resizable-panels@4.14.5` is installed, and
 `src/components/resizable/resizable.tsx` is the app's own shadcn
-**base-nova** wrapper around it — 270 lines, written in the app's
-conventions, with the app's tokens on the handle (`bg-border`,
-`--ring`, `ease-out-quint`, `motion-safe:`) and with **persistence already
-wired** to `localStorage` through `useDefaultLayout`.
+**base-nova** wrapper around it — written in the app's conventions, with the
+app's tokens on the handle and with persistence already wired to storage
+through `useDefaultLayout`.
 
-It is **imported by nothing**. The project's own build plan calls it out
-by name: *"built on `react-resizable-panels` — is vendored and imported by
-nothing. The raw material is already on disk."* And that build plan's
-Layer 4 says the work area *"renders a panel group"*.
+What it offers: `Group` (a single-axis resizable split), `Grid` (a
+two-dimensional grid with spans), `Panel` (with `minSize`, `maxSize`,
+`collapsible`), `Separator` (the divider, with a live resize preview), and
+`useDefaultLayout` for persistence. Nesting is a `Group` inside a `Panel`.
 
-What v4 actually offers, from its own type declarations:
-
-| | |
-|---|---|
-| `Group` | A single-axis resizable split. `getLayout()` / `setLayout()` over a map of panel id → percentage |
-| `Grid` | A **two-dimensional** grid. `Cell`s with `column`, `row`, `columnSpan`, `rowSpan`; `getLayout()` returns the column and row percentages |
-| `Panel` | `minSize`, `maxSize`, `collapsible`, `collapsedSize`, `collapsedThreshold` |
-| `Separator` | The divider, with a live resize preview and a `preview` slot |
-| `useDefaultLayout` | Layout persistence, with a `storage` adapter the app can replace with its own |
-| `useDefaultGridLayout` | The same for a `Grid` |
-| `useGroupRef` / `useGridRef` / `usePanelRef` | Imperative handles |
-
-Nesting is a `Group` inside a `Panel`. That is how an arbitrary
-arrangement is expressed, and it is how the library's own documentation
-describes getting past two children.
+What it does not offer: **any kind of drag that moves a pane.** It resizes
+two panels against each other. There is no pane to pick up, no target to
+drop on, no insertion indicator, and no tab anywhere in its model.
 
 ### Dockview
 
-A full IDE docking manager: tab groups, grids, split views, and drag-and-drop
-docking between them. Its **Gridview** is a resizable grid *without* tabs,
-and its **Splitview** is a single-axis resizable split.
+A full IDE docking manager: tab groups, grids, split views, and
+drag-and-drop docking between them. MIT-licensed, zero runtime
+dependencies, and it supports React 19.
 
-It is a different component model. A Dockview group draws its own tabs and
-its own header, and the app would be styling a second set of surfaces with a
-second set of theming hooks.
+Its free tier covers: dockable grids, nested layouts, tabs and tab
+groups, tab and group drag-and-drop, edge drop zones, a custom drop
+overlay, maximized groups, floating groups, **pop-out windows**,
+drag-to-resize splitters, size constraints, save and restore of layouts,
+custom panel state, and ARIA and keyboard focus navigation. Its commercial
+tier adds a drag-and-drop compass, smart guides, layout history,
+multi-row tabs, and keyboard docking.
 
-### A custom nested split
+**It is a second design system.** A Dockview group draws its own tab strip
+and its own header, and the app would then be styling a second set of
+surfaces with a second set of theming hooks, against the app's own tokens
+and the app's own focus treatment. The reference's pane header is a
+particular thing — a flat strip with three specific controls — and
+fighting a library's header to get it is not a small job.
 
-The arrangement is a tree of splits, which the app **already has**:
+### FlexLayout
+
+The other React docking manager worth naming. MIT-licensed, React-only
+dependency, and it also covers tabs, tab groups, docking to edges and
+tabsets, pop-out into floating panels or browser windows, a JSON model,
+`data-layout-path` attributes that make a layout easy to test, an
+undo/redo hook, and CSS-variable theming.
+
+It is a good library, and its model is tabset-first. The reference's
+layout is split-first, and the reference's panes are flat regions with
+hairlines rather than tabbed cards.
+
+### A custom engine
+
+The arrangement is a tree, and **the app already has one**:
 `src/lib/workspace-state.ts` holds it, with the rules — a leaf names a
-pane, a split names an orientation and a ratio, and the tree has nowhere to
-put a pane's contents.
+pane, a split names an orientation and a ratio, and the tree has nowhere
+to put a pane's contents.
 
-Writing the geometry from scratch means writing the drag, the keyboard
-resize, the minimum sizes, the persistence, the accessibility of the
-separators, and the focus behaviour of a thousand things by hand, when a
-component the project already owns does all of it.
+Writing the rest means writing: the geometry, the divider, the drag, the
+drop targets and their indicators, the minimum sizes, the persistence, the
+accessibility of the separators, the focus behaviour, and the tab groups.
+That is a lot. The first version of this document said so, and used the
+word "a thousand things by hand" about it.
 
----
+## 4. What each candidate does against the requirements
 
-## 3. What each candidate does against the requirements
+| | `react-resizable-panels` | Dockview | FlexLayout | custom |
+|---|---|---|---|---|
+| R1 six visible | ✅ the app owns the cap | ✅ | ✅ | ✅ |
+| R2 nested, not six cells | ✅ nested `Group`s | ✅ | ✅ | ✅ |
+| **R3 drag-to-dock** | ❌ **resize only** | ✅ | ✅ | by hand |
+| R4 resizable dividers | ✅ | ✅ | ✅ | by hand |
+| R5 our own headers | ✅ | ⚠️ its own strip to fight | ⚠️ its own strip to fight | ✅ |
+| **R6 tab groups** | ❌ **no tabs at all** | ✅ | ✅ | by hand |
+| **R7 pop-out and dock-back** | ❌ | ✅ browser windows | ✅ browser windows | by hand, and on Tauri |
+| **R8 two sessions side by side** | ✅ | ✅ | ✅ | ✅ |
+| R9 save and restore | ✅ `useDefaultLayout` | ✅ | ✅ | by hand |
+| R10 theme | ✅ already the app's | ⚠️ its own theming | ✅ CSS variables | ✅ |
+| R11 no second design system | ✅ | ❌ a second one | ⚠️ a second one | ✅ |
+| **R12 insertion indicator** | ❌ | ✅ | ✅ | by hand |
 
-| | `react-resizable-panels` | Dockview | custom |
-|---|---|---|---|
-| R1 six visible | ✅ the app owns the cap, in `addPane` | ✅ | ✅ |
-| R2 nested, not six cells | ✅ nested `Group`s; `Grid` with spans for three columns | ✅ | ✅ |
-| **R3 drag-to-dock** | ❌ **resize only** | ✅ its core feature | ✅ but by hand |
-| R4 resizable dividers | ✅ | ✅ | by hand |
-| R5 our own headers | ✅ **the header is ours** — the library draws a divider and nothing else | ⚠️ its own tab strip and header have to be fought | ✅ |
-| R6 no hidden tabs | ✅ **there are no tabs in the model at all** | ⚠️ tabs are its centre of gravity; Gridview and Splitview avoid them but the drag model is built on groups | ✅ |
-| R7 save and restore | ✅ `useDefaultLayout`, and the vendored component already does it | ✅ | by hand |
-| R8 theme | ✅ already the app's tokens | ⚠️ its own theming | ✅ |
-| R9 no second design system | ✅ **it is already the app's component** | ❌ a second one | ✅ |
+**R3, R6, R7 and R12 together decide it.** The library that can do all
+four brings its own surfaces and its own theming, which is exactly what
+R11 forbids and exactly what the reference's flat, hairline-separated panes
+are not.
 
-**One requirement decides it: R3, drag-and-drop docking.** `react-resizable-panels`
-resizes; it does not move panes. Everything else it does, and does in the
-app's own components.
+## 5. The decision
 
----
-
-## 4. The decision
-
-**`react-resizable-panels`, through the app's own `src/components/resizable`,
-with the drag-to-dock behaviour built on top of it.**
+**The engine is the app's own code.** It is written in `src/`, in the
+app's own vocabulary: the app's tokens, the app's focus treatment, the
+app's motion, the app's component family. No docking package is added, and
+none is removed — `react-resizable-panels` stays in the project because
+other things in the app may use it, and the workspace does not.
 
 ### Why
 
-1. **It is already the app's component.** The wrapper in
-   `src/components/resizable/resizable.tsx` is written in the app's
-   conventions, with the app's tokens and the app's focus treatment. Using
-   it means the workspace is built from the app's own vocabulary — the rule
-   `docs/components.md` states, and the reason Task 1.2 exists.
-2. **The persistence is already built.** The wrapper's `useDefaultLayout`
-   writes the layout to storage and reads it back, with a `storage` option
-   the app can point at its own store. Task 7.11 is close to free.
-3. **It has no tabs, so R6 cannot be violated.** Dockview's model is
-   groups of tabs; the plan says plainly that a tabbed group must not hide
-   a pane the UI says is visible. Choosing Dockview means choosing against
-   its grain.
-4. **The header stays ours.** R5 wants per-pane headers under the app's
-   control. With this library, the library draws a divider and the app
-   draws everything else.
-5. **The arrangement stays ours too.** The app's `workspace-state.ts` already
-   holds the tree, with the rules about what may be in it. Dockview would
-   replace that with its own model and leave the app's tree a shadow of
-   the library's — and the plan's Task 6.3 says the schema is the app's.
-6. **It covers the awkward arrangements directly.** `Grid` with `columnSpan`
-   and `rowSpan` is three columns and three-above/three-below without
-   nesting six groups; nested `Group`s are everything else. Neither is a
-   fixed set of six cells.
+1. **The reference is the shape of the thing, not only its behaviour.**
+   Reproducing Claude Code Desktop's panes faithfully means owning the
+   geometry, the header, the hairline separators and the drop indicators.
+   Those *are* the surface. A library that draws its own tab strip and
+   header is not giving the app a layout engine; it is giving the app a
+   different application to put inside the layout.
+2. **The model was never the library's to give.** `src/lib/workspace-state.ts`
+   already holds the tree, the rules about what may be in it, and the
+   refusals. The first version of this document was right about that and
+   wrong about the geometry.
+3. **The requirements grew past the library.** Tabbed groups, pop-out,
+   dock-back and insertion indicators are not reachable through a
+   resizable-panel library, and the pop-out has to be a **Tauri window**
+   anyway — so that work was going to be ours regardless.
+4. **The app's own components are the vocabulary.** `docs/components.md`
+   says the app's components are built on one family and that a new one
+   should not appear beside it. A docking library is a new family.
 
-### What it does not give us, and what we build instead
+### What we build, and where
 
-**Drag-to-dock is ours to build.** The library gives the geometry — where
-the dividers are, how big a pane may be, what the layout is. The *move* is
-the app's:
+| | |
+|---|---|
+| The model | `src/lib/workspace-state.ts` — the tree, the rules, the operations |
+| The renderer | `src/blocks/workspace/layout/` — the tree drawn |
+| The divider | `src/blocks/workspace/layout/separator.tsx` |
+| The drag | `src/blocks/workspace/layout/drag.ts` — the state machine |
+| The indicators | `src/blocks/workspace/layout/drop-target.tsx` |
+| The groups | `src/blocks/workspace/layout/tab-group.tsx` |
+| The panes | `src/blocks/workspace/panes/` — the thirteen renderers |
 
-- The pane header's drag handle is the app's (Task 4.2).
-- The drop targets — left, right, top, bottom, around a pane — are the
-  app's rendering (Task 7.5).
-- The drop is a tree operation on `workspace-state.ts`: split this pane in
-  that direction, put the dragged pane in the new half. The tree, its
-  rules and its refusals already exist.
-
-This is the same division the plan already draws for the rest of the
-workspace: *the app owns the interaction, the library owns the geometry.*
-A full docking library would take the interaction too, and with it the
-app's own component vocabulary, which is the thing R9 is about.
+The engine is **ours**, which is the point, and the cost is written down
+rather than discovered: the geometry, the drag, the keyboard resize, the
+minimum sizes, the persistence and the accessibility of the separators are
+all written and all tested here. None of them is optional and none of them
+is small.
 
 ### The trade-offs, stated plainly
 
 | | We give up | We take on |
 |---|---|---|
-| **Against Dockview** | Drag-to-dock, the drag-to-dock *and* the drop-target animation, and the library's own handling of a pane dragged out of the layout | Building the drag ourselves; a second look at how a drag over a pane feels; the possibility of losing some of the polish a mature docking library has spent years on |
-| **Against a custom split** | Nothing much | The library's resize behaviour, its keyboard support, its minimum sizes, its persistence, and its accessibility are already written and already styled for this app |
+| **Against Dockview and FlexLayout** | Years of work on what a drag feels like, and the pop-out that comes with them | Full control of the pane's own look, the drop indicators, and the pop-out, which has to be a Tauri window in any case |
+| **Against `react-resizable-panels`** | A tested resize implementation | Everything R3, R6, R7 and R12 need, and a layout model with groups in it |
 | **Against doing nothing** | — | — |
 
-The honest risk: **the drag will not be as smooth as Dockview's.** Dockview
-has had years of work on what a drag feels like. The mitigation is that the
-drop targets and the animation are the app's own code, so they can be
-tuned to the app's motion vocabulary — `docs/tokens.md` §10 — rather than
-to the library's.
+The honest risk: **the drag will not be as smooth as a mature docking
+library's.** The mitigation is that the drop targets and the animation are
+the app's own code, so they can be tuned to the app's motion vocabulary —
+`docs/tokens.md` §10 — rather than to a library's.
 
 ### What this decision does not settle
 
-- **The pane registry** (Task 4.4) — the type, title, icon, renderer and
+- **The exact geometry of the divider** — its thickness, its hit area, and
+  how it looks when it is being dragged. Task 6.2, decided by looking.
+- **The minimum sizes** for a pane, at the 600 × 338 floor. Task 6.4.
+- **The motion of a drop** — whether the pane animates into place, and for
+  how long. Task 6.3.
+- **The pop-out's window** — its chrome, its size, and how it docks back.
+  Task 7.13, and it needs work on the desktop side.
+- **The pane registry** (Task 4.4) — the type, title, mark, renderer and
   actions of each pane type. It is the app's, and it is not the layout's.
-- **The six-pane cap's place in the UI** — the state already refuses a
-  seventh pane; the Views menu has to say why.
-- **Whether a layout is restored or rebuilt on launch.** The state says the
-  open flag is not persisted; the *layout* is a separate question, and the
-  library can restore one from storage.
 
 ---
 
-## 5. The proof of fit
+## 6. The proof of fit
 
-**Task 6.1**, and the smallest thing that would change this decision:
+Phase 6 is the proof, and it is not a throwaway experiment: every task in
+it produces the real engine, in the real workspace.
 
-> A temporary view with **two generic panes**, a `Group` split
-> horizontally containing a `Group` split vertically — so the nesting is
-> exercised, not just a linear split — a draggable divider, and the
-> app's dark theme on both. Written against `src/components/resizable`, in
-> a scratch route, and thrown away afterwards.
+The first task is the one that would have changed this decision, and it
+answers four questions at once:
 
-It answers four questions at once:
+1. **Does the tree render?** A `Group` inside a `Panel` inside a `Group`
+   has to survive being drawn by hand — which is the whole of the nesting
+   requirement, R2.
+2. **Do the app's tokens style a hairline separator** between two panes,
+   and a focused pane's brighter one? The app's own tokens are the only
+   ones in play, so this is about whether the tokens are enough.
+3. **Does the arrangement survive a round trip** through JSON? The model
+   has to be serializable, because Task 7.11 writes it down.
+4. **Does it survive the 600 × 338 floor?** Two panes side by side at the
+   window's smallest is the worst case the floor allows, and it is the
+   case that decides the minimum sizes.
 
-1. **Does nesting work inside the app's wrapper?** The wrapper is a
-   shadcn component around the library, and a `Group` inside a `Panel` has
-   to survive its class names and its `data-panel` attribute.
-2. **Do the app's tokens actually style the divider?** The wrapper's
-   handle uses `--ring` and `bg-border`; a divider in a panel that has its
-   own background may want something else.
-3. **Does the layout persist and come back?** The wrapper's
-   `useDefaultLayout` writes to `localStorage`; a workspace will want the
-   app's own store, and the `storage` option is how.
-4. **Does it survive the 600 × 338 floor?** Two nested splits at 300px
-   each is the worst case the floor allows, and it is the case that
-   decides whether the minimum sizes are right.
+**If the tree does not render,** the fallback is a library, and the cost is
+the app's own model becoming the library's — which is why it is found here,
+at Task 6.1, and not at Task 7.5.
 
-**If the nesting does not work**, the fallback is a custom split tree over
-the same `workspace-state.ts` — more work, and the reason to find out
-now rather than at Task 6.4.
-
-**If the drag proves the library unusable** — and it will not, because the
-library does not do dragging — the decision to revisit is Dockview, and the
-cost of revisiting is the app's own tree becoming the library's.
+**If the drag feels wrong,** that is Task 6.3's problem and it is tunable
+there, because the drop targets are our own code. It is not a reason to
+change the engine.
 
 ---
 
-## 6. What was ruled out, and why
+## 7. What was ruled out, and why
 
 | | Why not |
 |---|---|
-| **Dockview** | It is tab-centred, and the product says no hidden tab stacks. Its headers and its theming are a second design system. It would take the layout model away from the app, which is the thing Task 1.5 was written to keep |
-| **A custom nested split** | The geometry, the resize, the keyboard support, the persistence and the accessibility are all written, tested and themed — in the app's own component library. Writing them again is the work the project already paid for |
-| **A grid-only approach** | A `Grid` covers three columns and spans beautifully, but a grid cannot express a pane that is 70% of the width beside one that is 30% and then split vertically, and the plan asks for uneven splits and for the arrangements that are not a fixed set of cells. A grid is a *layout* the workspace can offer as a preset, not the layout model |
+| **`react-resizable-panels` as the engine** | It resizes. It does not move panes, and it has no tabs, no pop-out and no insertion indicator. It stays in the project for whatever else uses it |
+| **Dockview** | A second design system, with its own tab strips, its own headers and its own theming, and the reference's panes are the opposite of all three. Its pop-out is a browser window, and this is a desktop app |
+| **FlexLayout** | A good library, and the closest of the three — but tabset-first, and the reference is split-first. Its pop-out is a browser window too |
+| **A grid-only approach** | A grid covers three columns beautifully, but a grid cannot express a pane that is 70% of the width beside one that is 30% and then split vertically. A grid is a *layout* the workspace can offer as a preset, not the layout model |

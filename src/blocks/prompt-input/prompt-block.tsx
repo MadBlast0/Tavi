@@ -250,7 +250,6 @@ import { useComposerVariant } from "./composer-variant"
 import { GitPanel } from "./git-panel"
 import { useThreadBridge } from "./thread-bridge"
 import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
-import { WorkspaceEmpty } from "@/blocks/workspace/workspace-empty"
 import { useWorkspace } from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
@@ -754,11 +753,12 @@ export function PromptBlock() {
      each place has its own threads, its own model and its own composer. */
   const { variant, setVariant } = useComposerVariant()
 
-  /* Whether the workspace has the work area instead of this surface.
-     It is read here as well as in the host, because the two of them are
-     alternatives: when the workspace is open the host has the work area
-     and this surface is not on screen. */
-  const { open: workspaceOpen } = useWorkspace()
+  /* What the workspace holds.
+     The region shows this surface while the workspace holds no panes, and
+     the layout once it holds one. There is no flag for that: the panes are
+     the fact, and the fact decides. */
+  const { panes } = useWorkspace()
+  const hasPanes = panes.length > 0
 
   /**
    * The model and the effort each side remembers.
@@ -2422,34 +2422,32 @@ export function PromptBlock() {
           colour has to be there for the title bar to sit against, and the
           curve where the work area meets the rail is cut out of this
           background. */}
-      {/* The workspace host, and the surface it replaces.
-          The two are alternatives: while the workspace is open the host has
-          the work area, and the conversation and the composer are not on
-          screen. Closing the workspace puts them back, exactly as they
-          were — the landing screens are not changed by the workspace
-          being there.
+      {/* The workspace region, and what it holds.
+          The region is the area of the window beside the rail — the area
+          the composer sits in — and it is always there. What it shows is
+          decided by what is in the workspace, not by a switch: with no
+          session and no panes it shows the landing screen, exactly as it
+          always has, and with a pane in it it shows the layout.
 
-          The host is a sibling of the main rather than a child of it,
-          because the work area is the thing the two of them share, and
-          because the composer will one day be a tile in the workspace
-          rather than a thing beside it. */}
+          The landing surface is a child of the region rather than a
+          sibling of it, because the region is what they share. The region
+          carries the height and the title bar's padding, so the surface
+          inside it does not have to know about either. */}
       <WorkspaceHost>
-        <WorkspaceEmpty />
-      </WorkspaceHost>
-      <main
-        className={cn(
-          "flex h-svh flex-col bg-background pt-(--shell-top-bar-h)",
-          workspaceOpen && "hidden",
-        )}
-      >
-        {empty ? (
-          <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
-            <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">
-              {/* Each side asks its own question. "What are we working on?" is
-                  a code question, and it would be a strange thing to read over
-                  an empty chat. */}
-              {variant === "code" ? "What are we working on?" : "What can I help with?"}
-            </h1>
+        <main
+          className={cn(
+            "flex min-h-0 flex-1 flex-col",
+            hasPanes && "hidden",
+          )}
+        >
+          {empty ? (
+            <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
+              <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">
+                {/* Each side asks its own question. "What are we working on?" is
+                    a code question, and it would be a strange thing to read over
+                    an empty chat. */}
+                {variant === "code" ? "What are we working on?" : "What can I help with?"}
+              </h1>
           </div>
         ) : (
           <MessageScroller key="thread" className="min-h-0 flex-1">
@@ -2673,7 +2671,8 @@ export function PromptBlock() {
           </PromptInput>
         </div>
         {empty ? <div key="outro" className="flex-1" /> : null}
-      </main>
+        </main>
+      </WorkspaceHost>
     </MessageScrollerProvider>
   )
 }

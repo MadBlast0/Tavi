@@ -6,10 +6,10 @@ import * as React from "react"
  * The state the workspace owns.
  *
  * The plan puts eight things in the workspace's care — the app section, the
- * active project or session, whether the workspace is open, the pane
- * instances, the active pane, the layout geometry, the pane-local state and
- * the overlay state — and asks that the ownership of each of them be written
- * down rather than guessed at. This file holds the six of them that are
+ * active project or session, the pane instances, the active pane, the
+ * layout geometry, the pane-local state and the overlay state, and the
+ * workspace's own contents — and asks that the ownership of each of them be
+ * written down rather than guessed at. This file holds the ones that are
  * genuinely new, and `docs/workspace-state.md` is the answer for all eight.
  *
  * Two of the eight are deliberately not here, and their absence is the point:
@@ -30,6 +30,16 @@ import * as React from "react"
  * carries a "running" flag is a layout that has opinions about work it does
  * not do.
  *
+ * **There is no "open" flag, and there is no `openWorkspace()`.** The first
+ * version of this file had both, and they were the mistake: the workspace
+ * was imagined as a place you go rather than a place that is, and a place
+ * you go needs a way in, and the way in grew a row in the rail that the
+ * plan had twice said not to put there. The workspace is the main content
+ * region. It is always there. What it shows is decided by what is in it —
+ * no session and no panes means the landing screen, a session or a pane
+ * means the layout — and that is read from the state below rather than
+ * switched on.
+ *
  * A warning about the word. The **workspace** is the region that arranges
  * pane instances. `src/lib/workspace.ts` is something else entirely — a
  * folder the app has been given access to — and the two are unrelated. The
@@ -48,6 +58,9 @@ export type PaneTypeKey = string
 
 /** One occurrence of a pane type. */
 export type PaneInstanceId = string
+
+/** One tab group. */
+export type GroupId = string
 
 /**
  * What a pane is about.
@@ -72,7 +85,7 @@ export type PaneContext = {
 /**
  * One occurrence of a pane type.
  *
- * The instance says which *kind* of pane it is, and nothing about how it
+ * The instance says which *kind* of pane this is, and nothing about how it
  * looks or what it contains. The title is the one thing the instance owns
  * outright, because it is the user's own word for it; everything else — the
  * icon, the default title, the renderer — is asked for from the registry by
@@ -98,11 +111,25 @@ export type PaneOptions = {
 }
 
 /**
+ * Where a pane may be dropped.
+ *
+ * Four edges and the middle. An edge splits the pane that is dropped on;
+ * the middle joins the group that is there, making one if there is not.
+ */
+export type DockEdge = "left" | "right" | "top" | "bottom" | "center"
+
+/**
  * The arrangement of the panes.
  *
- * A tree of splits, and nothing else: a leaf names a pane, a split names an
- * orientation and how the space is divided between its two children. There
- * is no room in it for a pane's contents, and that is deliberate — the
+ * A tree of three kinds of node, and nothing else:
+ *
+ * - a **pane** names one pane instance;
+ * - a **split** names an orientation, how the space is divided, and its two
+ *   children;
+ * - a **group** names a set of panes that share one place, one of which is
+ *   showing.
+ *
+ * There is no room in it for a pane's contents, and that is deliberate — the
  * geometry says where a pane is, and the pane says what is in it. A tree
  * that could carry a pane's state would have to be rewritten every time a
  * pane's state changed, and the arrangement would stop being the
@@ -130,6 +157,15 @@ export type LayoutNode =
       /** The share the first child takes, strictly between 0 and 1. */
       ratio: number
       children: [LayoutNode, LayoutNode]
+    }
+  | {
+      kind: "group"
+      /** The group's own id, so a tab group can be named and found. */
+      groupId: GroupId
+      /** The panes in the group, in the order the tab strip shows them. */
+      tabs: PaneInstanceId[]
+      /** Which of them is showing. */
+      activeTabId: PaneInstanceId
     }
 
 /**
@@ -171,8 +207,6 @@ export type WorkspaceOverlay = {
  * identity, so a reader of one part is not woken by a change to another.
  */
 export type WorkspaceSnapshot = {
-  /** Whether the workspace is open. */
-  open: boolean
   /** Every pane instance, in the order they were added. */
   panes: PaneInstance[]
   /** The pane that has focus, or null when none does. */
@@ -189,32 +223,26 @@ export type WorkspaceSnapshot = {
  * The most panes the workspace will hold.
  *
  * Six is the product's rule (`docs/plan/ui-ux-plan.md` §1.5), and it is a
- * rule about *visible* panes: the number of registered pane types, and the
- * number of projects and sessions, are not limited by it.
+ * rule about *pane instances*, not about places: a tab group holding three
+ * tabs is three panes, and a pane sitting behind a tab still counts. The
+ * number of registered pane types, and the number of projects and sessions,
+ * are not limited by it.
  *
  * It is checked where a pane is added rather than where one is drawn,
  * because the moment to refuse a seventh pane is the moment the user asks
- * for it.
+ * for it. Moving a pane never adds one, so the cap is never in the way of
+ * rearranging what is already there.
  */
 export const MAX_VISIBLE_PANES = 6
 
-/** The store's own operations. */
+/**
+ * The store's own operations.
+ */
 export type WorkspaceStore = {
   /** The workspace as it is right now. */
   getSnapshot: () => WorkspaceSnapshot
   /** Listen for changes. Returns an unsubscribe function. */
   subscribe: (listener: () => void) => () => void
-  /** Opens the workspace. */
-  open: () => void
-  /**
-   * Closes the workspace.
-   *
-   * The panes and the arrangement stay. Closing a workspace hides it, and
-   * opening it again shows the same one; a close that also emptied the
-   * workspace would throw away the arrangement every time somebody
-   * looked at the landing screen.
-   */
-  close: () => void
   /**
    * Adds a pane, and gives it an id nobody else has.
    *
@@ -251,12 +279,44 @@ export type WorkspaceStore = {
    */
   setLayout: (layout: LayoutNode | null) => boolean
   /**
+   * Moves a pane onto another one.
+   *
+   * The one operation the engine needs, and the one that does the work a
+   * drop does: the pane is taken out of wherever it was and put against the
+   * target, on the given edge, or into the target's group. A pane that is
+   * dropped on itself is refused, and a move that would break the
+   * arrangement changes nothing.
+   */
+  dockPane: (
+    paneId: PaneInstanceId,
+    targetPaneId: PaneInstanceId,
+    edge: DockEdge,
+  ) => boolean
+  /**
    * Changes one pane's own state.
    *
-   * The patch is merged into what the pane already had, so a pane that
+   * The patch is merged into what the pane already had, so that a pane that
    * keeps two things does not lose the first when the second is set.
    */
   setPaneState: (id: PaneInstanceId, patch: PaneLocalState) => void
+  /**
+   * Changes the arrangement.
+   *
+   * The change is given the arrangement and returns the one to put in its
+   * place, so the caller does not have to know how the tree is walked. The
+   * result is validated before it is put in place, and a change that would
+   * break the arrangement is refused.
+   */
+  updateLayout: (
+    change: (layout: LayoutNode | null) => LayoutNode | null,
+  ) => boolean
+  /**
+   * Shows another of a group's tabs.
+   *
+   * The pane must be in a group; a pane on its own has no tabs to choose
+   * between, and a change that asked for one anyway is refused.
+   */
+  setActiveTab: (paneId: PaneInstanceId) => void
   /**
    * Opens an overlay.
    *
@@ -269,14 +329,17 @@ export type WorkspaceStore = {
   closeOverlay: () => void
 }
 
+/* ------------------------------------------------------------------ */
+/* The tree, and the rules on it                                        */
+/* ------------------------------------------------------------------ */
+
 /**
  * The pane ids an arrangement mentions, in the order it walks them.
  */
-export const layoutPaneIds = (
-  layout: LayoutNode | null,
-): PaneInstanceId[] => {
+export const layoutPaneIds = (layout: LayoutNode | null): PaneInstanceId[] => {
   if (layout === null) return []
   if (layout.kind === "pane") return [layout.paneId]
+  if (layout.kind === "group") return [...layout.tabs]
   return [
     ...layoutPaneIds(layout.children[0]),
     ...layoutPaneIds(layout.children[1]),
@@ -284,11 +347,12 @@ export const layoutPaneIds = (
 }
 
 /**
- * What is wrong with an arrangement, if anything is.
+ * What is wrong with an arrangement, if anything.
  *
  * The rules are about the arrangement alone, and they are the ones that
  * make it drawable: every pane it names is a pane that exists, no pane is
- * in two places, and every split divides the space it has.
+ * in two places, every split divides the space it has, and every group
+ * shows a tab it actually has.
  *
  * A pane that is in the arrangement but is not a pane is the one that
  * matters, because it is the one that turns into a blank space on screen.
@@ -301,6 +365,7 @@ export const validateLayout = (
   const known = new Set(knownPaneIds)
   const problems: string[] = []
   const placed = new Set<PaneInstanceId>()
+  const groups = new Set<GroupId>()
 
   const walk = (node: LayoutNode) => {
     if (node.kind === "pane") {
@@ -313,11 +378,35 @@ export const validateLayout = (
       placed.add(node.paneId)
       return
     }
+    if (node.kind === "group") {
+      if (groups.has(node.groupId)) {
+        problems.push(`there is more than one group with the id ${node.groupId}`)
+      }
+      groups.add(node.groupId)
+      if (node.tabs.length === 0) {
+        problems.push(`the group ${node.groupId} has no tabs in it`)
+      }
+      if (!node.tabs.includes(node.activeTabId)) {
+        problems.push(
+          `the group ${node.groupId} shows ${node.activeTabId}, which is not one of its tabs`,
+        )
+      }
+      for (const tab of node.tabs) {
+        if (!known.has(tab)) {
+          problems.push(`there is no pane instance with the id ${tab}`)
+        }
+        if (placed.has(tab)) {
+          problems.push(`the pane ${tab} is in the arrangement twice`)
+        }
+        placed.add(tab)
+      }
+      return
+    }
     if (!Number.isFinite(node.ratio) || node.ratio <= 0 || node.ratio >= 1) {
       problems.push(`a split has the ratio ${node.ratio}, which is no share of anything`)
     }
     if (node.children.length !== 2) {
-      problems.push("a split has to have two children")
+      problems.push(`a split has to have two children`)
     }
     for (const child of node.children) walk(child)
   }
@@ -330,10 +419,11 @@ export const validateLayout = (
  * Takes a pane out of an arrangement.
  *
  * A split that is left with one child collapses into that child, so the
- * tree does not keep a branch that is holding nothing. Nothing else moves:
- * where a pane goes, how the space is divided, what the panes are — those
- * are the layout engine's decisions, and this only undoes the one that put
- * the pane there.
+ * tree does not keep a branch that is holding nothing. A group that is left
+ * with one tab collapses into that tab, because a group of one is a pane
+ * with a tab strip drawn on it. Nothing else moves: where a pane goes, how
+ * the space is divided, what the panes are — those are the layout engine's
+ * decisions, and this only undoes the one that put the pane there.
  */
 export const removePaneFromLayout = (
   layout: LayoutNode | null,
@@ -342,16 +432,255 @@ export const removePaneFromLayout = (
   if (layout === null) return null
   if (layout.kind === "pane") return layout.paneId === paneId ? null : layout
 
+  if (layout.kind === "group") {
+    if (!layout.tabs.includes(paneId)) return layout
+    const tabs = layout.tabs.filter((tab) => tab !== paneId)
+    if (tabs.length === 0) return null
+    if (tabs.length === 1) return { kind: "pane", paneId: tabs[0] }
+    return {
+      ...layout,
+      tabs,
+      activeTabId:
+        layout.activeTabId === paneId ? tabs[0] : layout.activeTabId,
+    }
+  }
+
   const [first, second] = layout.children
   const nextFirst = removePaneFromLayout(first, paneId)
   const nextSecond = removePaneFromLayout(second, paneId)
-
-  /* A split with nothing in it is not a split any more. */
   if (nextFirst === null && nextSecond === null) return null
   if (nextFirst === null) return nextSecond
   if (nextSecond === null) return nextFirst
   return { ...layout, children: [nextFirst, nextSecond] }
 }
+
+/**
+ * Finds the node that stands for a pane, or null when the pane is not in
+ * the arrangement.
+ */
+const findPane = (
+  layout: LayoutNode | null,
+  paneId: PaneInstanceId,
+): LayoutNode | null => {
+  if (layout === null) return null
+  if (layout.kind === "pane") return layout.paneId === paneId ? layout : null
+  if (layout.kind === "group") {
+    return layout.tabs.includes(paneId) ? layout : null
+  }
+  return (
+    findPane(layout.children[0], paneId) ?? findPane(layout.children[1], paneId)
+  )
+}
+
+/**
+ * Replaces the node that stands for a pane with another node.
+ */
+const replacePane = (
+  layout: LayoutNode,
+  paneId: PaneInstanceId,
+  replacement: LayoutNode,
+): LayoutNode | null => {
+  if (layout.kind === "pane") {
+    return layout.paneId === paneId ? replacement : layout
+  }
+  if (layout.kind === "group") {
+    /* A group is not a leaf: the pane is inside it, so replacing the pane
+       means putting the new node into the group as a tab. That is what
+       dropping onto the middle of a group means, and it is handled by
+       `dockPaneInto` rather than here. */
+    return layout
+  }
+  const [first, second] = layout.children
+  const nextFirst = replacePane(first, paneId, replacement)
+  const nextSecond = replacePane(second, paneId, replacement)
+  if (nextFirst === null && nextSecond === null) return null
+  if (nextFirst === null) return nextSecond
+  if (nextSecond === null) return nextFirst
+  return { ...layout, children: [nextFirst, nextSecond] }
+}
+
+/**
+ * A group's id that nobody is using.
+ *
+ * Groups are named so that a tab group can be found in the tree and talked
+ * about — the store keeps one group id per group, and the group is a thing
+ * a reader can point at.
+ */
+let groupSerial = 0
+export const newGroupId = (): GroupId => {
+  for (;;) {
+    groupSerial += 1
+    const id = `g-${groupSerial.toString(36)}`
+    if (!usedGroupIds.has(id)) return id
+  }
+}
+const usedGroupIds = new Set<GroupId>()
+
+/**
+ * Moves a pane onto another one.
+ *
+ * The one operation the engine needs, and the one a drop performs. The pane
+ * is taken out of wherever it was and put against the target:
+ *
+ * - an **edge** splits the target, and the dragged pane takes the new half;
+ * - the **middle** puts the dragged pane into the target's group, making a
+ *   group of the two when the target was a pane on its own.
+ *
+ * A pane dropped on itself is refused. A pane dropped on a pane that is in
+ * the same group joins that group, rather than making a group of two that
+ * are already side by side.
+ *
+ * The result is a new tree. Nothing is changed in place, so a caller that
+ * does not like the answer can throw it away.
+ */
+export const dockPaneInto = (
+  layout: LayoutNode | null,
+  paneId: PaneInstanceId,
+  targetPaneId: PaneInstanceId,
+  edge: DockEdge,
+): LayoutNode | null => {
+  if (paneId === targetPaneId) return layout
+  if (layout === null) return null
+
+  const withoutDragged = removePaneFromLayout(layout, paneId)
+  if (withoutDragged === null) return null
+
+  const target = findPane(withoutDragged, targetPaneId)
+  if (target === null) return layout
+
+  /* Dropping onto the middle of a pane that is already in a group joins
+     that group, rather than making a group inside a group. */
+  if (edge === "center" && target.kind === "group") {
+    if (target.tabs.includes(paneId)) return withoutDragged
+    return replaceGroup(
+      withoutDragged,
+      target.groupId,
+      {
+        ...target,
+        tabs: [...target.tabs, paneId],
+      },
+    )
+  }
+
+  if (edge === "center") {
+    /* A pane on its own: the two of them become a group. */
+    return replacePane(withoutDragged, targetPaneId, {
+      kind: "group",
+      groupId: newGroupId(),
+      tabs: [targetPaneId, paneId],
+      activeTabId: targetPaneId,
+    })
+  }
+
+  const dragged: LayoutNode = { kind: "pane", paneId }
+  const horizontal = edge === "left" || edge === "right"
+  const draggedFirst = edge === "left" || edge === "top"
+
+  const split: LayoutNode = {
+    kind: "split",
+    orientation: horizontal ? "horizontal" : "vertical",
+    ratio: 0.5,
+    children: draggedFirst
+      ? [dragged, target]
+      : [target, dragged],
+  }
+
+  return replacePane(withoutDragged, targetPaneId, split)
+}
+
+/**
+ * Replaces a group, wherever it is in the tree.
+ */
+const replaceGroup = (
+  layout: LayoutNode,
+  groupId: GroupId,
+  replacement: LayoutNode,
+): LayoutNode | null => {
+  if (layout.kind === "group") {
+    return layout.groupId === groupId ? replacement : layout
+  }
+  if (layout.kind === "pane") return layout
+  const [first, second] = layout.children
+  const nextFirst = replaceGroup(first, groupId, replacement) ?? first
+  const nextSecond = replaceGroup(second, groupId, replacement) ?? second
+  return { ...layout, children: [nextFirst, nextSecond] }
+}
+
+/**
+ * Shows another tab in a group.
+ *
+ * The group keeps its tabs in the order the strip shows them; this only
+ * changes which of them is showing.
+ */
+export const showTab = (
+  layout: LayoutNode | null,
+  groupId: GroupId,
+  paneId: PaneInstanceId,
+): LayoutNode | null => {
+  if (layout === null) return null
+  if (layout.kind === "group") {
+    if (layout.groupId !== groupId) return layout
+    if (!layout.tabs.includes(paneId)) return layout
+    return { ...layout, activeTabId: paneId }
+  }
+  if (layout.kind === "pane") return layout
+  const [first, second] = layout.children
+  const nextFirst = showTab(first, groupId, paneId) ?? first
+  const nextSecond = showTab(second, groupId, paneId) ?? second
+  return { ...layout, children: [nextFirst, nextSecond] }
+}
+
+/**
+ * Applies a change to every node of the tree.
+ *
+ * The divider needs to change one split's ratio without touching the
+ * splits nested inside it, and the only way to find that split in a tree
+ * is by its identity — the tree's nodes are plain objects, and the same
+ * object is the same node until something replaces it.
+ *
+ * The change is given every node, and returns the node it wants instead.
+ * A node it does not want changed is returned as it was, so the tree that
+ * comes back is the same tree with one thing different.
+ */
+export const mapLayout = (
+  layout: LayoutNode | null,
+  change: (node: LayoutNode) => LayoutNode,
+): LayoutNode | null => {
+  if (layout === null) return null
+  const changed = change(layout)
+  if (changed.kind !== "split") return changed
+  const [first, second] = changed.children
+  return {
+    ...changed,
+    children: [
+      mapLayout(first, change) ?? first,
+      mapLayout(second, change) ?? second,
+    ],
+  }
+}
+
+/**
+ * The group a pane is in, or null when it is in none.
+ *
+ * A pane on its own is in no group; it is a leaf.
+ */
+export const groupOf = (
+  layout: LayoutNode | null,
+  paneId: PaneInstanceId,
+): Extract<LayoutNode, { kind: "group" }> | null => {
+  if (layout === null) return null
+  if (layout.kind === "group") {
+    return layout.tabs.includes(paneId) ? layout : null
+  }
+  if (layout.kind === "pane") return null
+  return (
+    groupOf(layout.children[0], paneId) ?? groupOf(layout.children[1], paneId)
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* The store                                                            */
+/* ------------------------------------------------------------------ */
 
 /**
  * Builds a workspace store.
@@ -363,7 +692,6 @@ export const removePaneFromLayout = (
 export const createWorkspaceStore = (): WorkspaceStore => {
   const listeners = new Set<() => void>()
 
-  let open = false
   let panes: PaneInstance[] = []
   let activePaneId: PaneInstanceId | null = null
   let layout: LayoutNode | null = null
@@ -371,7 +699,6 @@ export const createWorkspaceStore = (): WorkspaceStore => {
   let paneState: Record<PaneInstanceId, PaneLocalState> = {}
 
   let snapshot: WorkspaceSnapshot = {
-    open,
     panes,
     activePaneId,
     layout,
@@ -380,7 +707,7 @@ export const createWorkspaceStore = (): WorkspaceStore => {
   }
 
   const publish = () => {
-    snapshot = { open, panes, activePaneId, layout, overlay, paneState }
+    snapshot = { panes, activePaneId, layout, overlay, paneState }
     for (const listener of listeners) listener()
   }
 
@@ -411,21 +738,6 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       return () => {
         listeners.delete(listener)
       }
-    },
-
-    open: () => {
-      if (open) return
-      open = true
-      publish()
-    },
-
-    close: () => {
-      if (!open && overlay === null) return
-      open = false
-      /* An overlay over a workspace that is not there is an overlay over
-         nothing. */
-      overlay = null
-      publish()
     },
 
     addPane: (type, options) => {
@@ -480,10 +792,47 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       return true
     },
 
+    dockPane: (paneId, targetPaneId, edge) => {
+      if (!has(paneId) || !has(targetPaneId)) return false
+      if (paneId === targetPaneId) return false
+      const next = dockPaneInto(layout, paneId, targetPaneId, edge)
+      if (next === null || next === layout) return false
+      if (validateLayout(next, panes.map((pane) => pane.id)).length > 0) {
+        return false
+      }
+      layout = next
+      publish()
+      return true
+    },
+
     setPaneState: (id, patch) => {
       if (!has(id)) return
       const current = paneState[id] ?? {}
       paneState = { ...paneState, [id]: { ...current, ...patch } }
+      publish()
+    },
+
+    updateLayout: (change) => {
+      const next = change(layout)
+      if (validateLayout(next, panes.map((pane) => pane.id)).length > 0) {
+        return false
+      }
+      layout = next
+      publish()
+      return true
+    },
+
+    setActiveTab: (paneId) => {
+      if (!has(paneId)) return
+      const group = groupOf(layout, paneId)
+      if (!group) return
+      if (group.activeTabId === paneId) return
+      const next = mapLayout(layout, (node) =>
+        node.kind === "group" && node.groupId === group.groupId
+          ? { ...node, activeTabId: paneId }
+          : node,
+      )
+      layout = next
       publish()
     },
 
@@ -557,17 +906,7 @@ export const usePaneState = (paneId: PaneInstanceId): PaneLocalState => {
   return React.useSyncExternalStore(subscribeWorkspace, getSnapshot, getSnapshot)
 }
 
-/** Opens the workspace. */
-export const openWorkspace = (): void => workspaceStore.open()
-
-/** Closes the workspace, and leaves what is in it where it is. */
-export const closeWorkspace = (): void => workspaceStore.close()
-
-/**
- * Adds a pane to the workspace.
- *
- * Returns null when the workspace is already full — the six-pane rule.
- */
+/** Adds a pane to the workspace. */
 export const addPane = (
   type: PaneTypeKey,
   options?: PaneOptions,
@@ -578,10 +917,8 @@ export const removePane = (id: PaneInstanceId): void =>
   workspaceStore.removePane(id)
 
 /** Gives a pane its own title, or takes the title back. */
-export const setPaneTitle = (
-  id: PaneInstanceId,
-  title: string | undefined,
-): void => workspaceStore.setPaneTitle(id, title)
+export const setPaneTitle = (id: PaneInstanceId, title: string | undefined): void =>
+  workspaceStore.setPaneTitle(id, title)
 
 /** Says which pane has focus. */
 export const setActivePane = (id: PaneInstanceId | null): void =>
@@ -591,11 +928,25 @@ export const setActivePane = (id: PaneInstanceId | null): void =>
 export const setLayout = (layout: LayoutNode | null): boolean =>
   workspaceStore.setLayout(layout)
 
+/** Moves a pane onto another one, on an edge or into its group. */
+export const dockPane = (
+  paneId: PaneInstanceId,
+  targetPaneId: PaneInstanceId,
+  edge: DockEdge,
+): boolean => workspaceStore.dockPane(paneId, targetPaneId, edge)
+
 /** Changes one pane's own state. */
-export const setPaneState = (
-  id: PaneInstanceId,
-  patch: PaneLocalState,
-): void => workspaceStore.setPaneState(id, patch)
+export const setPaneState = (id: PaneInstanceId, patch: PaneLocalState): void =>
+  workspaceStore.setPaneState(id, patch)
+
+/** Changes the arrangement. */
+export const updateLayout = (
+  change: (layout: LayoutNode | null) => LayoutNode | null,
+): boolean => workspaceStore.updateLayout(change)
+
+/** Shows another of a group's tabs. */
+export const setActiveTab = (paneId: PaneInstanceId): void =>
+  workspaceStore.setActiveTab(paneId)
 
 /** Opens an overlay, and closes whatever was open. */
 export const openOverlay = (action: string, paneId?: PaneInstanceId): void =>

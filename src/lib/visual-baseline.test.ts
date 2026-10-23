@@ -139,7 +139,9 @@ test("the rail's two sides keep their own rows", () => {
   assert.ok(sidebarNav.includes('"Scheduled"'), "both rails should have a Scheduled row")
   assert.ok(sidebarNav.includes('"Customize"'), "both rails should have a Customize row")
   assert.ok(
-    sidebarNav.includes('variant === "code" ? "Sessions" : "Chats"'),
+    /variant\s*===\s*"code"\s*\?\s*"Sessions"\s*:\s*"Chats"/.test(
+      sidebarNav.replace(/\s+/g, " "),
+    ),
     "the list should be titled by the side",
   )
 })
