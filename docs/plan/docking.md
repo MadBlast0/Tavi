@@ -23,7 +23,7 @@ measured, what was chosen, and what the choice does not settle.
 
 | | Requirement | Where it comes from |
 |---|---|---|
-| **R1** | Up to **six** visible pane instances, and a seventh refused with a clear reason | §1.5 |
+| **R1** | Up to **six** docked pane instances, including inactive tabs, and a seventh refused with a clear reason | §1.5 |
 | **R2** | **Nested** horizontal and vertical splits, and arrangements that are not a fixed grid of six | §1.5 |
 | **R3** | **Drag-and-drop docking** — dropping a pane against another creates that split, on any of the four edges or into the middle | The reference |
 | **R4** | Resizable dividers, with sensible minimum sizes | The reference |
@@ -33,7 +33,7 @@ measured, what was chosen, and what the choice does not settle.
 | **R8** | **Two sessions side by side**, each with its own conversation, state and project | The reference |
 | **R9** | Layout metadata can be **saved and restored** | Task 7.11 |
 | **R10** | Theme compatibility — the app's own tokens, in both modes | §3.1 |
-| **R11** | Maintainability, and no second design system | §3.1 |
+| **R11** | One authoritative layout model, and maintainable integration with Tavi's components | §3.1 and `src/lib/workspace-state.ts` |
 | **R12** | **Drag-and-drop feedback**: a clear insertion indicator before the drop | The reference |
 
 R2 says the layout must not be six fixed cells. So one pane, two side by
@@ -95,36 +95,35 @@ drop on, no insertion indicator, and no tab anywhere in its model.
 
 ### Dockview
 
-A full IDE docking manager: tab groups, grids, split views, and
-drag-and-drop docking between them. MIT-licensed, zero runtime
-dependencies, and it supports React 19.
+A full IDE docking manager with tab groups, nested layouts, drag-and-drop,
+floating groups, pop-out windows and layout serialization. The current
+Dockview docs describe its core packages as MIT-licensed and zero-runtime-
+dependency; verify the exact package and version before adoption.
 
-Its free tier covers: dockable grids, nested layouts, tabs and tab
-groups, tab and group drag-and-drop, edge drop zones, a custom drop
-overlay, maximized groups, floating groups, **pop-out windows**,
-drag-to-resize splitters, size constraints, save and restore of layouts,
-custom panel state, and ARIA and keyboard focus navigation. Its commercial
-tier adds a drag-and-drop compass, smart guides, layout history,
-multi-row tabs, and keyboard docking.
+Dockview is more customizable than the first version of this decision
+record allowed for. Its docs show custom tab renderers, custom header
+actions, a hidden group header, custom themes, and pop-out lifecycle hooks.
+It therefore is **not inherently a second design system**. It does bring
+its own layout model and styled surface, which must be integrated with
+Tavi's pane-frame contract and state model; the amount of styling and
+adapter work should be measured in a proof of fit, not assumed.
 
-**It is a second design system.** A Dockview group draws its own tab strip
-and its own header, and the app would then be styling a second set of
-surfaces with a second set of theming hooks, against the app's own tokens
-and the app's own focus treatment. The reference's pane header is a
-particular thing — a flat strip with three specific controls — and
-fighting a library's header to get it is not a small job.
+References: [Dockview overview](https://dockview.dev/docs/overview/introduction/),
+[custom tabs](https://dockview.dev/docs/core/panels/tabs/),
+[group controls](https://dockview.dev/docs/core/groups/hiddenHeader/), and
+[pop-out windows](https://dockview.dev/docs/core/groups/popoutGroups/).
 
 ### FlexLayout
 
-The other React docking manager worth naming. MIT-licensed, React-only
-dependency, and it also covers tabs, tab groups, docking to edges and
-tabsets, pop-out into floating panels or browser windows, a JSON model,
-`data-layout-path` attributes that make a layout easy to test, an
-undo/redo hook, and CSS-variable theming.
+FlexLayout React is a React layout manager organized around tabs and
+tabsets. Its package documentation describes drag-and-drop between tabs
+and groups, edge docking, tabsets, model serialization, and pop-out tabs
+in browser windows. The pop-out implementation is not automatically a
+native Tauri window. It supports custom tab and tabset rendering, so the
+actual fit with Tavi's frame also requires a small proof of fit.
 
-It is a good library, and its model is tabset-first. The reference's
-layout is split-first, and the reference's panes are flat regions with
-hairlines rather than tabbed cards.
+References: [FlexLayout React package documentation](https://www.npmjs.com/package/flexlayout-react)
+and [pop-out rendering API](https://github.com/caplin/FlexLayout/blob/master/src/view/Layout.tsx).
 
 ### A custom engine
 
@@ -143,23 +142,25 @@ word "a thousand things by hand" about it.
 
 | | `react-resizable-panels` | Dockview | FlexLayout | custom |
 |---|---|---|---|---|
-| R1 six visible | ✅ the app owns the cap | ✅ | ✅ | ✅ |
+| R1 six pane instances | ✅ the app owns the cap | ✅ app-level policy | ✅ app-level policy | ✅ |
 | R2 nested, not six cells | ✅ nested `Group`s | ✅ | ✅ | ✅ |
 | **R3 drag-to-dock** | ❌ **resize only** | ✅ | ✅ | by hand |
 | R4 resizable dividers | ✅ | ✅ | ✅ | by hand |
-| R5 our own headers | ✅ | ⚠️ its own strip to fight | ⚠️ its own strip to fight | ✅ |
+| R5 our own headers | ✅ | ✅ custom tabs/header actions; verify frame fit | ✅ custom tab/tabset renderers | ✅ |
 | **R6 tab groups** | ❌ **no tabs at all** | ✅ | ✅ | by hand |
-| **R7 pop-out and dock-back** | ❌ | ✅ browser windows | ✅ browser windows | by hand, and on Tauri |
+| **R7 pop-out and dock-back** | ❌ | ⚠️ browser pop-out API; bridge to native Tauri window | ⚠️ browser pop-out; bridge to native Tauri window | by hand, and on Tauri |
 | **R8 two sessions side by side** | ✅ | ✅ | ✅ | ✅ |
 | R9 save and restore | ✅ `useDefaultLayout` | ✅ | ✅ | by hand |
-| R10 theme | ✅ already the app's | ⚠️ its own theming | ✅ CSS variables | ✅ |
-| R11 no second design system | ✅ | ❌ a second one | ⚠️ a second one | ✅ |
+| R10 theme | ✅ already the app's | ✅ custom themes and renderers | ✅ CSS/theming and custom renderers | ✅ |
+| R11 one authoritative layout model | ✅ | ⚠️ adapter or migration from app model | ⚠️ adapter or migration from app model | ✅ |
 | **R12 insertion indicator** | ❌ | ✅ | ✅ | by hand |
 
-**R3, R6, R7 and R12 together decide it.** The library that can do all
-four brings its own surfaces and its own theming, which is exactly what
-R11 forbids and exactly what the reference's flat, hairline-separated panes
-are not.
+**R3, R6 and R12 rule out the resize-only primitive as the complete
+engine.** Dockview and FlexLayout appear to cover the core docking behaviors
+and both expose customization; the decisive trade-off is whether their
+layout models and browser-window pop-outs can be integrated cleanly with
+Tavi's existing state and native Tauri window requirements. The custom
+engine avoids an adapter but carries the full implementation and QA burden.
 
 ## 5. The decision
 
@@ -172,22 +173,25 @@ other things in the app may use it, and the workspace does not.
 ### Why
 
 1. **The reference is the shape of the thing, not only its behaviour.**
-   Reproducing Claude Code Desktop's panes faithfully means owning the
-   geometry, the header, the hairline separators and the drop indicators.
-   Those *are* the surface. A library that draws its own tab strip and
-   header is not giving the app a layout engine; it is giving the app a
-   different application to put inside the layout.
+   Tavi needs flat regions, its own pane content, and clear drop targets.
+   Dockview and FlexLayout have customization hooks, so matching the frame
+   is possible in principle. The custom implementation preserves direct
+   control but must earn that choice through working geometry, drag/drop,
+   keyboard resizing, focus, and accessibility—not through a presumption
+   that libraries cannot be themed.
 2. **The model was never the library's to give.** `src/lib/workspace-state.ts`
    already holds the tree, the rules about what may be in it, and the
    refusals. The first version of this document was right about that and
    wrong about the geometry.
-3. **The requirements grew past the library.** Tabbed groups, pop-out,
-   dock-back and insertion indicators are not reachable through a
-   resizable-panel library, and the pop-out has to be a **Tauri window**
-   anyway — so that work was going to be ours regardless.
-4. **The app's own components are the vocabulary.** `docs/components.md`
-   says the app's components are built on one family and that a new one
-   should not appear beside it. A docking library is a new family.
+3. **The requirements grew past the resize-only primitive.** Tab groups,
+   pane moves and insertion indicators are not provided by
+   `react-resizable-panels`. Dockview and FlexLayout do provide broader
+   docking behavior. Pop-out requires checking Tauri's native window and
+   permission boundary regardless of which layout engine is selected.
+4. **The app already has a state model.** `src/lib/workspace-state.ts`
+   owns pane instances, contexts, groups and geometry. The custom route
+   avoids maintaining a second structural model, at the cost of owning
+   more interaction and accessibility code.
 
 ### What we build, and where
 
@@ -218,7 +222,7 @@ is small.
 The honest risk: **the drag will not be as smooth as a mature docking
 library's.** The mitigation is that the drop targets and the animation are
 the app's own code, so they can be tuned to the app's motion vocabulary —
-`docs/tokens.md` §10 — rather than to a library's.
+`src/index.css` and §3.1 of the UI/UX plan — rather than to a library's.
 
 ### What this decision does not settle
 
@@ -269,6 +273,6 @@ change the engine.
 | | Why not |
 |---|---|
 | **`react-resizable-panels` as the engine** | It resizes. It does not move panes, and it has no tabs, no pop-out and no insertion indicator. It stays in the project for whatever else uses it |
-| **Dockview** | A second design system, with its own tab strips, its own headers and its own theming, and the reference's panes are the opposite of all three. Its pop-out is a browser window, and this is a desktop app |
-| **FlexLayout** | A good library, and the closest of the three — but tabset-first, and the reference is split-first. Its pop-out is a browser window too |
+| **Dockview** | Not selected for the current custom-engine implementation because its layout model would need an adapter or migration, and the app already has a serializable tree and docking operations. Its styling hooks are real; compare them in a proof of fit before treating style as a blocker. Its documented pop-out uses browser windows, so native Tauri bridging still needs work |
+| **FlexLayout** | Not selected for the current custom-engine implementation because it centers the model on tabsets and browser-window pop-outs; verify its custom renderers and Tauri bridge in a proof of fit before ruling it out on visual fit alone |
 | **A grid-only approach** | A grid covers three columns beautifully, but a grid cannot express a pane that is 70% of the width beside one that is 30% and then split vertically. A grid is a *layout* the workspace can offer as a preset, not the layout model |

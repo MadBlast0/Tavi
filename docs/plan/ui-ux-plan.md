@@ -94,10 +94,10 @@ Status blocks says what stands, what was wrong, and what it becomes.
 
 **Phase 6 — Build the docking engine, in the app's own code**
 
-| 6.1 | ⬜ not started | The layout model, and the renderer that draws it |
-| 6.2 | ⬜ not started | The divider, and resizing |
-| 6.3 | ⬜ not started | Dragging a pane, and the drop targets |
-| 6.4 | ⬜ not started | Tab groups |
+| 6.1 | 🟡 partly | `src/lib/workspace-state.ts` and `src/blocks/workspace/layout/layout-tree.tsx` already contain a tree model and renderer; verify against the current acceptance criteria and wire into the workspace |
+| 6.2 | 🟡 partly | `layout-tree.tsx` already includes a pointer/keyboard separator; value semantics, minimum constraints, and cancellation behavior remain to verify/fix |
+| 6.3 | 🟡 partly | `workspace-state.ts` already has `DockEdge` and `dockPane`; the header drag and drop-target UI remain unimplemented |
+| 6.4 | 🟡 partly | The model and renderer already support tab groups and switching; tab reorder/close behavior remains unimplemented |
 | 6.5 | ⬜ not started | Drawing the registered panes |
 | 6.6 | ⬜ not started | The first pane, and composing several |
 
@@ -1928,11 +1928,19 @@ in the real workspace, and the checks are the app's own.
 > introduce a second design system and do not add a package.
 
 **Acceptance criteria:** A tree of one pane, two side by side, two stacked
-
-**Reference:** The layout model and the renderer. docs/plan/docking.md §5
 and a nested arrangement all draw correctly; the model survives a
 round-trip through JSON; a single-pane tree draws no chrome it does not
 need.
+
+**Reference:** The layout model and the renderer. See `docs/plan/docking.md` §5.
+
+**Status: partly — model and renderer source already exist; integration and acceptance remain.**
+
+`src/lib/workspace-state.ts` contains the serializable pane/split/group
+model, and `src/blocks/workspace/layout/layout-tree.tsx` recursively draws
+those node types. A repository search found no `LayoutTree` consumer yet.
+Inspect and connect this work, then verify the acceptance criteria; do not
+rewrite the existing files from scratch.
 
 ## Task 6.2 — The divider, and resizing
 
@@ -1950,10 +1958,17 @@ need.
 > inside it. A cancelled drag must leave the ratio exactly as it was.
 
 **Acceptance criteria:** The divider drags, resizes with the keyboard, and
-
-**Reference:** The divider and resizing. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 respects the minimum sizes; nested splits are unaffected by an outer
 resize; a cancelled drag changes nothing.
+
+**Reference:** Claude Code Desktop documents resizing panes by dragging their edges: https://code.claude.com/docs/en/desktop#arrange-your-workspace. Use the WAI-ARIA window splitter guidance for separator semantics and keyboard behavior: https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/. Minimums and cancellation rules are Tavi requirements.
+
+**Status: partly — a separator exists; required edge cases are not yet met or verified.**
+
+`layout-tree.tsx` has pointer dragging, arrow-key resizing, and a 140px
+minimum-size constant. The separator currently lacks `aria-valuenow`, and
+the cancellation contract is not implemented or verified; check
+Escape/pointer-cancel behavior before marking the task done.
 
 ## Task 6.3 — Dragging a pane, and the drop targets
 
@@ -1968,15 +1983,22 @@ resize; a cancelled drag changes nothing.
 > the group that is there.
 >
 > The indication is drawn by the app, in the app's own colours, and it is
-> an insertion indicator rather than a preview of the whole layout — the
-> reference shows a line, not a mock-up. Nothing is moved until the drop
+> a compact directional insertion indicator rather than a preview of the
+> entire layout. This is Tavi's product choice; do not claim Anthropic's
+> docs prescribe a particular indicator. Nothing is moved until the drop
 > is committed, so a cancelled drag cannot leave the layout changed.
 
 **Acceptance criteria:** The drag starts only from the header's drag
-
-**Reference:** Dragging a pane, and the drop targets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 region; all five targets show a clear indicator; nothing moves until the
 drop; a cancelled drag leaves the layout byte-for-byte as it was.
+
+**Reference:** Claude Code Desktop documents moving panes by their headers: https://code.claude.com/docs/en/desktop#arrange-your-workspace. Drop zones, the insertion indicator, cancellation behavior, and edge/middle semantics are Tavi requirements; use the general drag lifecycle guidance at https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API.
+
+**Status: partly — the state operation exists; drag interaction does not.**
+
+`workspace-state.ts` defines `DockEdge` and `dockPane`. No pane-header
+drag controller or visible drop-target implementation is currently wired
+to `LayoutTree`.
 
 ## Task 6.4 — Tab groups
 
@@ -1994,10 +2016,17 @@ drop; a cancelled drag leaves the layout byte-for-byte as it was.
 > another pane, and the tab it joins is the one that is showing.
 
 **Acceptance criteria:** Tabs switch, reorder and close; a single-tab
-
-**Reference:** Tab groups. See §1.7
 group draws no strip; a pane dropped on the middle of a pane joins that
 pane's group.
+
+**Reference:** Tab groups and cap behavior are Tavi product requirements in §1.7; the Claude pane docs establish the broader pane-layout context: https://code.claude.com/docs/en/desktop#arrange-your-workspace.
+
+**Status: partly — groups render and switch; reorder and close are missing.**
+
+`layout-tree.tsx` renders a tab strip and changes the active tab locally;
+the model can create and collapse groups. The strip does not yet implement
+reordering or closing tabs, and its selection needs to be checked against
+the store's authoritative active tab.
 
 ## Task 6.5 — Drawing the registered panes
 
@@ -2011,10 +2040,10 @@ pane's group.
 > in this task, and do not change the registry's shape.
 
 **Acceptance criteria:** Every registered pane type draws in the layout;
-
-**Reference:** Drawing the registered panes. See §4.3.1
 two instances of one type keep separate state; the registry is the only
 place that knows what a pane type is.
+
+**Reference:** Drawing the registered panes. See §4.3.1.
 
 ## Task 6.6 — The first pane, and composing several
 
@@ -2031,10 +2060,10 @@ place that knows what a pane type is.
 > there at all.
 
 **Acceptance criteria:** The empty workspace becomes one pane and then
-
-**Reference:** The first pane, and composing several. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
 several; the seventh pane is refused with a reason; the pane ids stay
 unique; the landing screen is untouched when there are no panes.
+
+**Reference:** The first pane and composing several are Tavi requirements; Claude Code Desktop provides the pane-workspace reference: https://code.claude.com/docs/en/desktop#arrange-your-workspace.
 
 # Phase 7 — Complete pane and layout interactions
 
@@ -2093,7 +2122,7 @@ layout; the remaining panes keep their state; no session is closed.
 
 **Acceptance criteria:** All four directions work; a split made by a menu
 
-**Reference:** Splitting a pane. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** The four split directions and menu action are Tavi requirements. Claude Code Desktop is the interaction reference for a rearrangeable pane workspace: https://code.claude.com/docs/en/desktop#arrange-your-workspace.
 is identical to one made by a drag; a refused split changes nothing.
 
 ## Task 7.4 — Resizing, and the sizes a pane may have
@@ -2131,7 +2160,7 @@ nothing.
 
 **Acceptance criteria:** A pane can be dragged to each of the four edges
 
-**Reference:** Drag-and-drop docking. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Claude Code Desktop documents repositioning panes by header drag: https://code.claude.com/docs/en/desktop#arrange-your-workspace. Tavi's edge/middle drop contract is defined in `src/lib/workspace-state.ts`; MDN documents the browser drag lifecycle: https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API.
 and to the middle; the pane keeps its identity and its state; no pane is
 created or destroyed by a move.
 
@@ -2151,7 +2180,7 @@ created or destroyed by a move.
 
 **Acceptance criteria:** Exactly one pane is active; the active styling
 
-**Reference:** Focus. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Active-pane styling and focus rules are Tavi requirements. Apply keyboard and semantic guidance from the WAI-ARIA window splitter pattern where it applies: https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/.
 is subtle and does not fight the dark theme; clicking a header control
 does not move the focus to the pane.
 
@@ -2166,7 +2195,7 @@ does not move the focus to the pane.
 
 **Acceptance criteria:** Maximize and restore are reversible and lose
 
-**Reference:** Maximize and restore. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Maximize/restore preservation is a Tavi requirement; compare docking-model support with Dockview's current API docs: https://dockview.dev/docs/core/overview/.
 nothing; the panes that were hidden are the ones that come back.
 
 ## Task 7.8 — The layout presets
@@ -2182,7 +2211,7 @@ nothing; the panes that were hidden are the ones that come back.
 
 **Acceptance criteria:** Each preset draws what its name says; three
 
-**Reference:** Layout presets. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Preset names and behavior are Tavi product decisions; they are not claimed as Claude features. The app's nested-tree contract is in §1.5.
 above and three below draws six panes; no pane is lost by choosing one.
 
 ## Task 7.9 — Resetting, and recovering from a broken layout
@@ -2198,7 +2227,7 @@ above and three below draws six panes; no pane is lost by choosing one.
 
 **Acceptance criteria:** Reset produces a valid workspace and says what
 
-**Reference:** Reset and recovery. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Reset and invalid-layout recovery are Tavi requirements based on the versioned layout model; see `src/lib/workspace-state.ts` and `docs/plan/ui-ux-research.md`.
 it does; a malformed stored layout falls back safely; no session or
 project record is touched.
 
@@ -2217,7 +2246,7 @@ project record is touched.
 
 **Acceptance criteria:** The menus are compact and keyboard reachable;
 
-**Reference:** The pane's own menu. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Menu actions are Tavi requirements and must follow the installed components in `src/components/`; Claude's docs provide the pane-workspace context: https://code.claude.com/docs/en/desktop#arrange-your-workspace.
 they offer only actions that work; every essential action is reachable
 without a right-click.
 
@@ -2238,7 +2267,7 @@ without a right-click.
 
 **Acceptance criteria:** A reload restores the layout that was there; a
 
-**Reference:** Keeping the layout between runs. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Save/restore rules are Tavi requirements. Check the app's state model and Dockview serialization docs as an implementation comparison: https://dockview.dev/docs/core/overview/.
 saved layout that is old or malformed falls back safely; the sessions
 themselves are not touched.
 
@@ -2288,7 +2317,7 @@ not end its session; the rail is still the only navigation.
 
 **Acceptance criteria:** A pane opens in its own window with its state
 
-**Reference:** Popping a pane out, and docking it back. Claude Code Desktop: https://code.claude.com/docs/en/desktop#arrange-your-workspace
+**Reference:** Claude Code Desktop documents pane pop-out/dock-back: https://code.claude.com/docs/en/desktop#arrange-your-workspace. For this Tauri app, use the native window API and inspect capabilities first: https://v2.tauri.app/reference/javascript/api/namespacewebviewwindow/.
 intact; the session keeps running; the pane docks back into the main
 window and the layout is valid afterwards; closing the window docks the
 pane back rather than losing it.
