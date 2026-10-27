@@ -1,9 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { ArrowLeftIcon, ArrowRightIcon, PanelLeftIcon } from "lucide-react"
+import { PanelLeftIcon } from "lucide-react"
 
-import { Button } from "@/components/button"
 import { SidebarTrigger } from "@/components/sidebar"
 import { AppMenu } from "./app-menu"
 import { WindowControls } from "./window-controls"
@@ -30,10 +29,9 @@ import { WindowControls } from "./window-controls"
  * every toggle, and a control that flies from one side of a divider to the
  * other reads as the sidebar moving when the sidebar did not.
  *
- * Only the sidebar toggle has anything to act on yet, along with the menu.
- * The app has no navigation history, so the back and forward controls are
- * rendered disabled rather than wired to something that does nothing. A
- * button that looks live and is not is worse than one that admits it.
+ * The caption stays deliberately quiet: the sidebar toggle and app menu are
+ * the only app-level controls that belong here. Pane tools live in the pane
+ * title bar beside the content they control.
  */
 export function TitleBar() {
   return (
@@ -63,24 +61,6 @@ export function TitleBar() {
           <PanelLeftIcon className="size-4 rtl:-scale-x-100" />
         </SidebarTrigger>
         <AppMenu />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="size-7"
-          aria-label="Back"
-          disabled
-        >
-          <ArrowLeftIcon className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="size-7"
-          aria-label="Forward"
-          disabled
-        >
-          <ArrowRightIcon className="size-4" />
-        </Button>
       </div>
 
       {/* The empty middle of the bar, which is what the window is dragged by.

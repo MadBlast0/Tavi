@@ -25,9 +25,12 @@ import {
   createWorkspaceStore,
   dockPaneInto,
   layoutPaneIds,
+  parsePersistedWorkspace,
   removePaneFromLayout,
+  serializeWorkspace,
   showTab,
   validateLayout,
+  visiblePaneIds,
   MAX_VISIBLE_PANES,
   type LayoutNode,
 } from "./workspace-state.ts"
@@ -40,6 +43,268 @@ test("a new workspace is empty, and has nothing in it", () => {
   assert.equal(snapshot.layout, null)
   assert.equal(snapshot.overlay, null)
   assert.deepEqual(snapshot.paneState, {})
+})
+
+test("adding panes puts each instance into one valid layout and focuses the newest", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  assert.ok(first)
+  assert.deepEqual(store.getSnapshot().layout, { kind: "pane", paneId: first.id })
+  const second = store.addPane("diff")
+  assert.ok(second)
+  assert.equal(store.getSnapshot().activePaneId, second.id)
+  assert.deepEqual(layoutPaneIds(store.getSnapshot().layout).sort(), [first.id, second.id].sort())
+  assert.deepEqual(validateLayout(store.getSnapshot().layout, store.getSnapshot().panes.map((pane) => pane.id)), [])
+})
+
+test("a pane added from a header anchors beside that pane", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  store.setActivePane(first.id)
+
+  const third = store.addPane("browser", { anchorPaneId: second.id })
+  assert.ok(third)
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, third.id, "the added pane takes the focus")
+
+  /* The focused pane is `first`, on the left. The new pane went beside
+     `second` on the right instead, as the header that asked for it said. */
+  const root = snapshot.layout
+  assert.equal(root?.kind, "split")
+  if (root?.kind !== "split") return
+  assert.deepEqual(root.children[0], { kind: "pane", paneId: first.id })
+  const right = root.children[1]
+  assert.equal(right.kind, "split")
+  if (right.kind !== "split") return
+  assert.deepEqual(right.children, [
+    { kind: "pane", paneId: second.id },
+    { kind: "pane", paneId: third.id },
+  ])
+})
+
+test("an anchor that is no longer a pane falls back to the focused pane", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  store.setActivePane(first.id)
+
+  const third = store.addPane("browser", { anchorPaneId: "gone" })
+  assert.ok(third)
+  const root = store.getSnapshot().layout
+  assert.equal(root?.kind, "split")
+  if (root?.kind !== "split") return
+  const left = root.children[0]
+  assert.equal(left.kind, "split")
+  if (left.kind !== "split") return
+  assert.deepEqual(left.children, [
+    { kind: "pane", paneId: first.id },
+    { kind: "pane", paneId: third.id },
+  ])
+})
+
+test("a pane added beside a grouped pane joins its group", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  assert.equal(store.setLayout({ kind: "group", groupId: "g-add", tabs: [first.id, second.id], activeTabId: first.id }), true)
+
+  const third = store.addPane("browser", { anchorPaneId: second.id })
+  assert.ok(third)
+  const snapshot = store.getSnapshot()
+  assert.deepEqual(snapshot.layout, {
+    kind: "group",
+    groupId: "g-add",
+    tabs: [first.id, second.id, third.id],
+    activeTabId: third.id,
+  })
+  assert.equal(snapshot.activePaneId, third.id)
+  assert.deepEqual(
+    validateLayout(snapshot.layout, snapshot.panes.map((pane) => pane.id)),
+    [],
+    "the added pane is placed, not left outside the arrangement",
+  )
+})
+
+test("closing the focused pane focuses one that remains", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  assert.equal(store.getSnapshot().activePaneId, second.id)
+
+  /* The header focuses the pane a control belongs to, so closing the
+     second pane makes it the focused pane first. The focus has to land on
+     the pane that is left rather than on nothing. */
+  store.removePane(second.id)
+  assert.equal(store.getSnapshot().activePaneId, first.id)
+})
+
+test("closing the focused pane in a split focuses the visible tab, not a hidden one", () => {
+  const store = createWorkspaceStore()
+  const left = store.addPane("terminal")
+  const hidden = store.addPane("diff")
+  const showing = store.addPane("browser")
+  assert.ok(left && hidden && showing)
+  assert.equal(store.setLayout({
+    kind: "split",
+    orientation: "horizontal",
+    ratio: 0.5,
+    children: [
+      { kind: "pane", paneId: left.id },
+      {
+        kind: "group",
+        groupId: "g-close-visible",
+        tabs: [hidden.id, showing.id],
+        activeTabId: showing.id,
+      },
+    ],
+  }), true)
+  store.setActivePane(left.id)
+
+  store.removePane(left.id)
+
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, showing.id, "focus should land on the tab the group is showing")
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, showing.id)
+  assert.deepEqual(visiblePaneIds(snapshot.layout), [showing.id], "a hidden tab is not a visible focus target")
+})
+
+test("closing the showing tab focuses and shows the next tab", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  const third = store.addPane("browser")
+  assert.ok(first && second && third)
+  assert.equal(store.setLayout({
+    kind: "group",
+    groupId: "g-close-next",
+    tabs: [first.id, second.id, third.id],
+    activeTabId: second.id,
+  }), true)
+  store.setActivePane(second.id)
+
+  store.removePane(second.id)
+
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, third.id, "the next tab is the nearest surviving pane")
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, third.id, "the focused pane and the showing tab agree")
+  assert.deepEqual(snapshot.layout?.kind === "group" ? snapshot.layout.tabs : [], [first.id, third.id])
+})
+
+test("closing the last tab focuses the previous tab", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  const third = store.addPane("browser")
+  assert.ok(first && second && third)
+  assert.equal(store.setLayout({
+    kind: "group",
+    groupId: "g-close-previous",
+    tabs: [first.id, second.id, third.id],
+    activeTabId: third.id,
+  }), true)
+  store.setActivePane(third.id)
+
+  store.removePane(third.id)
+
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, second.id)
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, second.id)
+})
+
+test("closing a background tab leaves the active pane in front", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  const third = store.addPane("browser")
+  assert.ok(first && second && third)
+  assert.equal(store.setLayout({
+    kind: "group",
+    groupId: "g-close-background",
+    tabs: [first.id, second.id, third.id],
+    activeTabId: first.id,
+  }), true)
+  store.setActivePane(first.id)
+
+  store.removePane(third.id)
+
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, first.id)
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, first.id)
+})
+
+test("a pane cannot be left orphaned outside the layout", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  assert.equal(store.setLayout({ kind: "pane", paneId: first.id }), false)
+  assert.equal(store.setLayout(null), false)
+})
+
+test("a workspace layout serializes and restores validated pane geometry only", () => {
+  const source = createWorkspaceStore()
+  const first = source.addPane("code-session", { title: "Build", context: { sessionId: "session-a" } })
+  const second = source.addPane("diff", { context: { projectId: "project-a" } })
+  assert.ok(first && second)
+  const serialized = serializeWorkspace(source.getSnapshot())
+  assert.ok(serialized)
+  assert.equal(serialized.includes("paneState"), false)
+  assert.equal(serialized.includes("turns"), false)
+  const decoded = parsePersistedWorkspace(serialized)
+  assert.ok(decoded)
+  const restored = createWorkspaceStore()
+  assert.equal(restored.restore(decoded), true)
+  assert.deepEqual(layoutPaneIds(restored.getSnapshot().layout), layoutPaneIds(source.getSnapshot().layout))
+  assert.deepEqual(restored.getSnapshot().panes, source.getSnapshot().panes)
+})
+
+test("a pane's own state never changes the serialized workspace", () => {
+  const store = createWorkspaceStore()
+  const first = store.addPane("terminal")
+  const second = store.addPane("diff")
+  assert.ok(first && second)
+  const before = serializeWorkspace(store.getSnapshot())
+  store.setPaneState(first.id, { selectedFile: "src/App.tsx", filter: "open" })
+  const after = serializeWorkspace(store.getSnapshot())
+  assert.equal(after, before, "pane-local changes are not geometry and must not rewrite the saved layout")
+  const geometry = serializeWorkspace({
+    panes: store.getSnapshot().panes,
+    activePaneId: store.getSnapshot().activePaneId,
+    layout: store.getSnapshot().layout,
+  })
+  assert.equal(geometry, before, "the geometry-only call should produce the same string")
+})
+
+test("a pane's own state keeps the geometry's identity", () => {
+  // The persistence effect watches these three values. If a pane-local
+  // change replaced any of them, the effect would run on every keystroke
+  // even though the serialized layout was the same.
+  const store = createWorkspaceStore()
+  const pane = store.addPane("diff")
+  assert.ok(pane)
+  const before = store.getSnapshot()
+  store.setPaneState(pane.id, { selectedFile: "src/App.tsx" })
+  const after = store.getSnapshot()
+  assert.notEqual(after, before, "the snapshot itself is replaced")
+  assert.equal(after.panes, before.panes)
+  assert.equal(after.activePaneId, before.activePaneId)
+  assert.equal(after.layout, before.layout)
+})
+
+test("corrupt and incomplete saved layouts are refused", () => {
+  assert.equal(parsePersistedWorkspace("not-json"), null)
+  assert.equal(parsePersistedWorkspace(JSON.stringify({ version: 1, panes: [], layout: null, activePaneId: null })), null)
+  assert.equal(parsePersistedWorkspace(JSON.stringify({
+    version: 1,
+    panes: [{ id: "p1", type: "terminal" }, { id: "p2", type: "diff" }],
+    activePaneId: "p1",
+    layout: { kind: "pane", paneId: "p1" },
+  })), null)
 })
 
 test("the workspace keeps no copy of the app's section or its active thread", () => {
@@ -127,6 +392,19 @@ test("a pane can be given a title of its own", () => {
   assert.equal(store.getSnapshot().panes[0].title, "Build")
   store.setPaneTitle(pane.id, undefined)
   assert.equal(store.getSnapshot().panes[0].title, undefined)
+})
+
+test("a session pane keeps its session reference when its pane type changes", () => {
+  const store = createWorkspaceStore()
+  const pane = store.addPane("chat", { context: { sessionId: "chat-1" } })
+  assert.ok(pane)
+  store.setPaneType(pane.id, "code-session")
+  store.setPaneContext(pane.id, { sessionId: "session-2", projectId: "project-1" })
+  assert.deepEqual(store.getSnapshot().panes[0], {
+    id: pane.id,
+    type: "code-session",
+    context: { sessionId: "session-2", projectId: "project-1" },
+  })
 })
 
 test("an arrangement that names a pane that is not there is refused", () => {
@@ -251,7 +529,7 @@ test("a drop in the middle makes a group of the two", () => {
   assert.equal(after.kind, "group")
   if (after.kind !== "group") return
   assert.deepEqual(after.tabs, ["a", "b"])
-  assert.equal(after.activeTabId, "a", "the pane that was dropped on keeps showing")
+  assert.equal(after.activeTabId, "b", "the pane that moved shows")
 })
 
 test("a drop in the middle of a group joins that group", () => {
@@ -266,6 +544,7 @@ test("a drop in the middle of a group joins that group", () => {
   assert.equal(after.kind, "group")
   if (after.kind !== "group") return
   assert.deepEqual(after.tabs, ["a", "b"])
+  assert.equal(after.activeTabId, "b", "the pane that moved shows")
 })
 
 test("a pane dropped on itself goes nowhere", () => {
@@ -303,12 +582,23 @@ test("a group can show another of its tabs", () => {
   assert.deepEqual(after.tabs, ["a", "b"], "the order of the tabs did not change")
 })
 
+test("tabs can be reordered within their group and not across groups", () => {
+  const store = createWorkspaceStore()
+  const a = store.addPane("terminal")
+  const b = store.addPane("diff")
+  const c = store.addPane("logs")
+  assert.ok(a && b && c)
+  assert.equal(store.setLayout({ kind: "group", groupId: "g-test", tabs: [a.id, b.id, c.id], activeTabId: a.id }), true)
+  assert.equal(store.reorderTab(c.id, a.id), true)
+  assert.deepEqual(store.getSnapshot().layout, { kind: "group", groupId: "g-test", tabs: [c.id, a.id, b.id], activeTabId: a.id })
+  assert.equal(store.reorderTab(c.id, "unknown"), false)
+})
+
 test("the store moves a pane, and refuses a move it cannot make", () => {
   const store = createWorkspaceStore()
   const a = store.addPane("terminal")
   const b = store.addPane("chat")
   assert.ok(a && b)
-  assert.equal(store.setLayout({ kind: "pane", paneId: a.id }), true)
 
   assert.equal(store.dockPane(b.id, a.id, "right"), true)
   assert.equal(store.getSnapshot().layout?.kind, "split")
@@ -316,12 +606,97 @@ test("the store moves a pane, and refuses a move it cannot make", () => {
   assert.equal(store.dockPane("nope", a.id, "right"), false, "a pane that is not there cannot be moved")
 })
 
+test("a successful dock focuses the pane that moved", () => {
+  const store = createWorkspaceStore()
+  const a = store.addPane("terminal")
+  const b = store.addPane("chat")
+  assert.ok(a && b)
+  store.setActivePane(a.id)
+
+  assert.equal(store.dockPane(b.id, a.id, "right"), true)
+  assert.equal(store.getSnapshot().activePaneId, b.id, "an edge dock should focus the moved pane")
+
+  assert.equal(store.dockPane(b.id, a.id, "center"), true)
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, b.id, "a tab dock should focus the moved pane")
+  assert.equal(snapshot.layout?.kind, "group")
+  if (snapshot.layout?.kind === "group") {
+    assert.deepEqual(snapshot.layout.tabs, [a.id, b.id])
+    assert.equal(snapshot.layout.activeTabId, b.id, "a tab dock should show the moved pane")
+  }
+})
+
+test("a tab dropped on another group joins it and leaves its old group", () => {
+  const store = createWorkspaceStore()
+  const a = store.addPane("terminal")
+  const b = store.addPane("diff")
+  const c = store.addPane("browser")
+  const d = store.addPane("files")
+  assert.ok(a && b && c && d)
+  assert.equal(store.setLayout({
+    kind: "split",
+    orientation: "horizontal",
+    ratio: 0.5,
+    children: [
+      { kind: "group", groupId: "g-left", tabs: [a.id, b.id], activeTabId: b.id },
+      { kind: "group", groupId: "g-right", tabs: [c.id, d.id], activeTabId: c.id },
+    ],
+  }), true)
+  store.setActivePane(b.id)
+
+  assert.equal(store.dockPane(b.id, c.id, "center"), true)
+  const snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, b.id, "the dropped tab takes the focus")
+  assert.equal(snapshot.layout?.kind, "split")
+  if (snapshot.layout?.kind !== "split") return
+  assert.deepEqual(
+    snapshot.layout.children[0],
+    { kind: "pane", paneId: a.id },
+    "the group it left collapses to the tab that stayed",
+  )
+  assert.deepEqual(
+    snapshot.layout.children[1],
+    { kind: "group", groupId: "g-right", tabs: [c.id, d.id, b.id], activeTabId: b.id },
+    "the dropped tab joins the target group and shows there",
+  )
+  assert.deepEqual(
+    layoutPaneIds(snapshot.layout).sort(),
+    [a.id, b.id, c.id, d.id].sort(),
+    "the moved tab exists once",
+  )
+})
+
+test("focusing a pane brings its tab forward", () => {
+  const store = createWorkspaceStore()
+  const a = store.addPane("terminal")
+  const b = store.addPane("diff")
+  assert.ok(a && b)
+  assert.equal(store.setLayout({ kind: "group", groupId: "g-focus", tabs: [a.id, b.id], activeTabId: a.id }), true)
+  store.setActivePane(b.id)
+  let snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, b.id)
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, b.id)
+
+  /* The active pane can name a hidden tab after a layout change. Focusing
+     that same pane still has to bring its tab forward. */
+  assert.equal(store.setLayout({ kind: "group", groupId: "g-focus", tabs: [a.id, b.id], activeTabId: a.id }), true)
+  store.setActivePane(b.id)
+  snapshot = store.getSnapshot()
+  assert.equal(snapshot.activePaneId, b.id)
+  assert.equal(snapshot.layout?.kind === "group" ? snapshot.layout.activeTabId : null, b.id)
+
+  /* Choosing the tab that is already showing still focuses its pane. */
+  store.setActivePane(a.id)
+  store.setLayout({ kind: "group", groupId: "g-focus", tabs: [a.id, b.id], activeTabId: a.id })
+  store.setActiveTab(a.id)
+  assert.equal(store.getSnapshot().activePaneId, a.id)
+})
+
 test("a move keeps both panes' identities", () => {
   const store = createWorkspaceStore()
   const a = store.addPane("terminal")
   const b = store.addPane("chat")
   assert.ok(a && b)
-  store.setLayout({ kind: "pane", paneId: a.id })
   store.dockPane(b.id, a.id, "bottom")
   const ids = layoutPaneIds(store.getSnapshot().layout)
   assert.deepEqual(ids.sort(), [a.id, b.id].sort())

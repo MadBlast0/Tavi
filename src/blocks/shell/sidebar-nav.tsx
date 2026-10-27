@@ -8,6 +8,7 @@ import {
   ClockIcon,
   FolderIcon,
   ListFilterIcon,
+  PanelRightOpenIcon,
   PinIcon,
   PlusIcon,
   ShapesIcon,
@@ -31,6 +32,7 @@ import {
   SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
+  SidebarMenuAction,
   SidebarMenuItem,
 } from "@/components/sidebar"
 import { useComposerVariant } from "@/blocks/prompt-input/composer-variant"
@@ -51,6 +53,8 @@ import {
 import { formatWhen } from "@/lib/threads"
 import type { Side } from "@/lib/sides"
 import { cn } from "@/lib/utils"
+import { startWorkspaceNativeDrag } from "@/lib/desktop"
+import { addPane, dockPane, getWorkspaceSnapshot, MAX_VISIBLE_PANES, setActivePane, useWorkspace } from "@/lib/workspace-state"
 
 /**
  * The rail's own view of a chat, and of a session.
@@ -423,6 +427,34 @@ function ThreadRow({
   running: boolean
   onOpen: (id: string) => void
 }) {
+  const [rowNotice, setRowNotice] = React.useState<string | null>(null)
+  const paneType = thread.side === "chat" ? "chat" : "code-session"
+  const workspace = useWorkspace()
+  const alreadyOpen = workspace.panes.some((pane) => pane.type === paneType && pane.context?.sessionId === thread.id)
+  const canOpenBeside = alreadyOpen || workspace.panes.length < MAX_VISIBLE_PANES
+  const openBeside = () => {
+    setRowNotice(null)
+    const current = getWorkspaceSnapshot()
+    const existing = current.panes.find((pane) => pane.type === paneType && pane.context?.sessionId === thread.id)
+    if (existing) {
+      setActivePane(existing.id)
+      return
+    }
+    if (current.panes.length >= MAX_VISIBLE_PANES) {
+      setRowNotice("Six views are open. Close one before opening another beside it.")
+      return
+    }
+    if (!current.activePaneId) {
+      onOpen(thread.id)
+      return
+    }
+    const pane = addPane(paneType, { title: thread.title, context: { sessionId: thread.id } })
+    if (pane && !dockPane(pane.id, current.activePaneId, "right")) {
+      // The new pane is still valid in the workspace if the target disappeared
+      // between reading the active pane and docking it.
+      setActivePane(pane.id)
+    }
+  }
   return (
     /* The context menu supplies the row's own <li>, so what goes in is the
        button and the timestamp and nothing else. */
@@ -431,6 +463,12 @@ function ThreadRow({
         size="sm"
         className={THREAD}
         isActive={active}
+        draggable
+        onDragStart={(event) => {
+          if (startWorkspaceNativeDrag(event.currentTarget, { kind: "session", id: thread.id, side: thread.side }, event.nativeEvent)) return
+          event.dataTransfer.setData("application/x-tavi-session", JSON.stringify({ id: thread.id, side: thread.side }))
+          event.dataTransfer.effectAllowed = "copyMove"
+        }}
         onClick={() => onOpen(thread.id)}
         title={thread.title}
       >
@@ -473,13 +511,24 @@ function ThreadRow({
           It says one of three things, and never two at once: the thread is
           answering, there is something in it the reader has not looked at,
           or — when neither of those is true — when it was last touched. */}
-      <SidebarMenuBadge className="text-sidebar-foreground/70">
+      <SidebarMenuBadge className="text-sidebar-foreground/70 group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0">
         {running
           ? "Running"
           : thread.unreadAt
             ? "New"
             : formatWhen(thread.updatedAt)}
       </SidebarMenuBadge>
+      <SidebarMenuAction
+        showOnHover
+        aria-label={alreadyOpen ? `Focus ${thread.title} pane` : `Open ${thread.title} beside the active view`}
+        title={!canOpenBeside ? "Six views are open. Close one before opening another beside it." : alreadyOpen ? "Focus this view" : "Open beside active view"}
+        aria-disabled={!canOpenBeside}
+        onClick={openBeside}
+        className={cn("end-1 group-hover/menu-item:opacity-100 group-focus-within/menu-item:opacity-100", !canOpenBeside && "cursor-not-allowed opacity-50")}
+      >
+        <PanelRightOpenIcon aria-hidden="true" />
+      </SidebarMenuAction>
+      {rowNotice ? <span role="status" className="sr-only">{rowNotice}</span> : null}
     </ThreadContextMenu>
   )
 }

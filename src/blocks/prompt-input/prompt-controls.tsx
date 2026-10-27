@@ -750,6 +750,7 @@ function PromptInputProvider({
   keys,
   locked,
   cliProviders,
+  compactLabel = false,
 }: {
   provider: string
   onProviderChange: (value: string) => void
@@ -763,6 +764,8 @@ function PromptInputProvider({
   locked?: boolean
   /** The CLI providers on this machine. */
   cliProviders: CliProviderState[]
+  /** Hide the provider name in narrow panes while retaining the full accessible name. */
+  compactLabel?: boolean
 }) {
   const context = usePromptInput("PromptInputProvider")
   const [open, setOpen] = React.useState(false)
@@ -921,10 +924,10 @@ function PromptInputProvider({
               providerLabel={current.label}
               className="size-4"
             />
-            <span className="min-w-0 truncate">{current.label}</span>
+            <span className={cn("min-w-0 truncate", compactLabel && "@max-[320px]/pane:hidden")}>{current.label}</span>
           </>
         ) : (
-          <span className="min-w-0 truncate">Select a provider</span>
+          <span className={cn("min-w-0 truncate", compactLabel && "@max-[320px]/pane:hidden")}>Select a provider</span>
         )}
       </PopoverTrigger>
       <PopoverContent className="w-56 p-1" align="start" side="top">
@@ -1808,7 +1811,9 @@ type DictationSession = {
 
 function PromptInputDictation({
   transcribe,
-  shortcut = "ctrl+shift+d",
+  /* Ctrl+Shift+D is the workspace's Diff pane (WS-16). Dictation keeps a
+     keyboard route but moves off the pane shortcut. */
+  shortcut = "ctrl+shift+m",
   autoSend = false,
 }: {
   transcribe?: (audio: Blob) => Promise<string>
@@ -2198,6 +2203,7 @@ function PromptInputSelect({
   side = "top",
   align = "start",
   className,
+  compactLabel = false,
   children,
 }: {
   options: PromptOption[]
@@ -2211,6 +2217,8 @@ function PromptInputSelect({
   side?: "top" | "bottom"
   align?: "start" | "end"
   className?: string
+  /** Hide the visible value in a narrow pane; the button keeps its full accessible name. */
+  compactLabel?: boolean
   children?: React.ReactNode
 }) {
   const context = usePromptInput("PromptInputSelect")
@@ -2263,7 +2271,7 @@ function PromptInputSelect({
               {current?.icon ?? icon}
             </span>
           ) : null}
-          <span className="truncate">{shown}</span>
+          <span className={cn("truncate", compactLabel && "@max-[320px]/pane:hidden")}>{shown}</span>
         </TooltipTrigger>
         <TooltipContent>
           {label} {shortcut ? <KbdGroup keys={shortcut} size="sm" /> : null}
@@ -2376,6 +2384,7 @@ function PromptInputFolderSelect({
   label,
   placeholder,
   icon,
+  compactLabel = false,
 }: {
   /** The folders this app has been granted access to. */
   folders: { id: string; name: string; missing?: boolean }[]
@@ -2392,6 +2401,8 @@ function PromptInputFolderSelect({
   label: string
   placeholder?: string
   icon?: React.ReactNode
+  /** Hide the visible value in a narrow pane; the button keeps its full accessible name. */
+  compactLabel?: boolean
 }) {
   const context = usePromptInput("PromptInputFolderSelect")
   const { announce, disabled } = context
@@ -2446,7 +2457,7 @@ function PromptInputFolderSelect({
           <span data-icon="inline-start" className="flex">
             {icon}
           </span>
-          <span className="truncate">{shown}</span>
+          <span className={cn("truncate", compactLabel && "@max-[320px]/pane:hidden")}>{shown}</span>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>

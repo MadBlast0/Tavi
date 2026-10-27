@@ -762,6 +762,7 @@ so tool support is intermittent.
 
 ## Known limitations
 
+- **The dockable workspace's tool panes are local previews.** Browser, application preview, terminal, file explorer/editor/preview, plan, tasks, agent activity and logs use clearly labelled sample state; they do not navigate the network, read or write project files, run commands, inspect Git or start jobs. Session panes use the existing Chat/Code conversation flow. Native pane/tab/session drag between Tauri windows is implemented with a native drag transport, but still needs an interactive desktop run on supported platforms. A popped-out session is a separate native webview and cannot be popped out while the same session is replying in the main window. Live conversation text, status and tool activity are synchronized through local app events; the durable transcript is reloaded when the pane docks back.
 - **A provider's own catalogue is the only source of what a model can do.** A
   provider that publishes no capability metadata — which is most of them —
   leaves the effort control off for its models, because the app will not

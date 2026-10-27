@@ -27,6 +27,7 @@
     "@assistant-ui/react-markdown": "^0.14.23",
     "@assistant-ui/vite": "^0.0.21",
     "@base-ui/react": "^1.9.0",
+    "@crabnebula/tauri-plugin-drag-as-window": "2.1.0",
     "@fontsource-variable/geist": "^5.3.0",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@shadcn/react": "^0.3.1",

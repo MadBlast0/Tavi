@@ -108,6 +108,17 @@ export type PaneOptions = {
   title?: string
   /** What the pane is about, as references. */
   context?: PaneContext
+  /**
+   * The pane this one is added beside.
+   *
+   * A header action belongs to the pane whose header holds it, so it names
+   * that pane instead of letting the new pane follow global focus. Without
+   * one, the pane is added beside the focused pane, which is where a view
+   * opened from the workspace itself belongs. An anchor that lives in a tab
+   * group has no edge of its own to split, so the new pane joins that group
+   * as a tab and shows there.
+   */
+  anchorPaneId?: PaneInstanceId
 }
 
 /**
@@ -247,8 +258,8 @@ export type WorkspaceStore = {
    * Adds a pane, and gives it an id nobody else has.
    *
    * Returns null when the workspace is already full, which is the six-pane
-   * rule. The pane is added but not placed: where it goes is the layout
-   * engine's decision, and it is made with `setLayout`.
+   * rule. The pane is placed beside the anchor named in its options, or
+   * beside the focused pane when none is given, and it takes the focus.
    */
   addPane: (type: PaneTypeKey, options?: PaneOptions) => PaneInstance | null
   /**
@@ -262,12 +273,15 @@ export type WorkspaceStore = {
   removePane: (id: PaneInstanceId) => void
   /** Gives a pane its own title, or takes the title back. */
   setPaneTitle: (id: PaneInstanceId, title: string | undefined) => void
+  setPaneType: (id: PaneInstanceId, type: PaneTypeKey) => void
+  setPaneContext: (id: PaneInstanceId, context: PaneContext | undefined) => void
   /**
    * Says which pane has focus.
    *
    * One pane, or none. An id that is not a pane in this workspace is
    * refused rather than remembered, because a focus that points at nothing
-   * is a focus nobody can draw.
+   * is a focus nobody can draw. Focusing a pane that lives in a tab group
+   * also shows its tab, so the pane the focus names is the pane on screen.
    */
   setActivePane: (id: PaneInstanceId | null) => void
   /**
@@ -278,6 +292,7 @@ export type WorkspaceStore = {
    * ratio that is not a share of anything.
    */
   setLayout: (layout: LayoutNode | null) => boolean
+  restore: (snapshot: PersistedWorkspace) => boolean
   /**
    * Moves a pane onto another one.
    *
@@ -285,7 +300,8 @@ export type WorkspaceStore = {
    * drop does: the pane is taken out of wherever it was and put against the
    * target, on the given edge, or into the target's group. A pane that is
    * dropped on itself is refused, and a move that would break the
-   * arrangement changes nothing.
+   * arrangement changes nothing. A successful move focuses the pane that
+   * moved and, when it lands in a group, shows its tab.
    */
   dockPane: (
     paneId: PaneInstanceId,
@@ -317,6 +333,7 @@ export type WorkspaceStore = {
    * between, and a change that asked for one anyway is refused.
    */
   setActiveTab: (paneId: PaneInstanceId) => void
+  reorderTab: (paneId: PaneInstanceId, beforePaneId: PaneInstanceId) => boolean
   /**
    * Opens an overlay.
    *
@@ -347,6 +364,24 @@ export const layoutPaneIds = (layout: LayoutNode | null): PaneInstanceId[] => {
 }
 
 /**
+ * The pane ids a reader can see, in the order the arrangement walks them.
+ *
+ * A group shows one tab and hides the rest. A hidden tab is still part of
+ * the arrangement, but nothing is drawn for it, so it is not somewhere
+ * focus can go. Closing a pane and choosing what to focus next use this
+ * list rather than `layoutPaneIds`, which walks every tab.
+ */
+export const visiblePaneIds = (layout: LayoutNode | null): PaneInstanceId[] => {
+  if (layout === null) return []
+  if (layout.kind === "pane") return [layout.paneId]
+  if (layout.kind === "group") return [layout.activeTabId]
+  return [
+    ...visiblePaneIds(layout.children[0]),
+    ...visiblePaneIds(layout.children[1]),
+  ]
+}
+
+/**
  * What is wrong with an arrangement, if anything.
  *
  * The rules are about the arrangement alone, and they are the ones that
@@ -361,9 +396,12 @@ export const validateLayout = (
   layout: LayoutNode | null,
   knownPaneIds: Iterable<PaneInstanceId>,
 ): string[] => {
-  if (layout === null) return []
   const known = new Set(knownPaneIds)
   const problems: string[] = []
+  if (layout === null) {
+    for (const id of known) problems.push(`the pane ${id} is not in the arrangement`)
+    return problems
+  }
   const placed = new Set<PaneInstanceId>()
   const groups = new Set<GroupId>()
 
@@ -412,7 +450,73 @@ export const validateLayout = (
   }
 
   walk(layout)
+  for (const id of known) {
+    if (!placed.has(id)) problems.push(`the pane ${id} is not in the arrangement`)
+  }
   return problems
+}
+
+/** The only workspace data written to local storage. */
+export type PersistedWorkspace = {
+  version: 1
+  panes: PaneInstance[]
+  activePaneId: PaneInstanceId | null
+  layout: LayoutNode
+}
+
+function decodeLayout(value: unknown): LayoutNode | null {
+  if (!value || typeof value !== "object") return null
+  const node = value as Record<string, unknown>
+  if (node.kind === "pane" && typeof node.paneId === "string") return { kind: "pane", paneId: node.paneId }
+  if (node.kind === "group" && typeof node.groupId === "string" && Array.isArray(node.tabs) && node.tabs.every((tab) => typeof tab === "string") && typeof node.activeTabId === "string") {
+    return { kind: "group", groupId: node.groupId, tabs: [...node.tabs] as string[], activeTabId: node.activeTabId }
+  }
+  if (node.kind === "split" && (node.orientation === "horizontal" || node.orientation === "vertical") && typeof node.ratio === "number" && Array.isArray(node.children) && node.children.length === 2) {
+    const first = decodeLayout(node.children[0])
+    const second = decodeLayout(node.children[1])
+    if (first && second) return { kind: "split", orientation: node.orientation, ratio: node.ratio, children: [first, second] }
+  }
+  return null
+}
+
+/** Parses, validates and bounds-checks a saved layout before it is drawn. */
+export const parsePersistedWorkspace = (raw: string): PersistedWorkspace | null => {
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>
+    if (value.version !== 1 || !Array.isArray(value.panes) || value.panes.length < 1 || value.panes.length > MAX_VISIBLE_PANES) return null
+    const panes: PaneInstance[] = []
+    for (const item of value.panes) {
+      if (!item || typeof item !== "object") return null
+      const pane = item as Record<string, unknown>
+      if (typeof pane.id !== "string" || !pane.id || typeof pane.type !== "string" || !pane.type) return null
+      if (pane.title !== undefined && typeof pane.title !== "string") return null
+      let context: PaneContext | undefined
+      if (pane.context !== undefined) {
+        if (!pane.context || typeof pane.context !== "object") return null
+        const candidate = pane.context as Record<string, unknown>
+        if (candidate.projectId !== undefined && typeof candidate.projectId !== "string") return null
+        if (candidate.sessionId !== undefined && typeof candidate.sessionId !== "string") return null
+        context = {
+          ...(typeof candidate.projectId === "string" ? { projectId: candidate.projectId } : {}),
+          ...(typeof candidate.sessionId === "string" ? { sessionId: candidate.sessionId } : {}),
+        }
+      }
+      panes.push({
+        id: pane.id,
+        type: pane.type,
+        ...(typeof pane.title === "string" ? { title: pane.title } : {}),
+        ...(context ? { context } : {}),
+      })
+    }
+    if (new Set(panes.map((pane) => pane.id)).size !== panes.length) return null
+    if (value.activePaneId !== null && typeof value.activePaneId !== "string") return null
+    const layout = decodeLayout(value.layout)
+    if (!layout || validateLayout(layout, panes.map((pane) => pane.id)).length > 0) return null
+    if (typeof value.activePaneId === "string" && !panes.some((pane) => pane.id === value.activePaneId)) return null
+    return { version: 1, panes, activePaneId: value.activePaneId as string | null, layout }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -558,6 +662,7 @@ export const dockPaneInto = (
       {
         ...target,
         tabs: [...target.tabs, paneId],
+        activeTabId: paneId,
       },
     )
   }
@@ -568,7 +673,7 @@ export const dockPaneInto = (
       kind: "group",
       groupId: newGroupId(),
       tabs: [targetPaneId, paneId],
-      activeTabId: targetPaneId,
+      activeTabId: paneId,
     })
   }
 
@@ -746,21 +851,77 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       if (options?.title !== undefined) instance.title = options.title
       if (options?.context !== undefined) instance.context = options.context
       panes = [...panes, instance]
+      if (layout === null) {
+        layout = { kind: "pane", paneId: instance.id }
+      } else {
+        const anchorId = options?.anchorPaneId && has(options.anchorPaneId)
+          ? options.anchorPaneId
+          : null
+        const targetId = anchorId ?? (activePaneId && has(activePaneId)
+          ? activePaneId
+          : layoutPaneIds(layout)[0])
+        if (targetId) {
+          /* A pane in a group shares its place with its tabs. Splitting the
+             one pane would split the whole group, so a view added beside a
+             grouped pane joins that group and shows there. */
+          const edge = groupOf(layout, targetId) ? "center" : "right"
+          layout = dockPaneInto(layout, instance.id, targetId, edge) ?? layout
+        }
+      }
+      activePaneId = instance.id
       publish()
       return instance
     },
 
     removePane: (id) => {
       if (!has(id)) return
+      /* Read the old order before the pane is taken out: removing a showing
+         tab moves its group's active tab, and focus has to follow the pane
+         the reader can actually see rather than a tab hidden behind another.
+         A sibling tab is the nearest neighbour; otherwise the next visible
+         pane in tree order, then the previous one. */
+      const previousLayout = layout
+      const oldGroup = groupOf(previousLayout, id)
+      const visibleBefore = visiblePaneIds(previousLayout)
+      const closedIndex = visibleBefore.indexOf(id)
+      const groupIndex = oldGroup ? oldGroup.tabs.indexOf(id) : -1
       panes = panes.filter((pane) => pane.id !== id)
-      if (activePaneId === id) activePaneId = null
+      const survives = (paneId: PaneInstanceId) => has(paneId)
+      const nextTab = oldGroup?.tabs.slice(groupIndex + 1).find(survives)
+      const previousTab = oldGroup
+        ? [...oldGroup.tabs.slice(0, groupIndex)].reverse().find(survives)
+        : undefined
+      const nextVisible = closedIndex >= 0
+        ? visibleBefore.slice(closedIndex + 1).find(survives)
+        : undefined
+      const previousVisible = closedIndex > 0
+        ? [...visibleBefore.slice(0, closedIndex)].reverse().find(survives)
+        : undefined
+      const fallback = nextTab ?? previousTab ?? nextVisible ?? previousVisible ?? visibleBefore.find(survives) ?? null
+      if (activePaneId === id || activePaneId === null) activePaneId = fallback
       if (overlay && overlay.paneId === id) overlay = null
       if (paneState[id]) {
         const next = { ...paneState }
         delete next[id]
         paneState = next
       }
-      layout = removePaneFromLayout(layout, id)
+      layout = removePaneFromLayout(previousLayout, id)
+      /* The focused pane and the group's showing tab are the same pane. If
+         the removed tab was the one showing, the group has already moved to
+         another tab; bring the focused pane forward so they agree. */
+      if (activePaneId !== null) {
+        const group = groupOf(layout, activePaneId)
+        if (group && group.activeTabId !== activePaneId) {
+          layout = showTab(layout, group.groupId, activePaneId)
+        }
+      }
+      const visibleAfter = visiblePaneIds(layout)
+      if (activePaneId !== null && !visibleAfter.includes(activePaneId)) {
+        activePaneId = visibleAfter[0] ?? null
+      }
+      if (activePaneId === null && visibleAfter.length > 0) {
+        activePaneId = visibleAfter[0]
+      }
       publish()
     },
 
@@ -776,9 +937,50 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       publish()
     },
 
+    setPaneType: (id, type) => {
+      if (!has(id) || !type) return
+      panes = panes.map((pane) => pane.id === id ? { ...pane, type } : pane)
+      publish()
+    },
+
+    setPaneContext: (id, context) => {
+      if (!has(id)) return
+      panes = panes.map((pane) => {
+        if (pane.id !== id) return pane
+        const next = { ...pane }
+        if (context === undefined) delete next.context
+        else next.context = context
+        return next
+      })
+      publish()
+    },
+
     setActivePane: (id) => {
       if (id !== null && !has(id)) return
-      if (activePaneId === id) return
+      if (id === activePaneId) {
+        /* A pane can be the active pane and still be hidden behind another
+           tab in its group. Focusing it has to make it visible as well. */
+        if (id === null) return
+        const group = groupOf(layout, id)
+        if (!group || group.activeTabId === id) return
+        layout = mapLayout(layout, (node) =>
+          node.kind === "group" && node.groupId === group.groupId
+            ? { ...node, activeTabId: id }
+            : node,
+        )
+        publish()
+        return
+      }
+      if (id !== null) {
+        const group = groupOf(layout, id)
+        if (group && group.activeTabId !== id) {
+          layout = mapLayout(layout, (node) =>
+            node.kind === "group" && node.groupId === group.groupId
+              ? { ...node, activeTabId: id }
+              : node,
+          )
+        }
+      }
       activePaneId = id
       publish()
     },
@@ -792,6 +994,30 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       return true
     },
 
+    restore: (saved) => {
+      if (saved.version !== 1 || saved.panes.length > MAX_VISIBLE_PANES || validateLayout(saved.layout, saved.panes.map((pane) => pane.id)).length > 0) return false
+      const savedIds = new Set(saved.panes.map((pane) => pane.id))
+      const additions = panes.filter((pane) => !savedIds.has(pane.id))
+      if (saved.panes.length + additions.length > MAX_VISIBLE_PANES) return false
+      let nextLayout: LayoutNode = saved.layout
+      for (const pane of additions) {
+        const target = layoutPaneIds(nextLayout)[0]
+        if (target) nextLayout = dockPaneInto(nextLayout, pane.id, target, "right") ?? nextLayout
+        else nextLayout = { kind: "pane", paneId: pane.id }
+      }
+      const nextPanes = [...saved.panes, ...additions]
+      if (validateLayout(nextLayout, nextPanes.map((pane) => pane.id)).length > 0) return false
+      panes = nextPanes
+      layout = nextLayout
+      activePaneId = saved.activePaneId && has(saved.activePaneId)
+        ? saved.activePaneId
+        : activePaneId && has(activePaneId)
+          ? activePaneId
+          : panes[0]?.id ?? null
+      publish()
+      return true
+    },
+
     dockPane: (paneId, targetPaneId, edge) => {
       if (!has(paneId) || !has(targetPaneId)) return false
       if (paneId === targetPaneId) return false
@@ -801,6 +1027,7 @@ export const createWorkspaceStore = (): WorkspaceStore => {
         return false
       }
       layout = next
+      activePaneId = paneId
       publish()
       return true
     },
@@ -826,14 +1053,33 @@ export const createWorkspaceStore = (): WorkspaceStore => {
       if (!has(paneId)) return
       const group = groupOf(layout, paneId)
       if (!group) return
-      if (group.activeTabId === paneId) return
-      const next = mapLayout(layout, (node) =>
+      if (group.activeTabId === paneId && activePaneId === paneId) return
+      if (group.activeTabId !== paneId) {
+        layout = mapLayout(layout, (node) =>
+          node.kind === "group" && node.groupId === group.groupId
+            ? { ...node, activeTabId: paneId }
+            : node,
+        )
+      }
+      activePaneId = paneId
+      publish()
+    },
+
+    reorderTab: (paneId, beforePaneId) => {
+      if (!has(paneId) || !has(beforePaneId) || paneId === beforePaneId) return false
+      const group = groupOf(layout, paneId)
+      if (!group || group.groupId !== groupOf(layout, beforePaneId)?.groupId) return false
+      const tabs = group.tabs.filter((id) => id !== paneId)
+      const index = tabs.indexOf(beforePaneId)
+      if (index < 0) return false
+      tabs.splice(index, 0, paneId)
+      layout = mapLayout(layout, (node) =>
         node.kind === "group" && node.groupId === group.groupId
-          ? { ...node, activeTabId: paneId }
+          ? { ...node, tabs }
           : node,
       )
-      layout = next
       publish()
+      return true
     },
 
     openOverlay: (action, paneId) => {
@@ -920,6 +1166,14 @@ export const removePane = (id: PaneInstanceId): void =>
 export const setPaneTitle = (id: PaneInstanceId, title: string | undefined): void =>
   workspaceStore.setPaneTitle(id, title)
 
+/** Changes the kind of view a pane renders. */
+export const setPaneType = (id: PaneInstanceId, type: PaneTypeKey): void =>
+  workspaceStore.setPaneType(id, type)
+
+/** Changes which session or project a pane refers to. */
+export const setPaneContext = (id: PaneInstanceId, context: PaneContext | undefined): void =>
+  workspaceStore.setPaneContext(id, context)
+
 /** Says which pane has focus. */
 export const setActivePane = (id: PaneInstanceId | null): void =>
   workspaceStore.setActivePane(id)
@@ -927,6 +1181,33 @@ export const setActivePane = (id: PaneInstanceId | null): void =>
 /** Puts an arrangement in place. Returns false when it is not one this workspace can hold. */
 export const setLayout = (layout: LayoutNode | null): boolean =>
   workspaceStore.setLayout(layout)
+
+/** Restores a previously validated arrangement into the app's store. */
+export const restoreWorkspace = (snapshot: PersistedWorkspace): boolean =>
+  workspaceStore.restore(snapshot)
+
+/**
+ * The part of the workspace that is written down.
+ *
+ * It is narrower than a snapshot on purpose: a caller that persists the
+ * layout can watch only these three values, and a pane's own state changing
+ * cannot make it think the layout changed.
+ */
+export type PersistedWorkspaceGeometry = Pick<
+  WorkspaceSnapshot,
+  "panes" | "activePaneId" | "layout"
+>
+
+/** Serializes only pane identity/context and geometry, never transcript or pane state. */
+export const serializeWorkspace = (workspace: PersistedWorkspaceGeometry = getWorkspaceSnapshot()): string | null => {
+  if (!workspace.layout || workspace.panes.length === 0) return null
+  return JSON.stringify({
+    version: 1,
+    panes: workspace.panes,
+    activePaneId: workspace.activePaneId,
+    layout: workspace.layout,
+  } satisfies PersistedWorkspace)
+}
 
 /** Moves a pane onto another one, on an edge or into its group. */
 export const dockPane = (
@@ -947,6 +1228,10 @@ export const updateLayout = (
 /** Shows another of a group's tabs. */
 export const setActiveTab = (paneId: PaneInstanceId): void =>
   workspaceStore.setActiveTab(paneId)
+
+/** Moves a tab before another tab in the same group. */
+export const reorderTab = (paneId: PaneInstanceId, beforePaneId: PaneInstanceId): boolean =>
+  workspaceStore.reorderTab(paneId, beforePaneId)
 
 /** Opens an overlay, and closes whatever was open. */
 export const openOverlay = (action: string, paneId?: PaneInstanceId): void =>

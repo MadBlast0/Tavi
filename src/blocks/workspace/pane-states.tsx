@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { AlertCircleIcon, type LucideIcon } from "lucide-react"
+import { CircleAlertIcon, type LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/button"
 import {
@@ -128,7 +128,7 @@ export function PaneError({
       role="alert"
       className={cn("flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center", className)}
     >
-      <AlertCircleIcon className="size-6 text-destructive" />
+      <CircleAlertIcon className="size-6 text-destructive" />
       <p className="text-sm font-medium text-foreground">{title}</p>
       {description ? (
         <p className="text-xs text-muted-foreground">{description}</p>

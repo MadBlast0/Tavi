@@ -1,255 +1,168 @@
 "use client"
 
 import * as React from "react"
-import { SearchIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, Columns2Icon, DiffIcon, FileCode2Icon, FileMinus2Icon, FilePlus2Icon, Rows2Icon, SearchIcon } from "lucide-react"
 
+import { Badge } from "@/components/badge"
+import { Button } from "@/components/button"
 import { Input } from "@/components/input"
-import { cn } from "@/lib/utils"
+import { TooltipIconButton } from "@/components/tooltip-icon-button"
+import { setPaneState, usePaneState, type DockEdge } from "@/lib/workspace-state"
+import type { WorkspaceNativeDragPayload } from "@/lib/desktop"
+import { PaneEmpty, PaneError, PaneLoading, PaneUnavailable } from "../pane-states"
+import { Pane } from "../pane"
 
-interface SampleFile {
-  path: string
-  status: "added" | "modified" | "deleted"
-  additions: number
-  deletions: number
-}
+type SampleFile = { path: string; status: "added" | "modified" | "deleted"; additions: number; deletions: number }
+type DiffLine = { kind: "context" | "added" | "removed"; oldLine: number | null; newLine: number | null; text: string; hunk?: number }
+
+/**
+ * The state switcher is QA scaffolding, not product chrome.
+ *
+ * It stays available in a dev build at `?sample-states=1` so the shared states
+ * can still be exercised, and is absent everywhere else.
+ */
+const SAMPLE_STATE_HARNESS =
+  typeof window !== "undefined" &&
+  import.meta.env.DEV &&
+  new URLSearchParams(window.location.search).get("sample-states") === "1"
 
 const SAMPLE_FILES: readonly SampleFile[] = [
-  { path: "src/lib/workspace-state.ts", status: "modified", additions: 47, deletions: 12 },
-  { path: "src/blocks/workspace/pane.tsx", status: "modified", additions: 23, deletions: 8 },
-  { path: "src/blocks/workspace/panes/chat-pane.tsx", status: "added", additions: 219, deletions: 0 },
-  { path: "src/blocks/workspace/panes/code-session-pane.tsx", status: "added", additions: 197, deletions: 0 },
-  { path: "src/blocks/workspace/pane-registry.tsx", status: "added", additions: 156, deletions: 0 },
-  { path: "src/blocks/workspace/pane-states.tsx", status: "added", additions: 134, deletions: 0 },
-  { path: "src/lib/workspace-state.ts", status: "modified", additions: 89, deletions: 31 },
-  { path: "src/blocks/workspace/layout/layout-tree.tsx", status: "added", additions: 345, deletions: 0 },
-  { path: "src/blocks/workspace/pane-registry.test.ts", status: "added", additions: 87, deletions: 0 },
-  { path: "src/blocks/workspace/pane-states.test.ts", status: "added", additions: 76, deletions: 0 },
-  { path: "src/lib/pane-registry.test.ts", status: "added", additions: 62, deletions: 0 },
-  { path: "README.md", status: "modified", additions: 12, deletions: 3 },
-  { path: "src/lib/providers.ts", status: "deleted", additions: 0, deletions: 245 },
-  { path: "docs/providers.md", status: "added", additions: 169, deletions: 0 },
-] as const
+  { path: "src/App.tsx", status: "modified", additions: 4, deletions: 2 },
+  { path: "src/components/Workspace.tsx", status: "added", additions: 8, deletions: 0 },
+  { path: "src/lib/layout.ts", status: "deleted", additions: 0, deletions: 3 },
+]
+const SAMPLE_LINES: readonly DiffLine[] = [
+  { kind: "context", oldLine: 10, newLine: 10, text: "export function App() {" },
+  { kind: "removed", oldLine: 11, newLine: null, text: "  return <main>Loading</main>", hunk: 0 },
+  { kind: "added", oldLine: null, newLine: 11, text: "  return <WorkspaceHost>", hunk: 0 },
+  { kind: "added", oldLine: null, newLine: 12, text: "    <WorkspaceLayout />", hunk: 0 },
+  { kind: "context", oldLine: 12, newLine: 13, text: "  </main>" },
+  { kind: "context", oldLine: 20, newLine: 21, text: "  const open = (id: string) => {" },
+  { kind: "removed", oldLine: 21, newLine: null, text: "    loadThread(id)", hunk: 1 },
+  { kind: "added", oldLine: null, newLine: 22, text: "    openThread(side, id)", hunk: 1 },
+  { kind: "added", oldLine: null, newLine: 23, text: "    showSessionPane(id)", hunk: 1 },
+  { kind: "context", oldLine: 22, newLine: 24, text: "  }" },
+]
 
-type FileStatus = SampleFile["status"]
-type DiffState = "empty" | "populated" | "loading" | "error" | "unavailable" | "no-selection"
-
-function FileRow({ file, isSelected, onClick }: { file: SampleFile; isSelected: boolean; onClick: () => void }) {
-  return (
-    <button
-      key={file.path}
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent"
-    >
-      <span className="size-3 shrink-0 text-muted-foreground" role="img" aria-label="File">📄</span>
-      <span className="truncate flex-1">{file.path}</span>
-      <span className="text-[10px] px-1 rounded text-green-500">+{file.additions}</span>
-      <span className="text-[10px] px-1 rounded text-red-500">-{file.deletions}</span>
-    </button>
-  )
+function usePaneValue<T>(paneId: string, key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const state = usePaneState(paneId)
+  const value = Object.prototype.hasOwnProperty.call(state, key) ? state[key] as T : initial
+  const current = React.useRef(value)
+  current.current = value
+  const setValue = React.useCallback<React.Dispatch<React.SetStateAction<T>>>((update) => {
+    const next = typeof update === "function" ? (update as (previous: T) => T)(current.current) : update
+    current.current = next
+    setPaneState(paneId, { [key]: next })
+  }, [paneId, key])
+  return [value, setValue]
 }
 
-function DiffContent({ selected }: { selected: SampleFile | null }) {
-  if (!selected) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-        <span className="size-12" role="img" aria-label="Diff">📊</span>
-        <p className="text-sm">Select a file to view its diff</p>
-      </div>
-    )
-  }
+function FileMark({ status }: { status: SampleFile["status"] }) {
+  const Icon = status === "added" ? FilePlus2Icon : status === "deleted" ? FileMinus2Icon : FileCode2Icon
+  return <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+}
+
+function DiffLineRow({ line }: { line: DiffLine }) {
+  const sign = line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "
+  const style = line.kind === "added"
+    ? "bg-success/10 text-success-foreground"
+    : line.kind === "removed"
+      ? "bg-destructive/10 text-destructive-foreground"
+      : "text-foreground"
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <span className="size-4 text-muted-foreground" role="img" aria-label="Code">📄</span>
-        <span className="truncate text-sm font-medium">{selected.path}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <span className="text-xs px-1 rounded text-green-500">+{selected.additions}</span>
-          <span className="text-xs px-1 rounded text-red-500">-{selected.deletions}</span>
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1 p-3 overflow-auto font-mono text-xs bg-muted/30">
-        <pre className="text-muted-foreground">
-// {selected.path}
-// Sample diff content for {selected.path}
-+ This is a sample diff
-+ showing the structure
-+ of the Diff Viewer pane
-- The real implementation
-- would show actual diffs</pre>
-      </div>
+    <div className={`grid min-w-max grid-cols-[2rem_2rem_1.25rem_minmax(0,1fr)] @min-[34rem]/pane:grid-cols-[3rem_3rem_1.25rem_minmax(12rem,1fr)] ${style}`}>
+      <span className="select-none border-r border-border/50 px-1 text-right text-muted-foreground">{line.oldLine ?? ""}</span>
+      <span className="select-none border-r border-border/50 px-1 text-right text-muted-foreground">{line.newLine ?? ""}</span>
+      <span className="select-none text-center">{sign}</span>
+      <code className="whitespace-pre px-2">{line.text}</code>
     </div>
   )
 }
 
-export function DiffViewerPane({ paneId }: { paneId: string }) {
-  const [state, setState] = React.useState<DiffState>("populated")
-  const [selectedFile, setSelectedFile] = React.useState<string | null>(SAMPLE_FILES[0].path)
-  const [search, setSearch] = React.useState("")
-  const [filter, setFilter] = React.useState<"all" | "added" | "modified" | "deleted">("all")
+/** Unified diff lines; the pane's own scroll region owns long-line overflow. */
+function UnifiedDiff({ lines }: { lines: readonly DiffLine[] }) {
+  return <div className="min-w-max font-mono text-[11px] leading-5">{lines.map((line, index) => <div key={`${line.kind}-${index}`} data-hunk={line.hunk}><DiffLineRow line={line} /></div>)}</div>
+}
 
-  function renderContent() {
-    switch (state) {
-      case "empty":
-        return (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4 text-muted-foreground">
-            <div className="animate-spin size-8 border-2 border-primary border-t-transparent rounded-full" />
-            <span className="text-sm">Loading diff…</span>
-          </div>
-        )
-      case "loading":
-        return (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4 text-muted-foreground">
-            <div className="animate-spin size-8 border-2 border-primary border-t-transparent rounded-full" />
-            <span className="text-sm">Loading diff…</span>
-          </div>
-        )
-      case "error":
-        return (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center" role="alert">
-            <span className="text-destructive size-6" role="img" aria-label="Error">✕</span>
-            <p className="text-sm font-medium">Failed to load diff</p>
-            <p className="text-xs text-muted-foreground">The diff could not be loaded.</p>
-            <button
-              type="button"
-              onClick={() => setState("populated")}
-              className="mt-2 rounded border bg-transparent px-2 py-1 text-xs hover:bg-accent"
-            >
-              Try again
-            </button>
-          </div>
-        )
-      case "unavailable":
-        return (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
-            <span className="size-12" role="img" aria-label="Diff">📊</span>
-            <p className="text-sm font-medium">Diff unavailable</p>
-            <p className="text-xs">No Git repository or session connected.</p>
-          </div>
-        )
-      case "no-selection":
-        return (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
-            <span className="size-12" role="img" aria-label="Diff">📊</span>
-            <p className="text-sm font-medium">Select a file</p>
-            <p className="text-xs">Choose a file from the list to view its diff</p>
-          </div>
-        )
-      default: {
-        const selected = SAMPLE_FILES.find((f) => f.path === selectedFile)
-        const filteredFiles = SAMPLE_FILES.filter((f) => {
-          if (filter !== "all" && f.status !== filter) return false
-          if (search && !f.path.toLowerCase().includes(search.toLowerCase())) return false
-          return true
-        })
-        const totalAdditions = SAMPLE_FILES.reduce((sum, f) => sum + f.additions, 0)
-        const totalDeletions = SAMPLE_FILES.reduce((sum, f) => sum + f.deletions, 0)
+/** Split diff lines, shown only when the pane can offer each side a readable width. */
+function SplitDiff({ lines }: { lines: readonly DiffLine[] }) {
+  return <div className="grid min-h-full min-w-[40rem] grid-cols-2 divide-x divide-border font-mono text-[11px] leading-5"><div className="overflow-auto">{lines.filter((line) => line.kind !== "added").map((line, index) => <DiffLineRow key={`old-${index}`} line={line} />)}</div><div className="overflow-auto">{lines.filter((line) => line.kind !== "removed").map((line, index) => <DiffLineRow key={`new-${index}`} line={line} />)}</div></div>
+}
 
-        const fileButtons = SAMPLE_FILES.map((file) => {
-          return (
-            <button
-              key={file.path}
-              type="button"
-              onClick={() => setSelectedFile(file.path)}
-              className="flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent"
-            >
-              <span className="size-3 shrink-0 text-muted-foreground" role="img" aria-label="File">📄</span>
-              <span className="truncate flex-1">{file.path}</span>
-              <span className="text-[10px] px-1 rounded text-green-500">+{file.additions}</span>
-              <span className="text-[10px] px-1 rounded text-red-500">-{file.deletions}</span>
-            </button>
-          )
-        })
-
-        return (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 flex-col border-b border-border p-3 gap-2">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-sm">Changes</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500 text-xs font-medium">+{totalAdditions}</span>
-                  <span className="text-red-500 text-xs font-medium">-{totalDeletions}</span>
-                  <span className="text-xs text-muted-foreground">{SAMPLE_FILES.length} files</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" role="img" aria-label="Search">🔍</span>
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Filter files…"
-                    className="pl-8 pr-2 text-xs h-7 rounded border border-input bg-background"
-                  />
-                </div>
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value as any)}
-                  className="px-2 py-1 text-xs border border-input bg-background rounded"
-                >
-                  <option value="all">All</option>
-                  <option value="added">Added</option>
-                  <option value="modified">Modified</option>
-                  <option value="deleted">Deleted</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex min-h-0 flex-1">
-              <div className="flex shrink-0 w-72 border-r border-border flex-col overflow-hidden">
-                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                  {filteredFiles.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-muted-foreground">
-                      No files match the filter
-                    </div>
-                  ) : (
-                    SAMPLE_FILES.map((file) => {
-                      const isSelected = selectedFile === file.path
-                      return (
-                        <FileRow
-                          key={file.path}
-                          file={file}
-                          isSelected={selectedFile === file.path}
-                          onClick={() => setSelectedFile(isSelected ? null : file.path)}
-                        />
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex min-h-0 flex-1">
-                  <DiffContent selected={selected ?? null} />
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      }
-    }
+/** A clearly labeled local diff preview; it never reads Git or the filesystem. */
+export function DiffViewerPane({ paneId, active, onClose, onDockBack, onSplit, onFocus, onMaximize, maximized, onPopOut, popOutAvailable, getDragPayload }: { paneId: string; active?: boolean; onClose?: () => void; onDockBack?: () => void; onSplit?: (edge: DockEdge) => void; onFocus?: () => void; onMaximize?: () => void; maximized?: boolean; onPopOut?: () => void; popOutAvailable?: boolean; getDragPayload?: () => WorkspaceNativeDragPayload }) {
+  const [selectedPath, setSelectedPath] = usePaneValue<string | null>(paneId, "selectedPath", SAMPLE_FILES[0]?.path ?? null)
+  const [search, setSearch] = usePaneValue(paneId, "search", "")
+  const [filter, setFilter] = usePaneValue<"all" | SampleFile["status"]>(paneId, "filter", "all")
+  const [view, setView] = usePaneValue<"unified" | "split">(paneId, "view", "unified")
+  const [hunk, setHunk] = usePaneValue(paneId, "hunk", 0)
+  const [reviewed, setReviewed] = usePaneValue<Set<string>>(paneId, "reviewed", new Set())
+  const [sampleState, setSampleState] = usePaneValue<"content" | "no-changes" | "loading" | "error" | "unavailable" | "long">(paneId, "sampleState", "content")
+  const previewState = SAMPLE_STATE_HARNESS ? sampleState : "content"
+  const diffScroll = React.useRef<HTMLDivElement | null>(null)
+  const files = (previewState === "no-changes" ? [] : SAMPLE_FILES).filter((file) => (filter === "all" || file.status === filter) && file.path.toLowerCase().includes(search.toLowerCase()))
+  const selected = previewState === "no-changes" ? null : SAMPLE_FILES.find((file) => file.path === selectedPath) ?? null
+  const selectedReviewed = selected ? reviewed.has(selected.path) : false
+  const toggleReviewed = () => {
+    if (!selected) return
+    setReviewed((current) => { const next = new Set(current); next.has(selected.path) ? next.delete(selected.path) : next.add(selected.path); return next })
   }
+  const totalAdditions = previewState === "no-changes" ? 0 : SAMPLE_FILES.reduce((total, file) => total + file.additions, 0)
+  const totalDeletions = previewState === "no-changes" ? 0 : SAMPLE_FILES.reduce((total, file) => total + file.deletions, 0)
+  const lines = previewState === "long" ? Array.from({ length: 120 }, (_, index) => SAMPLE_LINES[index % SAMPLE_LINES.length]!) : SAMPLE_LINES
 
   return (
-    <div data-slot="pane" className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <div data-slot="pane-header" className="flex h-8 shrink-0 items-center gap-2 px-2">
-        <span className="size-4 shrink-0 text-muted-foreground" role="img" aria-label="Diff">📊</span>
-        <span className="truncate text-sm font-medium">Diff Viewer</span>
-        <span className="shrink-0 truncate text-xs text-muted-foreground/70">tavi / uiux-workspace</span>
-        <div className="ms-auto flex shrink-0 items-center gap-0.5">
-          <button type="button" className="size-6 rounded hover:bg-accent" aria-label="Pop out into its own window" disabled>
-            <span className="size-4" role="img" aria-label="Pop out">🔲</span>
-          </button>
-          <button type="button" className="size-6 rounded hover:bg-accent" aria-label="Pane menu">
-            <span className="size-4" role="img" aria-label="Menu">⋮</span>
-          </button>
-          <button type="button" className="size-6 rounded hover:bg-accent" aria-label="Close">
-            <span className="size-4" role="img" aria-label="Close">✕</span>
-          </button>
+    <Pane id={paneId} type="diff" title="Diff Viewer" icon={DiffIcon} active={active} onClose={onClose} onDockBack={onDockBack} onSplit={onSplit} onFocus={onFocus} onMaximize={onMaximize} maximized={maximized} onPopOut={onPopOut} popOutAvailable={popOutAvailable} getDragPayload={getDragPayload}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {SAMPLE_STATE_HARNESS ? <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-1 text-[11px] text-muted-foreground"><p>Sample preview · illustrative changes only; not read from Git.</p><label className="ms-auto flex items-center gap-1">Sample state<select aria-label="Diff sample state" value={sampleState} onChange={(event) => setSampleState(event.target.value as typeof sampleState)} className="h-6 rounded border border-border bg-background px-1 text-foreground">{(["content", "no-changes", "loading", "error", "unavailable", "long"] as const).map((state) => <option key={state} value={state}>{state}</option>)}</select></label></div> : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="shrink-0 text-sm font-medium">Changes</span>
+            <Badge variant="default" appearance="muted" className="@max-[22rem]/pane:hidden" title="Illustrative changes only; not read from Git.">Sample</Badge>
+            <span className="shrink-0 text-xs text-success-foreground @max-[20rem]/pane:hidden">+{totalAdditions}</span>
+            <span className="shrink-0 text-xs text-destructive-foreground @max-[20rem]/pane:hidden">−{totalDeletions}</span>
+            <span className="truncate text-xs text-muted-foreground @max-[22rem]/pane:hidden">{files.length} files</span>
+          </div>
+          <div className="ms-auto flex shrink-0 items-center gap-1">
+            <TooltipIconButton tooltip="Previous change" size="icon-xs" disabled={hunk === 0} onClick={() => { const next = Math.max(0, hunk - 1); setHunk(next); diffScroll.current?.querySelector(`[data-hunk="${next}"]`)?.scrollIntoView({ block: "center" }) }}><ChevronUpIcon /></TooltipIconButton>
+            <span className="min-w-10 text-center text-[11px] text-muted-foreground @max-[30rem]/pane:hidden">{hunk + 1} / 2</span>
+            <TooltipIconButton tooltip="Next change" size="icon-xs" disabled={hunk >= 1} onClick={() => { const next = Math.min(1, hunk + 1); setHunk(next); diffScroll.current?.querySelector(`[data-hunk="${next}"]`)?.scrollIntoView({ block: "center" }) }}><ChevronDownIcon /></TooltipIconButton>
+            <TooltipIconButton tooltip={view === "unified" ? "Switch to split view" : "Switch to unified view"} size="icon-xs" className="@max-[30rem]/pane:hidden" aria-pressed={view === "split"} onClick={() => setView((current) => current === "unified" ? "split" : "unified")}>{view === "unified" ? <Columns2Icon /> : <Rows2Icon />}</TooltipIconButton>
+          </div>
         </div>
+        {previewState === "loading" ? <PaneLoading className="flex-1" /> : previewState === "error" ? <PaneError title="Sample diff failed to load" description="This error is illustrative; no Git or filesystem request was made." onRetry={() => setSampleState("content")} /> : previewState === "unavailable" ? <PaneUnavailable title="No repository is connected" description="This pane only shows local sample changes." /> : previewState === "no-changes" ? <PaneEmpty icon={DiffIcon} title="No sample changes" description="Choose another sample state to see the example diff." /> : <div className="flex min-h-0 flex-1 flex-col @min-[34rem]/pane:flex-row">
+          <aside className="flex min-h-0 shrink-0 flex-col border-b border-border @min-[34rem]/pane:w-56 @min-[34rem]/pane:border-b-0 @min-[34rem]/pane:border-r" aria-label="Changed files">
+            <div className="hidden shrink-0 gap-1 p-2 @min-[34rem]/pane:flex">
+              <div className="relative min-w-0 flex-1"><SearchIcon className="absolute start-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label="Search changed files" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter files" className="h-7 ps-7 text-xs" /></div>
+              <select aria-label="Filter file status" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="h-7 max-w-24 rounded border border-input bg-background px-1 text-xs"><option value="all">All</option><option value="added">Added</option><option value="modified">Modified</option><option value="deleted">Deleted</option></select>
+            </div>
+            <div className="flex items-center gap-2 px-2 py-1.5 @min-[34rem]/pane:hidden">
+              {selected ? <FileMark status={selected.status} /> : null}
+              <select aria-label="Select changed file" value={selectedPath ?? ""} onChange={(event) => setSelectedPath(event.target.value || null)} title={selected?.path} className="h-7 min-w-0 flex-1 rounded border border-input bg-background px-1 text-xs">
+                {files.length === 0 ? <option value="">No sample files match</option> : <>{selectedPath === null ? <option value="">Select a file</option> : null}{files.map((file) => <option key={file.path} value={file.path}>{file.path} (+{file.additions} −{file.deletions})</option>)}</>}
+              </select>
+            </div>
+            <div className="hidden min-h-0 flex-1 overflow-auto p-1 @min-[34rem]/pane:block">
+              {files.map((file) => <button key={file.path} type="button" title={file.path} aria-current={selectedPath === file.path ? "true" : undefined} onClick={() => setSelectedPath((current) => current === file.path ? null : file.path)} className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-foreground/60 aria-current:bg-accent" data-selected={selectedPath === file.path ? "" : undefined}><FileMark status={file.status} /><span className="min-w-0 flex-1 truncate">{file.path}</span><span className="shrink-0 text-success-foreground">+{file.additions}</span><span className="shrink-0 text-destructive-foreground">−{file.deletions}</span></button>)}
+              {files.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No sample files match.</p> : null}
+            </div>
+          </aside>
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Selected file diff">
+            {selected ? <>
+              <div className="flex shrink-0 items-start gap-2 border-b border-border px-3 py-2">
+                <span className="mt-0.5 shrink-0"><FileMark status={selected.status} /></span>
+                <p className="min-w-0 flex-1 text-xs font-medium leading-5 [overflow-wrap:anywhere]">{selected.path}</p>
+                <Badge variant={selectedReviewed ? "success" : "default"} appearance="muted" className="shrink-0 @max-[36rem]/pane:hidden">{selectedReviewed ? "Reviewed" : selected.status}</Badge>
+                <TooltipIconButton tooltip={selectedReviewed ? "Unmark reviewed" : "Mark reviewed"} size="icon-xs" variant="outline" className="@min-[52rem]/pane:hidden" aria-pressed={selectedReviewed} onClick={toggleReviewed}><CheckIcon /></TooltipIconButton>
+                <Button size="xs" variant="outline" className="@max-[52rem]/pane:hidden" onClick={toggleReviewed}>{selectedReviewed ? "Unmark" : "Mark reviewed"}</Button>
+              </div>
+              <div ref={diffScroll} className="min-h-0 flex-1 overflow-auto py-2" data-diff-view={view}>
+                {view === "unified" ? <UnifiedDiff lines={lines} /> : <><div className="@min-[30rem]/pane:hidden"><UnifiedDiff lines={lines} /></div><div className="hidden @min-[30rem]/pane:block"><SplitDiff lines={lines} /></div></>}
+              </div>
+            </> : <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"><DiffIcon className="size-6" /><p>Select a file to view the sample diff.</p></div>}
+          </section>
+        </div>}
       </div>
-      <div data-slot="pane-content" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {renderContent()}
-      </div>
-    </div>
+    </Pane>
   )
 }

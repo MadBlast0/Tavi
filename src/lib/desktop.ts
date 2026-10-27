@@ -19,8 +19,9 @@
  */
 
 import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core"
-import { listen } from "@tauri-apps/api/event"
+import { emit, emitTo, listen } from "@tauri-apps/api/event"
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window"
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import {
   isPermissionGranted,
   requestPermission,
@@ -29,6 +30,8 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener"
 
 import { isDesktopApp } from "./platform.ts"
+import { sendAcknowledgedPaneRequest } from "./pane-window-protocol.ts"
+import { runWorkspaceNativeDrag } from "./workspace-native-drag.ts"
 import type {
   ChatEvent,
   ChatRequest,
@@ -73,6 +76,270 @@ export const appWindow = (): Window | null => {
   } catch {
     return null
   }
+}
+
+export type WorkspaceNativeDragPayload =
+  | { kind: "pane" | "tab"; paneId: string; paneState?: string; busy?: boolean }
+  | { kind: "session"; id: string; side: "chat" | "code" }
+
+type WorkspaceNativeDragNotice = {
+  phase: "start" | "end"
+  dragId: string
+  sourceWindow: string
+  payload: WorkspaceNativeDragPayload
+}
+
+const WORKSPACE_DRAG_EVENT = "tavi-workspace-native-drag"
+const WORKSPACE_CONVERSATION_EVENT = "tavi-workspace-conversation-state"
+const PANE_DOCK_BACK_ACK_EVENT = "tavi-pane-dock-back-ack"
+const PANE_WINDOW_READY_EVENT = "tavi-pane-window-ready"
+let workspaceNativeDropHandler: ((payload: unknown) => void) | undefined
+let workspaceNativeDropSetup: Promise<void> | null = null
+let workspaceNativeDragOverHandler: ((event: { type: string; position?: { x: number; y: number } }) => void) | undefined
+
+const ensureWorkspaceNativeDropListener = (): Promise<void> => {
+  if (!workspaceNativeDropSetup) {
+    workspaceNativeDropSetup = getCurrentWindow().onDragDropEvent(async ({ payload }) => {
+      workspaceNativeDragOverHandler?.(payload)
+      if (payload.type !== "drop" || !Array.isArray(payload.paths)) return
+      for (const path of payload.paths) {
+        try {
+          const data = await invoke<unknown | null>("read_workspace_drag_payload", { path })
+          if (data !== null) {
+            workspaceNativeDropHandler?.(data)
+            return
+          }
+        } catch {
+          // Non-plugin file drops keep flowing through the existing file-drop handling.
+        }
+      }
+    }).then(() => undefined)
+      .catch((error) => { workspaceNativeDropSetup = null; throw error })
+  }
+  return workspaceNativeDropSetup
+}
+
+/** Starts the native desktop drag protocol; browser builds keep HTML DnD. */
+export const startWorkspaceNativeDrag = (
+  element: HTMLElement,
+  payload: WorkspaceNativeDragPayload,
+  event?: DragEvent,
+): boolean => {
+  if (!isDesktopApp()) return false
+  event?.preventDefault()
+  const sourceWindow = getCurrentWindow().label
+  const dragId = crypto.randomUUID()
+  const notice: WorkspaceNativeDragNotice = { phase: "start", dragId, sourceWindow, payload }
+  void runWorkspaceNativeDrag({
+    announceStart: () => emit(WORKSPACE_DRAG_EVENT, notice),
+    drag: async () => {
+      const { dragBack } = await import("@crabnebula/tauri-plugin-drag-as-window")
+      await dragBack(element, { ...notice, version: 1 }, undefined, { mode: "move" })
+    },
+    announceEnd: () => emit(WORKSPACE_DRAG_EVENT, { ...notice, phase: "end" } satisfies WorkspaceNativeDragNotice),
+  })
+  return true
+}
+
+/** Receives native drag lifecycle events from sibling Tauri webviews. */
+export const onWorkspaceNativeDrag = async (
+  handler: (notice: WorkspaceNativeDragNotice) => void,
+): Promise<() => void> => {
+  requireDesktop()
+  return listen<WorkspaceNativeDragNotice>(WORKSPACE_DRAG_EVENT, (event) => handler(event.payload))
+}
+
+/** Registers this window as a target for JSON pane/session drags. */
+export const onWorkspaceNativeDrop = async (
+  handler: (payload: unknown) => void,
+): Promise<void> => {
+  requireDesktop()
+  workspaceNativeDropHandler = handler
+  await ensureWorkspaceNativeDropListener()
+}
+
+/** Native drag-over positions are physical pixels local to this webview. */
+export const onWorkspaceNativeDragOver = async (
+  handler: (event: { type: string; position?: { x: number; y: number } }) => void,
+): Promise<() => void> => {
+  requireDesktop()
+  workspaceNativeDragOverHandler = handler
+  await ensureWorkspaceNativeDropListener()
+  return () => {
+    if (workspaceNativeDragOverHandler === handler) workspaceNativeDragOverHandler = undefined
+  }
+}
+
+/** Confirms a popped-out pane was accepted into the main layout. */
+export const notifyWorkspaceDropAccepted = async (sourceWindow: string, paneId: string): Promise<void> => {
+  requireDesktop()
+  await emitTo(sourceWindow, "tavi-workspace-native-drop-accepted", { paneId })
+}
+
+/** Listens for the main layout accepting this window's pane drop. */
+export const onWorkspaceDropAccepted = async (handler: (paneId: string) => void): Promise<() => void> => {
+  requireDesktop()
+  return listen<{ paneId?: unknown }>("tavi-workspace-native-drop-accepted", (event) => {
+    if (typeof event.payload?.paneId === "string") handler(event.payload.paneId)
+  })
+}
+
+/** Broadcasts a serializable live conversation snapshot to sibling webviews. */
+export const broadcastWorkspaceConversationState = async (id: string, revision: number, state: unknown): Promise<void> => {
+  requireDesktop()
+  await emit(WORKSPACE_CONVERSATION_EVENT, { sourceWindow: getCurrentWindow().label, id, revision, state })
+}
+
+/** Receives conversation snapshots from sibling webviews. */
+export const onWorkspaceConversationState = async (
+  handler: (snapshot: { sourceWindow: string; id: string; revision: number; state: unknown }) => void,
+): Promise<() => void> => {
+  requireDesktop()
+  const sourceWindow = getCurrentWindow().label
+  return listen<{ sourceWindow?: unknown; id?: unknown; revision?: unknown; state?: unknown }>(WORKSPACE_CONVERSATION_EVENT, (event) => {
+    const value = event.payload
+    if (typeof value?.sourceWindow !== "string" || value.sourceWindow === sourceWindow || typeof value.id !== "string" || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision) || !value.state || typeof value.state !== "object") return
+    handler({ sourceWindow: value.sourceWindow, id: value.id, revision: value.revision, state: value.state })
+  })
+}
+
+/** Convert Tauri's native drop position to CSS pixels in this webview. */
+export const workspaceDropPoint = async (position: { x: number; y: number }): Promise<{ x: number; y: number }> => {
+  requireDesktop()
+  const scale = await getCurrentWindow().scaleFactor()
+  return { x: position.x / scale, y: position.y / scale }
+}
+
+/** A native window on one registered workspace pane. */
+export type PaneWindowRequest = {
+  id: string
+  title: string
+}
+
+/** Opens an actual Tauri webview window for one pane. */
+export const createPaneWindow = async ({ id, title }: PaneWindowRequest): Promise<void> => {
+  requireDesktop()
+  const label = `pane-${id}`
+  const existing = await WebviewWindow.getByLabel(label)
+  if (existing) {
+    await existing.setFocus()
+    return
+  }
+  const params = new URLSearchParams({ pane: id })
+  let window: WebviewWindow | undefined
+  let unlistenReady: (() => void) | undefined
+  let readyTimeout: ReturnType<typeof setTimeout> | undefined
+  let closeHandlerReady = false
+  let paneHandlerReady = false
+  let resolveReady!: () => void
+  let rejectReady!: (error: Error) => void
+  const revealWhenReady = () => {
+    if (closeHandlerReady && paneHandlerReady && window) void window.show().then(resolveReady, rejectReady)
+  }
+  try {
+    const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
+    unlistenReady = await listen<{ id?: unknown; sourceWindow?: unknown }>(PANE_WINDOW_READY_EVENT, (event) => {
+      const value = event.payload
+      if (value?.id !== id || value.sourceWindow !== label) return
+      paneHandlerReady = true
+      revealWhenReady()
+    })
+    // Registration completes before the secondary webview is created, so its
+    // ready event cannot race ahead of the listener.
+    readyTimeout = setTimeout(() => rejectReady(new Error("The pane window did not finish opening.")), 10000)
+    window = new WebviewWindow(label, {
+      url: `/?${params.toString()}`,
+      title: `${title} · Tavi`,
+      width: 900,
+      height: 640,
+      minWidth: 420,
+      minHeight: 320,
+      center: true,
+      decorations: true,
+      // Wait until the pane webview has installed its close/dock listener.
+      visible: false,
+    })
+    const created = new Promise<void>((resolve, reject) => {
+      void window!.once("tauri://created", () => resolve())
+      void window!.once("tauri://error", (event) => reject(new Error(String(event.payload))))
+    })
+    await Promise.all([
+      created,
+      window.onCloseRequested((event) => {
+        event.preventDefault()
+        void emitTo(label, "tavi-pane-close-request", { id }).catch(() => {})
+      }),
+    ])
+    closeHandlerReady = true
+    revealWhenReady()
+    await ready
+  } catch (error) {
+    await window?.destroy().catch(() => {})
+    throw error
+  } finally {
+    if (readyTimeout) clearTimeout(readyTimeout)
+    unlistenReady?.()
+  }
+}
+
+/** Announces that the pane's close/dock listener is installed. */
+export const notifyPaneWindowReady = async (id: string): Promise<void> => {
+  requireDesktop()
+  await emitTo("main", PANE_WINDOW_READY_EVENT, { id, sourceWindow: getCurrentWindow().label })
+}
+
+/** Whether a saved pane window still exists in this native app process. */
+export const paneWindowExists = async (id: string): Promise<boolean> => {
+  requireDesktop()
+  return Boolean(await WebviewWindow.getByLabel(`pane-${id}`))
+}
+
+/** Returns a pane from a native pane window to the main workspace. */
+export const requestPaneDockBack = async (payload: { id: string; targetId?: string; edge?: string; paneState?: string }): Promise<void> => {
+  requireDesktop()
+  const requestId = crypto.randomUUID()
+  const sourceWindow = getCurrentWindow().label
+  await sendAcknowledgedPaneRequest({
+    id: payload.id,
+    requestId,
+    subscribe: async (receive) => listen<{ requestId?: unknown; id?: unknown; accepted?: unknown }>(PANE_DOCK_BACK_ACK_EVENT, (event) => receive(event.payload ?? {})),
+    send: () => emitTo("main", "tavi-pane-dock-back", { ...payload, requestId, sourceWindow }),
+  })
+}
+
+/** Listens for a dock-back request from a native pane window. */
+export const onPaneDockBack = async (handler: (payload: { id: string; targetId?: string; edge?: string; paneState?: string }) => boolean | void | Promise<boolean | void>): Promise<() => void> => {
+  requireDesktop()
+  return listen("tavi-pane-dock-back", (event) => {
+    if (!event.payload || typeof event.payload !== "object") return
+    const payload = event.payload as { id?: unknown; targetId?: unknown; edge?: unknown; paneState?: unknown; requestId?: unknown; sourceWindow?: unknown }
+    if (typeof payload.id !== "string" || typeof payload.requestId !== "string" || payload.sourceWindow !== `pane-${payload.id}`) return
+    const request = { id: payload.id, ...(typeof payload.targetId === "string" ? { targetId: payload.targetId } : {}), ...(typeof payload.edge === "string" ? { edge: payload.edge } : {}), ...(typeof payload.paneState === "string" ? { paneState: payload.paneState } : {}) }
+    // Defer invocation so a synchronous handler throw follows the same
+    // negative-acknowledgement path as an asynchronous rejection.
+    void Promise.resolve().then(() => handler(request)).then((accepted) =>
+      emitTo(payload.sourceWindow as string, PANE_DOCK_BACK_ACK_EVENT, { requestId: payload.requestId, id: payload.id, accepted: accepted !== false }),
+    ).catch(() => emitTo(payload.sourceWindow as string, PANE_DOCK_BACK_ACK_EVENT, { requestId: payload.requestId, id: payload.id, accepted: false }).catch(() => {}))
+  })
+}
+
+/** Closes a secondary native window after its pane has been returned. */
+export const destroyCurrentPaneWindow = async (): Promise<void> => {
+  requireDesktop()
+  await getCurrentWindow().destroy()
+}
+
+/** Handles the native close button without destroying a pane that is still answering. */
+export const onPaneWindowCloseRequest = async (handler: () => void): Promise<() => void> => {
+  requireDesktop()
+  return listen("tavi-pane-close-request", () => handler())
+}
+
+/** Requests a dock-back from the native close control of a pane window. */
+export const closePaneWindow = async (id: string): Promise<void> => {
+  requireDesktop()
+  const window = await WebviewWindow.getByLabel(`pane-${id}`)
+  if (window) await window.close()
 }
 
 const requireDesktop = () => {

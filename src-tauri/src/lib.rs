@@ -6,6 +6,7 @@ mod cli;
 mod files;
 mod git;
 mod keys;
+mod native_drag;
 mod partials;
 mod projects;
 mod provider;
@@ -124,6 +125,9 @@ pub fn run() {
         // is in `capabilities/default.json`, and it is narrow: three
         // commands, not the plugin's whole default set.
         .plugin(tauri_plugin_notification::init())
+        // Native OS drag transfers let workspace panes move between separate
+        // webview windows without disabling Tauri's existing file-drop path.
+        .plugin(tauri_plugin_drag_as_window::init())
         .manage(for_state)
         .manage(threads::Threads::default())
         .manage(provider::Cancellations::default())
@@ -142,6 +146,7 @@ pub fn run() {
             keys::check_provider_key,
             keys::recheck_provider_key,
             list_installed_fonts,
+            native_drag::read_workspace_drag_payload,
             provider::chat,
             provider::cancel_chat,
             provider::model_catalogue,

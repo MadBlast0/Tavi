@@ -1,12 +1,3 @@
-/**
- * The pane header, checked.
- *
- * The header is a strip with the pane's mark and title on the left and the
- * pane's three controls on the right, and the left part is the drag handle.
- * These rules catch the two ways the header is broken: a drag that starts
- * from a button click, and a header that changes size with its content.
- */
-
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -14,62 +5,50 @@ import { join } from "node:path"
 
 const SRC = join(import.meta.dirname, "..")
 const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8")
-
 const pane = read("blocks", "workspace", "pane.tsx")
 
-test("the header has a drag handle", () => {
-  assert.ok(
-    pane.includes('data-slot="pane-drag-handle"'),
-    "the header should have a dedicated drag handle",
-  )
-  assert.ok(
-    pane.includes('data-drag-handle=""'),
-    "the drag handle should be marked as such",
-  )
+test("the full pane header is draggable and interactive controls opt out", () => {
+  assert.match(pane, /data-slot="pane-header"[\s\S]*?draggable=\{Boolean\(id\)\}/)
+  assert.match(pane, /data-drag-handle=""/)
+  assert.match(pane, /closest\("button, input, textarea, select, a, \[role='menuitem'\]"\)/)
 })
 
-test("the drag handle is separate from the buttons", () => {
-  // The handle is the header's left part, and the buttons are in their own
-  // element. A click on a button does not start a drag, and a drag does not
-  // reach the buttons.
-  const handleIndex = pane.indexOf('data-slot="pane-drag-handle"')
-  const buttonsIndex = pane.indexOf('className="flex shrink-0 items-center gap-0.5"')
-  assert.ok(handleIndex !== -1, "the drag handle should exist")
-  assert.ok(buttonsIndex !== -1, "the buttons should exist")
-  assert.ok(
-    handleIndex < buttonsIndex,
-    "the drag handle should come before the buttons",
-  )
+test("the header is fixed height and carries icon, title and context", () => {
+  assert.match(pane, /data-slot="pane-header"[\s\S]*?h-8/)
+  assert.ok(pane.includes("Icon"))
+  assert.ok(pane.includes("{title}"))
+  assert.ok(pane.includes("{context ?"))
 })
 
-test("the header is a fixed height", () => {
+test("the title bar keeps focused state styling and compact view actions", () => {
+  assert.ok(pane.includes('active ? "border-border bg-muted" : "border-transparent bg-transparent"'))
+  assert.ok(pane.includes('active ? "text-foreground"'))
+  assert.ok(pane.includes("<ViewsPicker"))
+})
+
+test("a pane in its own window offers a truthful dock back instead of close", () => {
+  assert.ok(pane.includes('tooltip="Dock back to workspace"'))
+  assert.ok(pane.includes("Dock back to workspace"))
+  assert.ok(pane.includes("{onDockBack ? ("))
+  assert.ok(pane.includes("{onClose ? ("))
+})
+
+test("interacting with a header focuses its pane before acting", () => {
   assert.match(
     pane,
-    /data-slot="pane-header"[\s\S]*?h-8/,
-    "the header should be a fixed height",
+    /onPointerDownCapture=\{\(\) => onFocus\?\.\(\)\}/,
+    "a header control should focus the pane it belongs to",
+  )
+  assert.match(
+    pane,
+    /onFocusCapture=\{[\s\S]*?\[data-slot='pane-header'\]/,
+    "keyboard focus in the header should focus the pane too",
   )
 })
 
-test("the header carries the icon, the title and the context", () => {
-  assert.ok(pane.includes("Icon"), "the header should carry the pane's mark")
-  assert.ok(pane.includes("{title}"), "the header should carry the title")
-  assert.ok(pane.includes("{context ?"), "the header should carry the secondary context")
-})
-
-test("the header has active and inactive styling", () => {
-  assert.ok(
-    pane.includes('active ? "bg-muted/40"'),
-    "the active pane's header should be lit",
-  )
-  assert.ok(
-    pane.includes('active ? "text-foreground"'),
-    "the active pane's title should be the foreground colour",
-  )
-})
-
-test("the header's buttons are icon-only", () => {
-  // The three controls — pop out, menu, close — are icon-only, so each one
-  // carries a tooltip and an accessible name.
-  const tooltipCount = (pane.match(/TooltipIconButton/g) || []).length
-  assert.ok(tooltipCount >= 2, "the header should use the shared icon button for its controls")
+test("narrow panes move common view actions to the overflow list", () => {
+  const views = read("blocks", "workspace", "views-picker.tsx")
+  assert.ok(views.includes("getBoundingClientRect().width < 280"))
+  assert.ok(views.includes("ResizeObserver"))
+  assert.ok(views.includes('aria-label="More views"'))
 })

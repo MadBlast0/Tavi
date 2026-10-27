@@ -31,6 +31,8 @@
  */
 
 import { streamChat, type ChatRequest, type ToolActivity } from "./api.ts"
+import { broadcastWorkspaceConversationState, onWorkspaceConversationState } from "./desktop.ts"
+import { isDesktopApp } from "./platform.ts"
 import { chatWriteError, findChat, saveChat } from "./chats.ts"
 import { announceReply } from "./notifications.ts"
 import {
@@ -160,6 +162,140 @@ const runs = new Map<string, Run>()
 /** The listeners of each conversation, and the listeners of every status. */
 const listeners = new Map<string, Set<() => void>>()
 const statusListeners = new Set<() => void>()
+const outboundRevisions = new Map<string, number>()
+const receivedRevisions = new Map<string, number>()
+let applyingRemoteSnapshot = false
+let syncListenerStarted = false
+const syncTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+type TransferTurn =
+  | { id: string; role: "summary"; text: string }
+  | { id: string; role: "assistant"; text: string; streaming: boolean; stopped?: boolean; incomplete?: boolean; tools?: ToolActivity[] }
+  | { id: string; role: "user"; message: { text: string; files: { id: string; name: string; size: number; type: string }[]; mentions: { id: string; label: string }[] } }
+
+type TransferConversation = {
+  side: Side
+  status: ConversationStatus
+  turns: TransferTurn[]
+  usage: PromptTokenUsage | null
+  servedModel: string | null
+  error: string | null
+  compacting: boolean
+  startedAt: number
+  turnId: string | null
+}
+
+const toTransferTurn = (turn: Turn): TransferTurn => {
+  if (turn.role === "summary") return { id: turn.id, role: "summary", text: turn.text }
+  if (turn.role === "assistant") return {
+    id: turn.id,
+    role: "assistant",
+    text: turn.text,
+    streaming: turn.streaming,
+    ...(turn.stopped ? { stopped: true } : {}),
+    ...(turn.incomplete ? { incomplete: true } : {}),
+    ...(turn.tools?.length ? { tools: turn.tools } : {}),
+  }
+  return {
+    id: turn.id,
+    role: "user",
+    message: {
+      text: turn.message.text,
+      files: turn.message.files.map((file) => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      })),
+      mentions: turn.message.mentions.map(({ id, label }) => ({ id, label })),
+    },
+  }
+}
+
+const fromTransferTurn = (turn: TransferTurn): Turn => {
+  if (turn.role === "summary") return { id: turn.id, role: "summary", text: turn.text }
+  if (turn.role === "assistant") return { ...turn }
+  return {
+    id: turn.id,
+    role: "user",
+    message: {
+      text: turn.message.text,
+      files: turn.message.files.map((file) => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        state: "done",
+        file: new File([], file.name, { type: file.type }),
+      })),
+      mentions: turn.message.mentions,
+    },
+  }
+}
+
+const scheduleConversationSync = (id: string): void => {
+  if (!isDesktopApp() || applyingRemoteSnapshot) return
+  const old = syncTimers.get(id)
+  if (old) clearTimeout(old)
+  syncTimers.set(id, setTimeout(() => {
+    syncTimers.delete(id)
+    const item = conversations.get(id)
+    if (!item) return
+    const revision = (outboundRevisions.get(id) ?? 0) + 1
+    outboundRevisions.set(id, revision)
+    const state: TransferConversation = {
+      side: item.side,
+      status: item.status,
+      turns: item.turns.map(toTransferTurn),
+      usage: item.usage,
+      servedModel: item.servedModel,
+      error: item.error,
+      compacting: item.compacting,
+      startedAt: item.startedAt,
+      turnId: item.turnId,
+    }
+    void broadcastWorkspaceConversationState(id, revision, state).catch(() => {})
+  }, 80))
+}
+
+export const applyWorkspaceConversationSnapshot = (sourceWindow: string, id: string, revision: number, raw: unknown): void => {
+  const sequenceKey = `${sourceWindow}:${id}`
+  if (!raw || typeof raw !== "object" || runs.has(id) || revision <= (receivedRevisions.get(sequenceKey) ?? 0)) return
+  const value = raw as Partial<TransferConversation>
+  if ((value.side !== "chat" && value.side !== "code") || !Array.isArray(value.turns) || !["idle", "submitted", "streaming", "error"].includes(value.status ?? "")) return
+  try {
+    const turns = value.turns.map((turn) => fromTransferTurn(turn as TransferTurn))
+    receivedRevisions.set(sequenceKey, revision)
+    applyingRemoteSnapshot = true
+    conversations.set(id, {
+      id,
+      side: value.side,
+      status: value.status as ConversationStatus,
+      turns,
+      usage: value.usage ?? null,
+      servedModel: value.servedModel ?? null,
+      error: value.error ?? null,
+      compacting: Boolean(value.compacting),
+      startedAt: typeof value.startedAt === "number" ? value.startedAt : Date.now(),
+      turnId: typeof value.turnId === "string" ? value.turnId : null,
+    })
+    publish(id)
+    publishStatus()
+  } catch {
+    // An invalid cross-window snapshot cannot replace the local conversation.
+  } finally {
+    applyingRemoteSnapshot = false
+  }
+}
+
+const startConversationSync = (): void => {
+  if (!isDesktopApp() || syncListenerStarted) return
+  syncListenerStarted = true
+  void onWorkspaceConversationState((snapshot) => applyWorkspaceConversationSnapshot(snapshot.sourceWindow, snapshot.id, snapshot.revision, snapshot.state))
+    .catch(() => { syncListenerStarted = false })
+}
+
+startConversationSync()
 
 /**
  * The conversation the app is showing.
@@ -591,10 +727,9 @@ const settle = async (
         }
       : turn,
   )
-  current.status = "idle"
-  current.turnId = null
+  // Keep the runtime busy until its durable transcript has been written. A
+  // second webview must not start another turn while this write is in flight.
   publish(id)
-  publishStatus()
 
   /* The thread records the settings the run was actually asked with, and
      not the ones that happen to be in force now. */
@@ -633,6 +768,11 @@ const settle = async (
     await discardPartial(id)
   }
 
+  current.status = "idle"
+  current.turnId = null
+  publish(id)
+  publishStatus()
+
   /* The reader is told that a reply finished — by the rule, which knows
      whether the answer was somewhere they could see. */
   if (outcome.finished) {
@@ -656,8 +796,8 @@ const settle = async (
 /** Tells a conversation's own listeners that it changed. */
 const publish = (id: string): void => {
   const set = listeners.get(id)
-  if (!set) return
-  for (const listener of set) listener()
+  if (set) for (const listener of set) listener()
+  scheduleConversationSync(id)
 }
 
 /** Tells the status listeners that something started or finished. */

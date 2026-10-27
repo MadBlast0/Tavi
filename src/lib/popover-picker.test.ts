@@ -53,16 +53,14 @@ test("the command palette is on the canonical family", () => {
   )
 })
 
-test("the anchored picker is a popover", () => {
-  // The Views picker is the anchored pane-type picker, and it is a popover:
-  // a small anchored panel, the right primitive for a compact list.
+test("the pane view picker uses the shared dropdown menu", () => {
   assert.ok(
-    viewsPicker.includes('from "@/components/popover"'),
-    "the Views picker should use the shared popover",
+    viewsPicker.includes('from "@/components/dropdown-menu"'),
+    "the Views picker should use the shared dropdown menu",
   )
   assert.ok(
-    viewsPicker.includes("PopoverContent"),
-    "the Views picker should use the popover's content",
+    viewsPicker.includes("DropdownMenuContent"),
+    "the Views picker should use the dropdown menu content",
   )
 })
 

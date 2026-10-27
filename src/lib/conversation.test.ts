@@ -15,6 +15,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  applyWorkspaceConversationSnapshot,
   conversation,
   conversationTurns,
   failConversation,
@@ -101,6 +102,47 @@ describe("a conversation's live state", () => {
     setConversationTurns(theirs, "chat", [aTurn("hello")])
     assert.equal(told, 0)
     stop()
+  })
+})
+
+describe("a conversation snapshot from another desktop window", () => {
+  const id = "c-native-sync-test"
+
+  it("mirrors live text and attachments while ignoring stale revisions", () => {
+    applyWorkspaceConversationSnapshot("pane-test", id, 2, {
+      side: "chat",
+      status: "streaming",
+      turns: [
+        { id: "u1", role: "user", message: { text: "Question", files: [{ id: "f1", name: "notes.txt", size: 12, type: "text/plain" }], mentions: [{ id: "m1", label: "src/App.tsx" }] } },
+        { id: "a1", role: "assistant", text: "The answer so", streaming: true },
+      ],
+      usage: null,
+      servedModel: "model-a",
+      error: null,
+      compacting: false,
+      startedAt: 1,
+      turnId: "a1",
+    })
+    applyWorkspaceConversationSnapshot("pane-test", id, 1, {
+      side: "chat",
+      status: "idle",
+      turns: [{ id: "a1", role: "assistant", text: "stale", streaming: false }],
+    })
+
+    const live = conversation(id)
+    assert.equal(live?.status, "streaming")
+    assert.equal(live?.turns[1]?.role === "assistant" ? live.turns[1].text : "", "The answer so")
+    assert.equal(live?.turns[0]?.role === "user" ? live.turns[0].message.files[0]?.name : "", "notes.txt")
+    assert.equal(live?.turns[0]?.role === "user" ? live.turns[0].message.mentions[0]?.label : "", "src/App.tsx")
+    applyWorkspaceConversationSnapshot("pane-test", id, 3, {
+      side: "chat",
+      status: "idle",
+      turns: [{ id: "a1", role: "assistant", text: "finished", streaming: false }],
+    })
+    assert.equal(conversation(id)?.status, "idle")
+    const syncedTurn = conversation(id)?.turns[0]
+    assert.equal(syncedTurn?.role === "assistant" ? syncedTurn.text : "", "finished")
+    forgetConversation(id)
   })
 })
 

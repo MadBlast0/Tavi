@@ -4,6 +4,7 @@ import { ThreadBridgeProvider } from "@/blocks/prompt-input/thread-bridge";
 import { AnnounceBridge } from "@/blocks/shell/announce-bridge";
 import { Shell } from "@/blocks/shell/shell";
 import { TrayBridge } from "@/blocks/shell/tray-bridge";
+import { PaneWindow, paneWindowIdFromUrl } from "@/blocks/workspace/pane-window";
 
 /**
  * The app has no router yet. The prompt block is the app surface; its
@@ -24,6 +25,8 @@ import { TrayBridge } from "@/blocks/shell/tray-bridge";
  * the window, and it carries the card they appear in.
  */
 function App() {
+  const paneId = paneWindowIdFromUrl();
+  if (paneId) return <PaneWindow paneId={paneId} />;
   return (
     <ThreadBridgeProvider>
       <ComposerVariantProvider>

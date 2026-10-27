@@ -34,11 +34,15 @@ import { cn } from "@/lib/utils"
 export function WorkspaceHost({
   children,
   className,
+  passthrough = false,
 }: {
   /** What the region shows. The landing screen, the layout, or both. */
   children?: React.ReactNode
   className?: string
+  /** An embedded conversation pane supplies its own bounded content region. */
+  passthrough?: boolean
 }) {
+  if (passthrough) return <>{children}</>
   return (
     <div
       data-slot="workspace-host"

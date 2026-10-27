@@ -37,10 +37,12 @@ const ComposerVariantContext = React.createContext<ComposerVariantContextValue |
  */
 export function ComposerVariantProvider({
   children,
+  initialVariant = "chat",
 }: {
   children: React.ReactNode
+  initialVariant?: ComposerVariant
 }) {
-  const [variant, setVariant] = React.useState<ComposerVariant>("chat")
+  const [variant, setVariant] = React.useState<ComposerVariant>(initialVariant)
 
   const value = React.useMemo(
     () => ({ variant, setVariant }),

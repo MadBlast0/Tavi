@@ -21,7 +21,8 @@ const empty = read("components", "empty", "empty.tsx")
 const skeleton = read("components", "skeleton", "skeleton.tsx")
 const progress = read("components", "progress", "progress.tsx")
 const toast = read("components", "toast", "toast.tsx")
-const workspaceEmpty = read("blocks", "workspace", "workspace-empty.tsx")
+const paneStates = read("blocks", "workspace", "pane-states.tsx")
+const workspaceLayout = read("blocks", "workspace", "workspace-layout.tsx")
 
 test("the badge is on the canonical family", () => {
   assert.ok(
@@ -82,17 +83,16 @@ test("the skeleton is shaped like content", () => {
   )
 })
 
-test("the workspace empty state uses the shared empty component", () => {
-  // The workspace does not grow its own empty state; it uses the app's.
+test("pane empty states use the shared empty component", () => {
   assert.ok(
-    workspaceEmpty.includes('from "@/components/empty"'),
-    "the workspace empty state should use the shared empty component",
+    paneStates.includes('from "@/components/empty"'),
+    "pane empty states should use the shared empty component",
   )
 })
 
-test("the workspace empty state uses the shared Views picker", () => {
+test("an empty workspace returns to the app's existing landing content", () => {
   assert.ok(
-    workspaceEmpty.includes("<ViewsPicker />"),
-    "the workspace empty state should offer the Views picker as its one action",
+    workspaceLayout.includes("if (panes.length === 0) return <div") && workspaceLayout.includes("{children}</div>"),
+    "the workspace should render its original landing content when no panes exist",
   )
 })

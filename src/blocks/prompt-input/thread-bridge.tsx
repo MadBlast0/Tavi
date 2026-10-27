@@ -51,7 +51,7 @@ type ThreadBridgeValue = {
 
 const ThreadBridgeContext = React.createContext<ThreadBridgeValue | null>(null)
 
-export function ThreadBridgeProvider({ children }: { children: React.ReactNode }) {
+export function ThreadBridgeProvider({ children, listenForOpenThread = true }: { children: React.ReactNode; listenForOpenThread?: boolean }) {
   const functions = React.useRef<ThreadBridge | null>(null)
   const [activeId, setActiveId] = React.useState<string | null>(null)
 
@@ -70,6 +70,7 @@ export function ThreadBridgeProvider({ children }: { children: React.ReactNode }
    * points, so this is the same seam reached from a different side.
    */
   React.useEffect(() => {
+    if (!listenForOpenThread) return
     const onOpen = (event: Event) => {
       const id = (event as CustomEvent<string>).detail
       if (typeof id !== "string" || !id) return
@@ -77,7 +78,7 @@ export function ThreadBridgeProvider({ children }: { children: React.ReactNode }
     }
     window.addEventListener(OPEN_THREAD, onOpen)
     return () => window.removeEventListener(OPEN_THREAD, onOpen)
-  }, [])
+  }, [listenForOpenThread])
 
   return (
     <ThreadBridgeContext.Provider value={value}>

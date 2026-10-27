@@ -113,3 +113,12 @@ test("the pane has a data-slot", () => {
     "the pane should carry a data-slot for tests and styling",
   )
 })
+
+test("the pane exposes its active state and a visible maximize restore", () => {
+  assert.ok(pane.includes('role="region"'), "a pane should be a named region")
+  assert.ok(pane.includes('aria-label={`${title} pane`}'), "the region should be named by its title")
+  assert.ok(pane.includes('aria-current={active ? "true" : undefined}'), "the focused pane should say it is current")
+  assert.ok(pane.includes('data-maximized={maximized ? "" : undefined}'), "a maximized pane should carry its state")
+  assert.ok(pane.includes("maximized && onMaximize"), "the restore control should appear only while maximized")
+  assert.ok(pane.includes('tooltip="Restore pane"'), "the restore control should name what it does")
+})

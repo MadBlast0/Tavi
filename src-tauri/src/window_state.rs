@@ -327,6 +327,9 @@ pub fn watch(app: &AppHandle, tracker: Tracker) {
 
 /// Note a window event, if it is one that moves or resizes the window.
 pub fn on_event(tracker: &Tracker, window: &Window, event: &WindowEvent) {
+    if window.label() != "main" {
+        return;
+    }
     match event {
         WindowEvent::Moved(_) | WindowEvent::Resized(_) => tracker.record(window),
         // The last word: the app is closing, so write what the window is now

@@ -68,6 +68,7 @@ tokio = { version = "1.54.0", features = ["rt", "macros", "time"] }
 # It is WezTerm's, and it is the same one that editor integrations use, so the
 # behaviour a program sees is the behaviour it sees in a terminal.
 portable-pty = "0.8"
+tauri-plugin-drag-as-window = "2.1.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

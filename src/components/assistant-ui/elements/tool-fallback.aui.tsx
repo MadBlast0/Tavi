@@ -10,12 +10,12 @@ import {
   useState,
 } from "react";
 import {
-  AlertCircleIcon,
+  CircleAlertIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleMinusIcon,
   LoaderIcon,
-  XCircleIcon,
+  CircleXIcon,
 } from "lucide-react";
 import {
   toolApprovalAcceptsText,
@@ -105,8 +105,8 @@ type ToolStatus = ToolCallMessagePartStatus["type"];
 const statusIconMap: Record<ToolStatus, React.ElementType> = {
   running: LoaderIcon,
   complete: CheckIcon,
-  incomplete: XCircleIcon,
-  "requires-action": AlertCircleIcon,
+  incomplete: CircleXIcon,
+  "requires-action": CircleAlertIcon,
 };
 
 const formatToolDuration = (ms: number) => {
@@ -441,7 +441,7 @@ const approvalReceipt = (
 
 const receiptIcons = {
   allowed: CheckIcon,
-  refused: XCircleIcon,
+  refused: CircleXIcon,
   closed: CircleMinusIcon,
 } satisfies Record<ApprovalReceipt["outcome"], React.ElementType>;
 

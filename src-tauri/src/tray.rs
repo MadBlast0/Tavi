@@ -168,7 +168,7 @@ fn exit(app: &AppHandle) {
 /// app's face away, not a way of quitting it. The tray's Exit is how the app
 /// quits.
 pub fn on_window_event(window: &Window, event: &WindowEvent) {
-    if let WindowEvent::CloseRequested { api, .. } = event {
+    if window.label() == "main" && let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
         let _ = window.hide();
     }

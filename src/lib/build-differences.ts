@@ -133,6 +133,20 @@ export const BUILD_DIFFERENCES: BuildDifference[] = [
       "rather than left looking live.",
   },
   {
+    where: "src/blocks/workspace/workspace-layout.tsx",
+    what: "Whether a pane can open in its own native window.",
+    why:
+      "The workspace can create and manage sibling Tauri webviews on desktop. " +
+      "A browser tab cannot open an app-owned pane window, so that control is omitted there.",
+  },
+  {
+    where: "src/lib/conversation.ts",
+    what: "Whether live conversation snapshots are synchronized with sibling desktop webviews.",
+    why:
+      "Only the desktop build can have a popped-out pane in another Tauri webview. " +
+      "The browser build has one page and does not need cross-window conversation events.",
+  },
+  {
     where: "src/blocks/shell/settings-keys.tsx",
     what: "Where the key is kept, in one sentence.",
     why:

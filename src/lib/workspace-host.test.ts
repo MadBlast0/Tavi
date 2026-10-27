@@ -17,9 +17,10 @@
  *    what they share. A sibling that took turns with it was the same
  *    mistake one layer up.
  *
- * These are read out of the source, as `layout.test.ts` and
- * `visual-baseline.test.ts` read theirs, because the project has no DOM
- * testing library and adding one is not wanted.
+ * These are read out of the source because they are structural invariants
+ * (WS-01), not interactions: there is no DOM or CSS engine in the test runner
+ * that could resolve the layout classes, and `diff-viewer-narrow.test.ts`
+ * shows what a render test can add where structure alone makes the claim.
  */
 
 import { test } from "node:test"
@@ -94,23 +95,23 @@ test("the region starts below the title bar", () => {
   )
 })
 
-test("the landing screen is inside the region, and gives way to the layout", () => {
+test("the landing screen becomes the session pane content", () => {
   // The region is what they share, so the surface is a child of it. A
   // sibling that took turns with the region was the same mistake one layer
   // up, and it is what made the composer a thing beside the workspace
   // rather than a tile in it.
+  const hostTag = surface.match(/<WorkspaceHost\b[^>]*>/)?.[0]
   assert.ok(
-    surface.includes("<WorkspaceHost>"),
+    hostTag,
     "the surface should render the region",
   )
   assert.ok(
-    surface.indexOf("<WorkspaceHost>") < surface.indexOf("<main"),
+    surface.indexOf(hostTag!) < surface.indexOf("<main"),
     "the region should come before the surface, so the surface is inside it",
   )
-  assert.ok(
-    surface.includes("hasPanes && \"hidden\""),
-    "the surface should give way once the workspace holds a pane",
-  )
+  assert.ok(surface.includes("<WorkspaceLayout"), "the layout should own the live surface")
+  assert.ok(surface.includes("</WorkspaceLayout>"), "the live surface should stay inside the layout host")
+  assert.ok(surface.includes("context: { sessionId: id }"), "opening a thread should associate its pane with that thread")
   assert.ok(
     !surface.includes("workspaceOpen"),
     "nothing should read an 'open' flag any more",

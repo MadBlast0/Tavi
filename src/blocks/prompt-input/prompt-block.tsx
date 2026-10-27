@@ -246,11 +246,12 @@ import {
 } from "@/components/message-scroller"
 
 import { StreamingText } from "./streaming-text"
-import { useComposerVariant } from "./composer-variant"
+import { ComposerVariantProvider, useComposerVariant, type ComposerVariant } from "./composer-variant"
 import { GitPanel } from "./git-panel"
-import { useThreadBridge } from "./thread-bridge"
+import { ThreadBridgeProvider, useThreadBridge } from "./thread-bridge"
 import { WorkspaceHost } from "@/blocks/workspace/workspace-host"
-import { useWorkspace } from "@/lib/workspace-state"
+import { WorkspaceLayout } from "@/blocks/workspace/workspace-layout"
+import { addPane, dockPane, getWorkspaceSnapshot, setActivePane, setPaneContext, setPaneTitle, setPaneType } from "@/lib/workspace-state"
 import { cn } from "@/lib/utils"
 import { CloneRepositoryDialog, type CloneState } from "./clone-dialog"
 import {
@@ -747,18 +748,12 @@ function useDock(ref: React.RefObject<HTMLElement | null>, docked: boolean) {
  * threads are persisted. There is no mock path — the old `real={false}` branch
  * was unreachable and its invented data has been removed rather than kept.
  */
-export function PromptBlock() {
+export function PromptBlock({ embeddedSession }: { embeddedSession?: { side: ComposerVariant; id: string; paneId?: string } }) {
   /* The switch that changes this lives in the sidebar; see composer-variant.tsx.
      It is a *surface* switch: it says which of the two places you are in, and
      each place has its own threads, its own model and its own composer. */
   const { variant, setVariant } = useComposerVariant()
-
-  /* What the workspace holds.
-     The region shows this surface while the workspace holds no panes, and
-     the layout once it holds one. There is no flag for that: the panes are
-     the fact, and the fact decides. */
-  const { panes } = useWorkspace()
-  const hasPanes = panes.length > 0
+  const isEmbeddedSessionPane = embeddedSession !== undefined
 
   /**
    * The model and the effort each side remembers.
@@ -933,10 +928,10 @@ export function PromptBlock() {
    * does not close the other. Switching between the two leaves the other side
    * exactly where it was.
    */
-  const [activeBySide, setActiveBySide] = React.useState<Record<Side, string | null>>({
-    chat: null,
-    code: null,
-  })
+  const [activeBySide, setActiveBySide] = React.useState<Record<Side, string | null>>(() => ({
+    chat: embeddedSession?.side === "chat" && embeddedSession.id ? embeddedSession.id : null,
+    code: embeddedSession?.side === "code" && embeddedSession.id ? embeddedSession.id : null,
+  }))
   const activeSessionId = activeBySide[variant]
 
   /**
@@ -1193,8 +1188,8 @@ export function PromptBlock() {
     setActiveBySide((current) =>
       current[side] === null ? current : { ...current, [side]: null },
     )
-    if (side === variant) setShownConversation(null)
-  }, [activeBySide, variant])
+    if (side === variant && !isEmbeddedSessionPane) setShownConversation(null)
+  }, [activeBySide, variant, isEmbeddedSessionPane])
 
   /**
    * Shows a thread, or nothing at all.
@@ -1246,7 +1241,7 @@ export function PromptBlock() {
         setActiveBySide((current) =>
           current[side] === id ? current : { ...current, [side]: id },
         )
-        if (side === variant) setShownConversation(id)
+        if (side === variant && !isEmbeddedSessionPane) setShownConversation(id)
         if (chat.model) setModelBySide((current) => ({ ...current, [side]: chat.model! }))
         if (chat.effort) setEffortBySide((current) => ({ ...current, [side]: chat.effort! }))
         /* The provider the thread is about, the same way. */
@@ -1272,7 +1267,7 @@ export function PromptBlock() {
       setActiveBySide((current) =>
         current[side] === id ? current : { ...current, [side]: id },
       )
-      if (side === variant) setShownConversation(id)
+      if (side === variant && !isEmbeddedSessionPane) setShownConversation(id)
       if (session.model) setModelBySide((current) => ({ ...current, [side]: session.model! }))
       if (session.effort) setEffortBySide((current) => ({ ...current, [side]: session.effort! }))
       /* The provider the session is about, the same way. */
@@ -1289,7 +1284,7 @@ export function PromptBlock() {
         folders.some((item) => item.id === session.folder) ? session.folder : undefined,
       )
     },
-    [folders, clearThread, variant],
+    [folders, clearThread, variant, isEmbeddedSessionPane],
   )
 
   /**
@@ -1302,9 +1297,26 @@ export function PromptBlock() {
   const openThread = React.useCallback(
     (side: Side, id: string) => {
       if (variant !== side) setVariant(side)
+      const thread = side === "chat" ? findChat(id) : findSession(id)
+      const type = side === "chat" ? "chat" : "code-session"
+      if (!isEmbeddedSessionPane) {
+        const current = getWorkspaceSnapshot()
+        const matching = current.panes.find((pane) => pane.context?.sessionId === id)
+        const focusedSession = current.panes.find((pane) => pane.id === current.activePaneId && (pane.type === "chat" || pane.type === "code-session"))
+        const target = matching ?? focusedSession
+        if (target) {
+          setPaneType(target.id, type)
+          setPaneTitle(target.id, thread?.title)
+          setPaneContext(target.id, { sessionId: id })
+          setActivePane(target.id)
+        } else {
+          const pane = addPane(type, { title: thread?.title, context: { sessionId: id } })
+          if (pane) setActivePane(pane.id)
+        }
+      }
       loadThread(side, id)
     },
-    [variant, setVariant, loadThread],
+    [variant, setVariant, loadThread, isEmbeddedSessionPane],
   )
 
   /**
@@ -2072,7 +2084,7 @@ export function PromptBlock() {
     /* The thread the side had open, whatever side the composer is on — the
        rail highlights it, and switching back to that side finds it. */
     setActiveBySide((current) => ({ ...current, [write.side]: threadId }))
-    if (write.side === variant) setShownConversation(threadId)
+    if (write.side === variant && !isEmbeddedSessionPane) setShownConversation(threadId)
     /* The conversation now holds the reader's half of the exchange, and it
        is waiting for the request to go out. */
     setConversationTurns(threadId, write.side, next)
@@ -2080,6 +2092,20 @@ export function PromptBlock() {
     /* The turn now belongs to a thread, and the thread is where it is. */
     setSent({ turn: userTurn, side: write.side, id: threadId })
     void respondReal(`${id}-assistant`, next, write, threadId)
+    /* A draft pane becomes the pane that holds the session it just made.
+       Binding here, rather than waiting for a later render, is what makes a
+       reload open the saved conversation in the same pane it was started in. */
+    const draftPaneId = embeddedSession?.id ? undefined : embeddedSession?.paneId
+    if (draftPaneId) {
+      const paneType = write.side === "chat" ? "chat" : "code-session"
+      const saved = write.side === "chat" ? findChat(threadId) : findSession(threadId)
+      setPaneType(draftPaneId, paneType)
+      setPaneTitle(draftPaneId, saved?.title)
+      setPaneContext(draftPaneId, { sessionId: threadId })
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLTextAreaElement>(`[data-pane-drop-target="${draftPaneId}"] textarea`)?.focus()
+      )
+    }
   }
 
   /**
@@ -2155,9 +2181,40 @@ export function PromptBlock() {
    * thread is not touched at all.
    */
   const reset = (side: Side = variant) => {
+    /* A new thread gets its own pane when the focused pane already holds a
+       saved conversation. Reusing that pane made New look like a no-op when
+       the previous conversation remained visible in a different render path,
+       and it also needlessly removed that session from the workspace. */
+    let draftPaneId: string | null = null
+    if (!isEmbeddedSessionPane) {
+      const current = getWorkspaceSnapshot()
+      const active = current.panes.find((pane) => pane.id === current.activePaneId)
+      const type = side === "chat" ? "chat" : "code-session"
+      const target = active && !active.context?.sessionId && (active.type === "chat" || active.type === "code-session")
+        ? active
+        : addPane(type)
+      if (!target) {
+        setNotice("Six views are open. Close one before starting another session.")
+        return
+      }
+      setNotice(null)
+      if (target) {
+        setPaneType(target.id, type)
+        setPaneContext(target.id, undefined)
+        setPaneTitle(target.id, undefined)
+        setActivePane(target.id)
+        draftPaneId = target.id
+      }
+    }
     newThread(side)
+    /* The new session's start surface carries the composer, so the caret
+       belongs in that pane — the landing composer is not rendered while a
+       pane exists. */
+    const paneId = draftPaneId
     requestAnimationFrame(() =>
-      dockRef.current?.querySelector("textarea")?.focus()
+      paneId
+        ? document.querySelector<HTMLTextAreaElement>(`[data-pane-drop-target="${paneId}"] textarea`)?.focus()
+        : dockRef.current?.querySelector("textarea")?.focus()
     )
   }
 
@@ -2209,9 +2266,10 @@ export function PromptBlock() {
    * exactly where you left it.
    */
   React.useLayoutEffect(() => {
-    loadThread(variant, activeBySide[variant])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant])
+    const id = activeBySide[variant]
+    if (id) openThread(variant, id)
+    else loadThread(variant, null)
+  }, [variant, activeBySide[variant], openThread, loadThread])
 
   /**
    * A thread that is deleted while it is open stops being open.
@@ -2263,6 +2321,7 @@ export function PromptBlock() {
         keys={keys ?? []}
         locked={providerLocked}
         cliProviders={cliProviders}
+        compactLabel
       />
       {/* A CLI that chooses its own model has no model picker: an empty
           picker is a claim that there is a choice, and there is not one. A
@@ -2433,22 +2492,79 @@ export function PromptBlock() {
           sibling of it, because the region is what they share. The region
           carries the height and the title bar's padding, so the surface
           inside it does not have to know about either. */}
-      <WorkspaceHost>
-        <main
-          className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            hasPanes && "hidden",
+      <WorkspaceHost passthrough={Boolean(embeddedSession)}>
+        <WorkspaceLayout
+          disabled={Boolean(embeddedSession)}
+          activeSessionId={activeBySide[variant]}
+          onOpenSession={(id) => {
+            if (findChat(id)) openThread("chat", id)
+            else if (findSession(id)) openThread("code", id)
+          }}
+          onSessionDrop={(side, id, targetId, edge) => {
+            const thread = side === "chat" ? findChat(id) : findSession(id)
+            if (!thread) return false
+            if (!targetId) {
+              openThread(side, id)
+              return true
+            }
+            const type = side === "chat" ? "chat" : "code-session"
+            const existing = getWorkspaceSnapshot().panes.find((pane) => pane.context?.sessionId === id)
+            if (existing) return existing.id === targetId || dockPane(existing.id, targetId, edge)
+            const pane = addPane(type, { title: thread.title, context: { sessionId: id } })
+            if (!pane) return false
+            return dockPane(pane.id, targetId, edge)
+          }}
+          renderSession={(side, id) => {
+            const thread = side === "chat" ? findChat(id) : findSession(id)
+            if (!thread) return null
+            return (
+              <ThreadBridgeProvider listenForOpenThread={false}>
+                <ComposerVariantProvider key={side} initialVariant={side}>
+                  <PromptBlock embeddedSession={{ side, id }} />
+                </ComposerVariantProvider>
+              </ThreadBridgeProvider>
+            )
+          }}
+          renderDraftSession={(side, paneId) => (
+            <ThreadBridgeProvider listenForOpenThread={false}>
+              <ComposerVariantProvider key={side} initialVariant={side}>
+                <PromptBlock embeddedSession={{ side, id: "", paneId }} />
+              </ComposerVariantProvider>
+            </ThreadBridgeProvider>
           )}
         >
+        <main
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {empty ? (
-            <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
-              <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">
-                {/* Each side asks its own question. "What are we working on?" is
-                    a code question, and it would be a strange thing to read over
-                    an empty chat. */}
-                {variant === "code" ? "What are we working on?" : "What can I help with?"}
-              </h1>
-          </div>
+            isEmbeddedSessionPane ? (
+              embeddedSession?.id ? (
+                <div key="intro" className="flex flex-1 items-center justify-center px-4 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    This conversation has no messages yet.
+                  </p>
+                </div>
+              ) : (
+                <div key="intro" className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+                  <h1 className="text-lg font-normal text-balance">
+                    {variant === "code" ? "Start a session" : "Start a chat"}
+                  </h1>
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    Send a message below, or open a conversation from the sidebar.
+                  </p>
+                </div>
+              )
+            ) : (
+              <div key="intro" className="flex flex-1 flex-col items-center justify-end px-4 pb-7">
+                <h1 className="text-center text-2xl font-normal text-balance motion-safe:animate-in motion-safe:animation-duration-500 motion-safe:fade-in-0">
+                  {/* Each side asks its own question. "What are we working on?" is
+                      a code question, and it would be a strange thing to read over
+                      an empty chat. The landing belongs to the region; a pane
+                      never shows it. */}
+                  {variant === "code" ? "What are we working on?" : "What can I help with?"}
+                </h1>
+              </div>
+            )
         ) : (
           <MessageScroller key="thread" className="min-h-0 flex-1">
             <MessageScrollerViewport tabIndex={-1} aria-label="Conversation">
@@ -2581,7 +2697,7 @@ export function PromptBlock() {
                       />
                     </PromptInputTools>
                     <PromptInputTextarea
-                      autoFocus
+                      autoFocus={!isEmbeddedSessionPane}
                       placeholder={placeholders[mode]}
                       className="min-h-16"
                     />
@@ -2599,6 +2715,7 @@ export function PromptBlock() {
                       onValueChange={() => {}}
                       placeholder="Local"
                       icon={<LaptopIcon />}
+                      compactLabel
                     />
                     {canPick ? (
                       <PromptInputFolderSelect
@@ -2612,6 +2729,7 @@ export function PromptBlock() {
                         onClone={() => setCloneOpen(true)}
                         placeholder={folderSource.placeholder}
                         icon={<FolderOpenIcon />}
+                        compactLabel
                       />
                     ) : (
                       <span className="text-muted-foreground me-auto text-xs">
@@ -2629,7 +2747,7 @@ export function PromptBlock() {
               <VariantRegion regionKey="variant-chat-body" active={variant === "chat"}>
                 <PromptInputBody>
                   <PromptInputAttachments />
-                  <PromptInputTextarea autoFocus placeholder="Ask anything" />
+                <PromptInputTextarea autoFocus={!isEmbeddedSessionPane} placeholder="Ask anything" />
                   <PromptInputActions>
                     <PromptInputMeter />
                     <PromptInputDictation />
@@ -2645,7 +2763,7 @@ export function PromptBlock() {
                 </PromptInputMeta>
               </VariantRegion>
             </MotionConfig>
-            {empty ? (
+            {empty && !isEmbeddedSessionPane ? (
         <PromptInputSuggestions suggestions={suggested} className="pt-3" />
       ) : null}
             {/* The @ menu lists the files in the folder this session is
@@ -2672,6 +2790,7 @@ export function PromptBlock() {
         </div>
         {empty ? <div key="outro" className="flex-1" /> : null}
         </main>
+        </WorkspaceLayout>
       </WorkspaceHost>
     </MessageScrollerProvider>
   )

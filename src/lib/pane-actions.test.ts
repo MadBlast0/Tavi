@@ -20,16 +20,18 @@ const read = (...parts: string[]) =>
 
 const pane = read("blocks", "workspace", "pane.tsx")
 
-test("the pane has a pop-out control", () => {
-  assert.ok(
-    pane.includes("PictureInPicture2Icon"),
-    "the pane should have a pop-out control",
-  )
-  assert.ok(
-    pane.includes('tooltip="Pop out into its own window"') ||
-      pane.includes('tooltip={\n              popOutAvailable'),
-    "the pop-out control should carry a tooltip",
-  )
+test("pop-out is available from the pane overflow when supported", () => {
+  assert.ok(pane.includes("onPopOut={onPopOut}"), "the pane menu should receive the pop-out action")
+  assert.ok(pane.includes("Pop out"), "the pane menu should name the pop-out action")
+  assert.ok(pane.includes("disabled={!popOutAvailable}"), "unavailable pop-out should be disabled")
+})
+
+test("moving a pane to another tab group is keyboard reachable from its menu", () => {
+  assert.ok(pane.includes("DropdownMenuSubTrigger"), "the move action should use the menu's keyboard-operable submenu")
+  assert.ok(pane.includes('Move into pane'), "the submenu should have a short, clear label")
+  assert.ok(pane.includes("moveTargets.map"), "other panes should be listed as destinations")
+  const layout = read("blocks", "workspace", "workspace-layout.tsx")
+  assert.ok(layout.includes('dockPane(pane.id, targetId, "center")'), "choosing a destination should dock this pane as a tab")
 })
 
 test("the pane has a close control", () => {
@@ -71,16 +73,13 @@ test("the pane's actions are conditional", () => {
 })
 
 test("the pane's actions do not start a drag", () => {
-  // The drag handle is a separate element from the buttons, so a click on
-  // a button does not start a drag.
+  // The full header is a drag surface, but nested controls suppress drag start.
   assert.ok(
-    pane.includes('data-slot="pane-drag-handle"'),
-    "the pane should have a dedicated drag handle",
+    pane.includes('data-slot="pane-header"'),
+    "the pane should expose its header as a drag surface",
   )
-  const handleIndex = pane.indexOf('data-slot="pane-drag-handle"')
-  const buttonsIndex = pane.indexOf('className="flex shrink-0 items-center gap-0.5"')
   assert.ok(
-    handleIndex < buttonsIndex,
-    "the drag handle should come before the buttons",
+    pane.includes("closest(\"button, input, textarea, select, a, [role='menuitem']\")"),
+    "interactive controls should not start pane drags",
   )
 })

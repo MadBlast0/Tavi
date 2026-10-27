@@ -3,8 +3,25 @@
 import * as React from "react"
 
 import { PANE_TYPES, type PaneType } from "./pane-types"
-import { Pane } from "./pane"
 import type { DockEdge } from "@/lib/workspace-state"
+import type { WorkspaceNativeDragPayload } from "@/lib/desktop"
+import { DiffViewerPane } from "./panes/diff-viewer-pane"
+import { SamplePane } from "./panes/sample-pane"
+
+export type PaneActions = {
+  active?: boolean
+  onClose?: () => void
+  onDockBack?: () => void
+  onSplit?: (edge: DockEdge) => void
+  onFocus?: () => void
+  onMaximize?: () => void
+  maximized?: boolean
+  onPopOut?: () => void
+  popOutAvailable?: boolean
+  moveTargets?: Array<{ id: string; title: string }>
+  onMoveTo?: (targetId: string) => void
+  getDragPayload?: () => WorkspaceNativeDragPayload
+}
 
 /**
  * What a pane type carries beyond its name and mark.
@@ -31,11 +48,12 @@ export type PaneRegistration = {
   /**
    * The component that draws the pane's content.
    *
-   * It is a placeholder until the pane's real content is built in Phase 5.
-   * The registry is the only place that knows which renderer a type takes,
-   * so adding a type's real content means changing one entry here.
+   * A chat or code-session pane is a conversation surface: the workspace
+   * and the pane window choose its renderer before asking the registry, so
+   * this entry returns null rather than growing a second sample renderer.
+   * The other types are tool panes; their real content is built in Phase 5.
    */
-  render: (paneId: string) => React.ReactNode
+  render: (paneId: string, actions?: PaneActions) => React.ReactNode
   /** The actions the pane's menu offers, beyond the shared ones. */
   actions: readonly PaneAction[]
   /** Whether two instances of this type may exist at once. */
@@ -85,11 +103,14 @@ export const PANE_REGISTRY: ReadonlyMap<string, PaneRegistration> = new Map(
       defaultTitle: type.label,
       icon: type.icon,
       description: type.description,
-      render: (paneId: string) => (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          {type.label} — coming soon
-        </div>
-      ),
+      render: (paneId: string, actions?: PaneActions) => {
+        /* One session path: WorkspaceLayout and PaneWindow draw chat and
+           code-session panes themselves. A second sample conversation here
+           would drift from the real composer and mislead the next change. */
+        if (type.id === "chat" || type.id === "code-session") return null
+        if (type.id === "diff") return <DiffViewerPane paneId={paneId} {...actions} />
+        return <SamplePane pane={{ id: paneId, type: type.id }} actions={actions ?? {}} />
+      },
       actions: SHARED_ACTIONS,
       // Every type may be duplicated except the two that are about a single
       // conversation: a chat and a code session are one thing at a time.

@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pane-window",
+  "description": "Allows a popped-out workspace pane to return to the main window and close itself.",
+  "windows": ["pane-*"],
+  "permissions": [
+    "core:default",
+    "drag-as-window:default",
+    "core:window:allow-destroy",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
+  ]
+}
